@@ -29,12 +29,14 @@ db.exec(`
     price_per_unit  REAL NOT NULL DEFAULT 0,
     total           REAL NOT NULL DEFAULT 0,
     qty             INTEGER NOT NULL DEFAULT 1,
+    markup          REAL NOT NULL DEFAULT 0,
     notes           TEXT DEFAULT '',
     address         TEXT DEFAULT '',
     lat             REAL,
     lng             REAL,
     polygon_geojson TEXT,
     ai_narrative    TEXT DEFAULT '',
+    line_items      TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
