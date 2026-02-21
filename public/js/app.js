@@ -95,26 +95,31 @@ function initMap() {
   map.on('draw.create', onDrawChange);
   map.on('draw.update', onDrawChange);
   map.on('draw.delete', onDrawDelete);
-  map.on('draw.modechange', onModeChange);
 
-  // Set initial tool
-  setDrawMode('draw_polygon');
+  // Wait for map to fully load before activating draw tools
+  map.on('load', () => {
+    setDrawMode('draw_polygon');
+    document.getElementById('map-hint').classList.remove('hidden');
+  });
 }
 
 function setDrawMode(mode) {
-  if (!draw) return;
-  try {
-    draw.changeMode(mode);
-  } catch(e) {
-    console.warn('Draw mode error:', e);
+  if (!draw || !map) return;
+  if (!map.loaded()) {
+    map.once('load', () => setDrawMode(mode));
     return;
   }
-  document.querySelectorAll('.map-tool-btn').forEach(b => b.classList.remove('active'));
-  const id = mode === 'draw_polygon'     ? 'tool-polygon'
-           : mode === 'draw_line_string'  ? 'tool-line'
-           : mode === 'simple_select'     ? 'tool-select'
-           : null;
-  if (id) document.getElementById(id)?.classList.add('active');
+  try {
+    draw.changeMode(mode);
+    document.querySelectorAll('.map-tool-btn').forEach(b => b.classList.remove('active'));
+    const id = mode === 'draw_polygon'     ? 'tool-polygon'
+             : mode === 'draw_line_string'  ? 'tool-line'
+             : mode === 'simple_select'     ? 'tool-select'
+             : null;
+    if (id) document.getElementById(id)?.classList.add('active');
+  } catch(e) {
+    console.warn('setDrawMode error:', mode, e);
+  }
 }
 
 function onDrawChange(e) {
@@ -133,13 +138,6 @@ function onDrawDelete() {
   document.getElementById('map-hint').classList.remove('hidden');
   document.getElementById('manual-area').value = '';
   updateCalc();
-}
-
-function onModeChange(e) {
-  // Reset tool buttons when draw mode ends
-  if (e.mode === 'simple_select' || e.mode === 'direct_select') {
-    // keep last active tool highlighted
-  }
 }
 
 function calculateFromFeature(feature, type) {
