@@ -2,302 +2,234 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>QUOTE machine</title>
-
-<!-- Mapbox GL -->
-<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
-<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
-
-<!-- Mapbox Draw -->
-<link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" rel="stylesheet">
-<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
-
-<!-- Turf.js for area calculations -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
-
-<!-- html2canvas for screenshots -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
-<!-- Google Fonts -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-<link rel="stylesheet" href="/css/app.css">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Equipment Service Assistant — General Pump &amp; Alkota</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,400&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c0f14;--surface:#141820;--surface-2:#1a1f2b;--surface-3:#222838;--border:#2a3144;--text:#e4e8f1;--text-muted:#8892a8;--accent:#f59e0b;--accent-dim:rgba(245,158,11,0.12);--success:#22c55e;--blue:#3b82f6;--blue-dim:rgba(59,130,246,0.12);--radius:12px;--font-body:'DM Sans',sans-serif;--font-mono:'Space Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:600px;background:radial-gradient(ellipse,rgba(245,158,11,0.06) 0%,transparent 70%);pointer-events:none;z-index:0}
+.app{position:relative;z-index:1}
+header{border-bottom:1px solid var(--border);padding:1rem 2rem;display:flex;align-items:center;gap:1rem;background:rgba(20,24,32,0.85);backdrop-filter:blur(20px);position:sticky;top:0;z-index:100}
+.logo{width:44px;height:44px;background:var(--accent);border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:0.7rem;color:var(--bg);flex-shrink:0}
+.header-text h1{font-size:1.1rem;font-weight:700;letter-spacing:-0.3px}
+.header-text span{font-size:0.75rem;color:var(--text-muted);font-weight:300}
+.header-stats{margin-left:auto;display:flex;gap:1.5rem}
+.stat{text-align:center}
+.stat-val{font-family:var(--font-mono);font-size:1rem;font-weight:700;color:var(--accent)}
+.stat-label{font-size:0.62rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px}
+@media(max-width:700px){.header-stats{display:none}}
+.input-bar{padding:0.75rem 2rem;border-bottom:1px solid var(--border);background:rgba(20,24,32,0.92);backdrop-filter:blur(20px);position:sticky;top:69px;z-index:99}
+.input-wrap{max-width:820px;margin:0 auto;display:flex;gap:0.5rem}
+.input-wrap input{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0.75rem 1rem;color:var(--text);font-family:var(--font-body);font-size:0.88rem;outline:none;transition:border-color 0.2s}
+.input-wrap input:focus{border-color:var(--accent)}
+.input-wrap input::placeholder{color:var(--text-muted)}
+.send-btn{width:44px;height:44px;border-radius:12px;border:none;background:var(--accent);color:var(--bg);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1.1rem;transition:all 0.15s;flex-shrink:0}
+.send-btn:hover{filter:brightness(1.15);transform:scale(1.04)}
+.layout{display:grid;grid-template-columns:280px 1fr;min-height:calc(100vh - 130px)}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.sidebar{display:none}}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;max-height:calc(100vh - 130px);position:sticky;top:130px}
+.sb-section{border-bottom:1px solid var(--border)}
+.sb-header{display:flex;align-items:center;gap:0.6rem;padding:0.65rem 1rem;cursor:pointer;user-select:none;transition:background 0.15s}
+.sb-header:hover{background:var(--surface-2)}
+.sb-chevron{font-size:0.6rem;color:var(--text-muted);transition:transform 0.25s;width:12px;text-align:center}
+.sb-section.collapsed .sb-chevron{transform:rotate(-90deg)}
+.sb-brand{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1px}
+.sb-brand.gp{color:var(--accent)}
+.sb-brand.alk{color:var(--blue)}
+.sb-count{font-size:0.6rem;color:var(--text-muted);font-family:var(--font-mono);margin-left:auto}
+.sb-body{overflow:hidden;transition:max-height 0.3s ease}
+.sb-section.collapsed .sb-body{max-height:0 !important}
+.sb-group-label{padding:0.25rem 1rem 0.15rem 2.2rem;font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-top:0.3rem}
+.topic-btn{display:flex;align-items:center;gap:0.55rem;width:100%;border:none;background:transparent;color:var(--text-muted);padding:0.45rem 1rem 0.45rem 2.2rem;cursor:pointer;font-size:0.8rem;font-family:var(--font-body);transition:all 0.15s;text-align:left}
+.topic-btn:hover{background:var(--surface-2);color:var(--text)}
+.topic-btn.active{background:var(--accent-dim);color:var(--accent);font-weight:600;border-right:3px solid var(--accent)}
+.topic-btn.active.alk-active{background:var(--blue-dim);color:var(--blue);border-right-color:var(--blue)}
+.topic-icon{font-size:0.85rem;width:1.1rem;text-align:center}
+.home-btn{display:flex;align-items:center;gap:0.6rem;width:100%;border:none;background:transparent;color:var(--text-muted);padding:0.65rem 1rem;cursor:pointer;font-size:0.85rem;font-family:var(--font-body);transition:all 0.15s;border-bottom:1px solid var(--border)}
+.home-btn:hover{background:var(--surface-2);color:var(--text)}
+.home-btn.active{background:var(--accent-dim);color:var(--accent);font-weight:600}
+.main{padding:2rem;overflow-y:auto;max-height:calc(100vh - 130px)}
+.welcome{max-width:840px;margin:0 auto;animation:fadeUp 0.3s ease}
+.welcome-icon{font-size:2.5rem;margin-bottom:0.75rem}
+.welcome h2{font-size:1.5rem;margin-bottom:0.5rem;letter-spacing:-0.5px}
+.welcome>p{color:var(--text-muted);font-size:0.88rem;margin-bottom:1.5rem;line-height:1.6}
+.brand-label{display:inline-block;padding:0.15rem 0.5rem;border-radius:5px;font-size:0.65rem;font-weight:700;font-family:var(--font-mono);letter-spacing:0.5px;vertical-align:middle;margin-right:0.3rem}
+.brand-label.gp{background:var(--accent-dim);color:var(--accent)}
+.brand-label.alk{background:var(--blue-dim);color:var(--blue)}
+.quick-actions{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.7rem}
+.quick-btn{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0.8rem 1rem;cursor:pointer;display:flex;align-items:center;gap:0.6rem;color:var(--text);font-size:0.82rem;font-family:var(--font-body);transition:all 0.15s;text-align:left}
+.quick-btn:hover{border-color:var(--accent);background:var(--accent-dim)}
+.qicon{font-size:1rem}
+.section-page{max-width:860px;margin:0 auto;animation:fadeUp 0.3s ease}
+.back-btn{background:transparent;border:1px solid var(--border);color:var(--text-muted);padding:0.35rem 0.8rem;border-radius:8px;cursor:pointer;font-size:0.76rem;font-family:var(--font-body);margin-bottom:1.25rem;transition:all 0.15s}
+.back-btn:hover{border-color:var(--accent);color:var(--accent)}
+.page-header{display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem}
+.page-header-icon{font-size:2rem}
+.page-header h2{font-size:1.3rem;letter-spacing:-0.4px}
+.page-header p{color:var(--text-muted);font-size:0.82rem}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.2rem;margin-bottom:1rem}
+.card h4{font-size:0.88rem;margin-bottom:0.7rem;color:var(--accent);font-weight:600}
+.card h4.alk-h{color:var(--blue)}
+.cause-item{padding:0.55rem 0;border-bottom:1px solid var(--border);font-size:0.83rem;line-height:1.6}
+.cause-item:last-child{border-bottom:none}
+.cause-item strong{display:block;margin-bottom:0.1rem}
+.cause-item span{color:var(--success)}
+.info-block{background:var(--surface-2);border-radius:10px;padding:0.8rem 1rem;margin:0.5rem 0;font-size:0.83rem;line-height:1.6}
+.info-block p{margin-bottom:0.35rem}
+.info-block p:last-child{margin-bottom:0}
+.step-list{counter-reset:step;padding:0;list-style:none}
+.step-item{display:flex;gap:0.7rem;padding:0.6rem 0;border-bottom:1px solid var(--border);font-size:0.85rem;line-height:1.55}
+.step-item:last-child{border-bottom:none}
+.step-num{width:26px;height:26px;border-radius:8px;background:var(--accent-dim);color:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.75rem;flex-shrink:0;font-family:var(--font-mono)}
+.oil-result{background:var(--accent-dim);border:1px solid rgba(245,158,11,0.2);padding:0.8rem 1rem;border-radius:10px;margin:0.5rem 0;font-family:var(--font-mono);font-size:0.8rem}
+.oil-result .model{color:var(--accent);font-weight:700}
+.oil-badge{display:inline-block;padding:0.15rem 0.5rem;border-radius:6px;font-family:var(--font-mono);font-size:0.7rem;font-weight:700}
+.oil-badge.s100{background:rgba(59,130,246,0.15);color:#60a5fa}
+.oil-badge.s220{background:rgba(34,197,94,0.15);color:#4ade80}
+.oil-badge.s8090{background:rgba(245,158,11,0.15);color:var(--accent)}
+.data-table{width:100%;border-collapse:collapse;font-size:0.78rem;margin-top:0.5rem}
+.data-table th{text-align:left;padding:0.5rem 0.6rem;background:var(--surface-3);color:var(--accent);font-size:0.68rem;text-transform:uppercase;letter-spacing:0.8px;border-bottom:2px solid var(--border);position:sticky;top:0}
+.data-table td{padding:0.4rem 0.6rem;border-bottom:1px solid var(--border);color:var(--text-muted);font-family:var(--font-mono);font-size:0.76rem}
+.data-table tr:hover td{color:var(--text);background:rgba(245,158,11,0.03)}
+.data-table .model-cell{color:var(--accent);font-weight:700}
+.series-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.7rem}
+.series-card,.acc-cat-card{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:0.9rem;cursor:pointer;transition:all 0.15s}
+.series-card:hover,.acc-cat-card:hover{border-color:var(--accent);background:var(--accent-dim)}
+.series-card h5,.acc-cat-card h5{font-size:0.88rem;margin-bottom:0.3rem}
+.series-card .sc-stats,.acc-cat-card span{font-size:0.72rem;color:var(--text-muted);font-family:var(--font-mono)}
+.series-card .sc-range{font-size:0.7rem;color:var(--text-muted);margin-top:0.25rem}
+.acc-cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0.7rem}
+.filter-bar{display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem}
+.filter-bar input{background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:0.45rem 0.7rem;font-size:0.8rem;font-family:var(--font-body);outline:none}
+.filter-bar input:focus{border-color:var(--accent)}
+.result-count{font-size:0.73rem;color:var(--text-muted);margin-bottom:0.5rem;font-family:var(--font-mono)}
+.tag{display:inline-block;padding:0.13rem 0.45rem;border-radius:5px;font-size:0.68rem;font-family:var(--font-mono);background:var(--surface-3);color:var(--text-muted);margin:0.1rem}
+.msg{margin-bottom:1.5rem;animation:fadeUp 0.3s ease}
+.msg-user{display:flex;justify-content:flex-end}
+.msg-user .bubble{background:var(--accent);color:var(--bg);padding:0.65rem 1rem;border-radius:16px 16px 4px 16px;max-width:75%;font-weight:500;font-size:0.88rem}
+.msg-bot{display:flex;gap:0.7rem;align-items:flex-start}
+.bot-avatar{width:30px;height:30px;background:var(--surface-3);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:0.7rem;flex-shrink:0;margin-top:2px}
+.msg-bot .bubble{background:var(--surface);border:1px solid var(--border);padding:0.9rem 1.15rem;border-radius:4px 16px 16px 16px;max-width:85%;font-size:0.88rem;line-height:1.65}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
 </head>
 <body>
-
-<!-- ── HEADER ── -->
-<header>
-  <div class="logo">QUOTE<span>machine</span></div>
-  <div class="header-center" id="address-display"></div>
-  <div class="header-actions">
-    <button class="icon-btn" id="ai-chat-btn" title="AI Assistant">🤖</button>
-    <button class="icon-btn" onclick="showView('saved')" title="Saved Quotes">📋</button>
-  </div>
-</header>
-
-<!-- ── MAP ── -->
-<div id="map-container">
-  <div id="map"></div>
-
-  <!-- Address search -->
-  <div id="geocoder-wrapper">
-    <div id="geocoder-inner">
-      <input type="text" id="addr-input" placeholder="🔍  Enter address or place..." autocomplete="off"
-             onkeydown="if(event.key==='Enter')geocodeAddress()">
-      <button id="search-btn" onclick="geocodeAddress()">Go</button>
-    </div>
-    <div id="autocomplete-list"></div>
-  </div>
-
-  <!-- Map hint -->
-  <div class="map-hint" id="map-hint">
-    Draw a polygon or line on the map to measure
-  </div>
-
-  <!-- Measure badge -->
-  <div id="measure-badge" style="display:none">
-    <div class="badge-val" id="badge-val">0</div>
-    <div class="badge-unit" id="badge-unit">sq ft</div>
-    <button class="badge-clear" onclick="clearDrawing()">✕</button>
-  </div>
-
-  <!-- Map toolbar -->
-  <div id="map-toolbar">
-    <button class="map-tool-btn active" id="tool-polygon" onclick="setDrawMode('draw_polygon')" title="Draw Polygon">⬡</button>
-    <button class="map-tool-btn" id="tool-line" onclick="setDrawMode('draw_line_string')" title="Draw Line">╱</button>
-    <button class="map-tool-btn" id="tool-rect" onclick="setDrawMode('draw_rectangle')" title="Draw Rectangle">▭</button>
-    <div class="tool-divider"></div>
-    <button class="map-tool-btn" id="tool-screenshot" onclick="takeScreenshot()" title="Screenshot">📷</button>
-    <button class="map-tool-btn" id="tool-satellite" onclick="toggleLabels()" title="Toggle Labels">🏷️</button>
+<div class="app">
+  <header>
+    <div class="logo">SVC</div>
+    <div class="header-text"><h1>Equipment Service Assistant</h1><span>General Pump &amp; Alkota — Diagnostics, Service &amp; Reference</span></div>
+    <div class="header-stats" id="headerStats"></div>
+  </header>
+  <div class="input-bar"><div class="input-wrap">
+    <input type="text" id="userInput" placeholder="Search models, troubleshoot issues, look up specs…" autocomplete="off"/>
+    <button class="send-btn" onclick="handleSend()" title="Send">➤</button>
+  </div></div>
+  <div class="layout">
+    <nav class="sidebar" id="sidebar"></nav>
+    <div class="main"><div class="content-area" id="contentArea"></div></div>
   </div>
 </div>
+<script src="knowledge-base.js"></script>
+<script>
+const C=document.getElementById('contentArea'),I=document.getElementById('userInput'),SB=document.getElementById('sidebar');
+const esc=t=>{const d=document.createElement('div');d.textContent=t;return d.innerHTML};
+const norm=s=>s.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+const renderCauses=c=>c.map(x=>`<div class="cause-item"><strong>⚠ ${x.cause}</strong><span>✓ ${x.remedy}</span></div>`).join('');
+const renderSteps=s=>`<ol class="step-list">${s.map((x,i)=>`<li class="step-item"><div class="step-num">${i+1}</div><div>${x}</div></li>`).join('')}</ol>`;
 
-<!-- ── BOTTOM PANEL ── -->
-<div id="bottom-panel">
-  <div class="panel-drag" id="panel-drag">
-    <div class="drag-bar"></div>
-  </div>
-  <div class="panel-scroll" id="panel-scroll">
+function buildSidebar(){
+  let h=`<button class="home-btn active" data-topic="home" onclick="nav('home')"><span class="topic-icon">🏠</span> Home</button>`;
+  h+=`<div class="sb-section" id="sec-gp"><div class="sb-header" onclick="toggleSection('sec-gp')"><span class="sb-chevron">▼</span><span class="sb-brand gp">General Pump</span><span class="sb-count">${KB.gp.pumpModels.length} pumps</span></div><div class="sb-body">`;
+  h+=`<div class="sb-group-label">Diagnostics</div>`;
+  [['gp-pressure','📉','Low Pressure'],['gp-pulsation','〰️','Pulsation'],['gp-rough','🔴','Rough Running'],['gp-leak','💧','Leaks'],['gp-noise','🔊','Noise / Knocking'],['gp-packing','⚙️','Packing Failure'],['gp-overheating','🌡️','Overheating']].forEach(([id,ic,lb])=>h+=`<button class="topic-btn" data-topic="${id}" onclick="nav('${id}')"><span class="topic-icon">${ic}</span>${lb}</button>`);
+  h+=`<div class="sb-group-label">Service</div>`;
+  [['gp-valves','🔧','Valve Service'],['gp-plungers','🔩','Plunger Service'],['gp-vpackings','🛞','V-Packing Service'],['gp-oil','🛢️','Oil & Lubrication'],['gp-maintenance','🗓️','Maintenance']].forEach(([id,ic,lb])=>h+=`<button class="topic-btn" data-topic="${id}" onclick="nav('${id}')"><span class="topic-icon">${ic}</span>${lb}</button>`);
+  h+=`<div class="sb-group-label">Reference</div>`;
+  [['gp-catalog','📖','Product Catalog'],['gp-accessories','🔗','Accessories'],['gp-system','📋','System Design'],['gp-warranty','📄','Warranty']].forEach(([id,ic,lb])=>h+=`<button class="topic-btn" data-topic="${id}" onclick="nav('${id}')"><span class="topic-icon">${ic}</span>${lb}</button>`);
+  h+=`</div></div>`;
 
-    <!-- Tab row -->
-    <div class="tab-row">
-      <button class="tab-btn active" onclick="showTab('quote')">📐 Quote</button>
-      <button class="tab-btn" onclick="showTab('saved')">📋 Saved (<span id="saved-count">0</span>)</button>
-      <button class="tab-btn" onclick="showTab('stats')">📊 Stats</button>
-    </div>
+  h+=`<div class="sb-section" id="sec-alk"><div class="sb-header" onclick="toggleSection('sec-alk')"><span class="sb-chevron">▼</span><span class="sb-brand alk">Alkota</span><span class="sb-count">11 manuals</span></div><div class="sb-body">`;
+  h+=`<div class="sb-group-label">Troubleshooting</div>`;
+  for(const[key,val]of Object.entries(KB.alk.troubleshooting))h+=`<button class="topic-btn" data-topic="alk-ts-${key}" onclick="nav('alk-ts-${key}')"><span class="topic-icon">${val.icon}</span>${val.title}</button>`;
+  h+=`<div class="sb-group-label">Service</div>`;
+  [['alk-maintenance','🗓️','Maintenance'],['alk-installation','🏗️','Installation'],['alk-startup','▶️','Start-Up / Shutdown']].forEach(([id,ic,lb])=>h+=`<button class="topic-btn" data-topic="${id}" onclick="nav('${id}')"><span class="topic-icon">${ic}</span>${lb}</button>`);
+  h+=`</div></div>`;
+  SB.innerHTML=h;
+  document.querySelectorAll('.sb-body').forEach(b=>{b.style.maxHeight=b.scrollHeight+'px'});
+}
 
-    <!-- ════ QUOTE TAB ════ -->
-    <div id="tab-quote">
-      <div class="section-title">Project Info</div>
-      <div class="form-row">
-        <div class="field">
-          <label>Client Name</label>
-          <input type="text" id="client-name" placeholder="Client / Company">
-        </div>
-        <div class="field">
-          <label>Project Type</label>
-          <select id="project-type" onchange="updateCalc()">
-            <option value="parking-lot-striping">Parking Lot Striping</option>
-            <option value="roofing">Roofing</option>
-            <option value="painting">Painting / Coating</option>
-            <option value="sealcoating">Sealcoating</option>
-            <option value="concrete">Concrete</option>
-            <option value="landscaping">Landscaping</option>
-            <option value="pressure-washing">Pressure Washing</option>
-            <option value="custom">Custom</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row full">
-        <div class="field">
-          <label>Notes / Address</label>
-          <textarea id="notes" placeholder="Job notes, conditions, address details..."></textarea>
-        </div>
-      </div>
+function toggleSection(id){const el=document.getElementById(id);el.classList.toggle('collapsed');if(!el.classList.contains('collapsed')){const body=el.querySelector('.sb-body');body.style.maxHeight=body.scrollHeight+'px';}}
+function setActive(t){document.querySelectorAll('.topic-btn,.home-btn').forEach(b=>b.classList.remove('active','alk-active'));const btn=document.querySelector(`[data-topic="${t}"]`);if(btn){btn.classList.add('active');if(t.startsWith('alk-'))btn.classList.add('alk-active');}}
+function getSeriesGroups(){const g={};for(const m of KB.gp.pumpModels){const s=m[6];if(!g[s])g[s]={models:[],minGPM:Infinity,maxGPM:0,minPSI:Infinity,maxPSI:0};g[s].models.push(m);const gpm=parseFloat(m[1]),psi=parseInt(m[2]);if(gpm<g[s].minGPM)g[s].minGPM=gpm;if(gpm>g[s].maxGPM)g[s].maxGPM=gpm;if(psi<g[s].minPSI)g[s].minPSI=psi;if(psi>g[s].maxPSI)g[s].maxPSI=psi;}return g;}
+function findOil(q){q=norm(q);const r=[];for(const[,s]of Object.entries(KB.gp.oilRecommendations)){for(const p of s.pumps){const pn=norm(p);if(q.includes(pn)||pn.includes(q.replace(/\s/g,'')))r.push({model:p,oil:s.label,weight:s.weight,badge:s.badge});}}return[...new Map(r.map(x=>[x.model,x])).values()];}
 
-      <div class="section-title">Measurement</div>
-      <div class="form-row trio">
-        <div class="field">
-          <label>Unit</label>
-          <select id="measure-type" onchange="updateCalc()">
-            <option value="sqft">Sq Ft</option>
-            <option value="linft">Lin Ft</option>
-            <option value="sqyd">Sq Yd</option>
-            <option value="acre">Acres</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Area / Length</label>
-          <input type="number" id="manual-area" placeholder="Map / Enter" min="0" step="1" oninput="updateCalc()">
-        </div>
-        <div class="field">
-          <label>Passes</label>
-          <select id="qty" onchange="updateCalc()">
-            <option value="1">1×</option>
-            <option value="2">2×</option>
-            <option value="3">3×</option>
-            <option value="4">4×</option>
-            <option value="5">5×</option>
-          </select>
-        </div>
-      </div>
+/* ═══ PAGES ═══ */
+function showHome(){setActive('home');C.innerHTML=`<div class="welcome"><div class="welcome-icon">🔧</div><h2>How can I help?</h2><p>Search across <span class="brand-label gp">GP</span> ${KB.gp.pumpModels.length} pump models, troubleshooting, oil &amp; service data and <span class="brand-label alk">ALKOTA</span> 11 equipment manuals covering pressure washers, steam cleaners, water heaters &amp; more.</p><div class="quick-actions"><button class="quick-btn" onclick="askQ('My pump has low pressure')"><span class="qicon">📉</span><span class="brand-label gp">GP</span> Low pressure</button><button class="quick-btn" onclick="askQ('What oil does my TS2021 need?')"><span class="qicon">🛢️</span><span class="brand-label gp">GP</span> Oil lookup</button><button class="quick-btn" onclick="askQ('Burner will not fire')"><span class="qicon">🔥</span><span class="brand-label alk">ALK</span> Burner issues</button><button class="quick-btn" onclick="askQ('How do I replace v-packings?')"><span class="qicon">⚙️</span><span class="brand-label gp">GP</span> V-packing service</button><button class="quick-btn" onclick="askQ('Machine will not draw chemical')"><span class="qicon">🧪</span><span class="brand-label alk">ALK</span> Chemical issues</button><button class="quick-btn" onclick="askQ('Find pump 4 GPM 3000 PSI')"><span class="qicon">🔍</span><span class="brand-label gp">GP</span> Find a pump</button><button class="quick-btn" onclick="askQ('Pilot will not stay lit')"><span class="qicon">🔥</span><span class="brand-label alk">ALK</span> Pilot light</button><button class="quick-btn" onclick="askQ('Maintenance schedule')"><span class="qicon">🗓️</span> Maintenance</button></div></div>`;}
 
-      <div class="section-title">
-        Pricing
-        <button class="ai-suggest-btn" id="ai-suggest-btn" onclick="aiSuggestPrice()">✨ AI Suggest</button>
-      </div>
-      <div id="ai-price-banner" style="display:none" class="ai-banner"></div>
-      <div class="form-row trio">
-        <div class="field">
-          <label>$ Dollars</label>
-          <select id="price-dollars" onchange="updateCalc()"></select>
-        </div>
-        <div class="field">
-          <label>¢ Cents</label>
-          <select id="price-cents" onchange="updateCalc()"></select>
-        </div>
-        <div class="field">
-          <label>Markup %</label>
-          <select id="markup" onchange="updateCalc()">
-            <option value="0">0%</option>
-            <option value="5">5%</option>
-            <option value="10">10%</option>
-            <option value="15">15%</option>
-            <option value="20">20%</option>
-            <option value="25">25%</option>
-          </select>
-        </div>
-      </div>
+function showGPTrouble(key){const t=KB.gp.troubleshooting[key];if(!t)return;setActive('gp-'+key);let h=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">${t.icon}</div><div><h2>${t.title}</h2><p><span class="brand-label gp">GENERAL PUMP</span> ${t.desc||''}</p></div></div>`;if(t.causes)h+=`<div class="card"><h4>Possible Causes &amp; Remedies</h4>${renderCauses(t.causes)}</div>`;if(t.items)for(const i of t.items)h+=`<div class="card"><h4>${i.subtitle}</h4>${renderCauses(i.causes)}</div>`;h+=`</div>`;C.innerHTML=h;C.scrollTop=0;}
 
-      <!-- Total display -->
-      <div class="price-card">
-        <div>
-          <div class="price-label">Estimated Total</div>
-          <div class="price-total" id="total-display">$0.00</div>
-          <div class="price-breakdown" id="breakdown-display">—</div>
-        </div>
-        <div style="text-align:right">
-          <div class="price-label">Area</div>
-          <div class="area-num" id="area-display">0</div>
-          <div class="area-unit" id="unit-display">sq ft</div>
-        </div>
-      </div>
+function showGPService(key){const s=KB.gp.serviceProcedures[key];if(!s)return;setActive('gp-'+key);let h=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">${s.icon}</div><div><h2>${s.title}</h2><p><span class="brand-label gp">GENERAL PUMP</span> ${s.desc}</p></div></div><div class="card"><h4>Procedure</h4>${renderSteps(s.steps)}</div>`;if(s.notes)h+=`<div class="card"><h4>Notes</h4><div class="info-block"><p>${s.notes}</p></div></div>`;h+=`</div>`;C.innerHTML=h;C.scrollTop=0;}
 
-      <!-- AI Narrative -->
-      <div id="narrative-section" style="display:none">
-        <div class="section-title">
-          AI Quote Narrative
-          <button class="ai-suggest-btn" onclick="generateNarrative()">↺ Regenerate</button>
-        </div>
-        <div id="narrative-text" class="narrative-box"></div>
-      </div>
+function showGPOil(){setActive('gp-oil');C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">🛢️</div><div><h2>Oil &amp; Lubrication</h2><p><span class="brand-label gp">GENERAL PUMP</span></p></div></div><div class="card"><h4>Oil Change Schedule</h4><div class="info-block"><p>${KB.gp.maintenance.oilChange}</p></div></div><div class="card"><h4>Three Oil Series</h4><div class="info-block"><p><span class="oil-badge s100">SERIES 100</span>&nbsp; 30W Non-Detergent — T, TS, TC, TX, TT, EZ, HTC, HTF, HTS, EP, ET, ES, TP series.</p></div><div class="info-block"><p><span class="oil-badge s220">SERIES 220</span>&nbsp; 50W — HF, KE, KF, KFMB, KFMZ, KS, LK, MK, MW, SK, VF, VK series.</p></div><div class="info-block"><p><span class="oil-badge s8090">SERIES 8090</span>&nbsp; 80/90 Gear Lube — T41–T151, T1551–T4251, CW, YGR/ZGRS gear reducers.</p></div></div><div class="card"><h4>Look Up Your Model</h4><p style="font-size:0.83rem;color:var(--text-muted)">Type your pump model in the search bar for a specific recommendation.</p></div></div>`;C.scrollTop=0;}
 
-      <!-- Actions -->
-      <div class="btn-row">
-        <button class="btn btn-save" onclick="saveQuote()">
-          <span>💾</span>Save
-        </button>
-        <button class="btn btn-narrative" onclick="generateNarrative()">
-          <span>✍️</span>Narrative
-        </button>
-        <button class="btn btn-print" onclick="printQuote()">
-          <span>🖨️</span>Print
-        </button>
-        <button class="btn btn-share" onclick="openShareModal()">
-          <span>📤</span>Share
-        </button>
-      </div>
-      <button class="btn-new" onclick="newQuote()">＋ New Quote</button>
-    </div>
+function showGPMaint(){setActive('gp-maintenance');C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">🗓️</div><div><h2>Maintenance Schedule</h2><p><span class="brand-label gp">GENERAL PUMP</span></p></div></div><div class="card"><h4>Oil Changes</h4><div class="info-block"><p>${KB.gp.maintenance.oilChange}</p></div></div><div class="card"><h4>Every 500 Hours</h4>${renderSteps(KB.gp.maintenance.every500)}</div><div class="card"><h4>Every 1,000 Hours</h4>${renderSteps(KB.gp.maintenance.every1000)}</div><div class="card"><h4>Start-Up Checklist</h4>${renderSteps(KB.gp.maintenance.startup)}</div><div class="card"><h4>Additional Tips</h4><div class="info-block"><p>💧 <strong>Daily Flushing:</strong> ${KB.gp.maintenance.flushing}</p></div><div class="info-block"><p>❄️ <strong>Freeze Protection:</strong> ${KB.gp.maintenance.freezing}</p></div></div></div>`;C.scrollTop=0;}
 
-    <!-- ════ SAVED TAB ════ -->
-    <div id="tab-saved" style="display:none">
-      <div class="search-bar">
-        <input type="text" id="search-input" placeholder="Search client, type, address..." oninput="loadSaved()">
-        <button onclick="exportAll()">Export</button>
-      </div>
-      <div id="saved-list">
-        <div class="empty-state">No saved quotes yet. Create your first quote!</div>
-      </div>
-    </div>
+function showGPSystem(){setActive('gp-system');let h=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">📋</div><div><h2>System Design</h2><p><span class="brand-label gp">GENERAL PUMP</span></p></div></div>`;for(const i of Object.values(KB.gp.systemDesign))h+=`<div class="card"><h4>${i.title}</h4><div class="info-block"><p>${i.text}</p></div></div>`;h+=`</div>`;C.innerHTML=h;C.scrollTop=0;}
 
-    <!-- ════ STATS TAB ════ -->
-    <div id="tab-stats" style="display:none">
-      <div id="stats-content">
-        <div class="empty-state">Loading stats...</div>
-      </div>
-    </div>
+function showGPWarranty(){setActive('gp-warranty');const w=KB.gp.warranty;C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">📄</div><div><h2>Warranty</h2><p><span class="brand-label gp">GENERAL PUMP</span></p></div></div><div class="card"><h4>Pump — 5 Years</h4><div class="info-block"><p>${w.pumpWarranty}</p></div></div><div class="card"><h4>Manifold — Lifetime</h4><div class="info-block"><p>${w.manifoldWarranty}</p></div></div><div class="card"><h4>Consumer — 2 Years</h4><div class="info-block"><p>${w.consumerWarranty}</p></div></div><div class="card"><h4>Accessories — 1 Year</h4><div class="info-block"><p>${w.accessoryWarranty}</p></div></div><div class="card"><h4>Not Covered</h4>${w.notCovered.map(x=>`<div class="cause-item"><strong>✗ ${x}</strong></div>`).join('')}</div><div class="card"><h4>Wear Parts</h4><div class="info-block"><p>${w.wearParts.map(x=>`<span class="tag">${x}</span>`).join(' ')}</p></div></div></div>`;C.scrollTop=0;}
 
-  </div>
-</div>
+function showGPCatalog(){setActive('gp-catalog');const g=getSeriesGroups();const sorted=Object.entries(g).sort((a,b)=>b[1].models.length-a[1].models.length);let cards=sorted.map(([n,d])=>`<div class="series-card" onclick="showSeriesDetail('${esc(n)}')"><h5>${n}</h5><div class="sc-stats">${d.models.length} models</div><div class="sc-range">${d.minGPM}–${d.maxGPM} GPM · ${d.minPSI.toLocaleString()}–${d.maxPSI.toLocaleString()} PSI</div></div>`).join('');C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">📖</div><div><h2>Product Catalog</h2><p><span class="brand-label gp">GENERAL PUMP</span> ${KB.gp.pumpModels.length} models · ${sorted.length} series</p></div></div><div class="card"><h4>Browse by Series</h4><div class="series-grid">${cards}</div></div><div class="card"><h4>Search All Models</h4><div class="filter-bar"><input type="text" id="catSearch" placeholder="Model number…" oninput="filterCat()"/><input type="number" id="catMinGPM" placeholder="Min GPM" style="width:85px" oninput="filterCat()"/><input type="number" id="catMaxGPM" placeholder="Max GPM" style="width:85px" oninput="filterCat()"/><input type="number" id="catMinPSI" placeholder="Min PSI" style="width:85px" oninput="filterCat()"/><input type="number" id="catMaxPSI" placeholder="Max PSI" style="width:85px" oninput="filterCat()"/></div><div class="result-count" id="catCount"></div><div style="max-height:400px;overflow-y:auto"><table class="data-table"><thead><tr><th>Model</th><th>GPM</th><th>PSI</th><th>RPM</th><th>HP</th><th>Wt</th><th>Series</th></tr></thead><tbody id="catBody"></tbody></table></div></div></div>`;filterCat();C.scrollTop=0;}
 
-<!-- ── AI CHAT PANEL ── -->
-<div id="ai-panel" class="side-panel">
-  <div class="side-panel-header">
-    <span>🤖 AI Assistant</span>
-    <button onclick="closeAiPanel()">✕</button>
-  </div>
-  <div id="chat-messages" class="chat-messages"></div>
-  <div class="chat-input-row">
-    <input type="text" id="chat-input" placeholder="Ask about pricing, measurements..."
-           onkeydown="if(event.key==='Enter')sendChat()">
-    <button onclick="sendChat()">➤</button>
-  </div>
-</div>
-<div id="ai-overlay" onclick="closeAiPanel()"></div>
+function filterCat(){const q=norm(document.getElementById('catSearch')?.value||'');const minG=parseFloat(document.getElementById('catMinGPM')?.value)||0;const maxG=parseFloat(document.getElementById('catMaxGPM')?.value)||99999;const minP=parseInt(document.getElementById('catMinPSI')?.value)||0;const maxP=parseInt(document.getElementById('catMaxPSI')?.value)||999999;let r=KB.gp.pumpModels.filter(m=>{const g=parseFloat(m[1]),p=parseInt(m[2]);if(g<minG||g>maxG||p<minP||p>maxP)return false;if(q&&!norm(m[0]).includes(q)&&!norm(m[6]).includes(q))return false;return true;});const show=r.slice(0,100);document.getElementById('catCount').textContent=`${r.length} models${r.length>100?' (first 100)':''}`;document.getElementById('catBody').innerHTML=show.map(m=>`<tr><td class="model-cell">${m[0]}</td><td>${m[1]}</td><td>${parseInt(m[2]).toLocaleString()}</td><td>${m[3]}</td><td>${m[4]}</td><td>${m[5]}</td><td>${m[6]}</td></tr>`).join('');}
 
-<!-- ── SHARE MODAL ── -->
-<div class="modal-overlay" id="share-modal">
-  <div class="modal">
-    <h3>Share Quote</h3>
-    <div class="field" style="margin-bottom:12px">
-      <label>Quote Summary</label>
-      <textarea id="share-text" style="height:130px;font-size:13px;"></textarea>
-    </div>
-    <div class="modal-btns">
-      <button class="m-btn cancel" onclick="closeModal('share-modal')">Cancel</button>
-      <button class="m-btn copy" onclick="copyShare()">📋 Copy</button>
-    </div>
-    <div class="modal-btns" style="margin-top:8px">
-      <button class="m-btn sms" onclick="smsShare()">💬 Text</button>
-      <button class="m-btn email" onclick="emailShare()">✉️ Email</button>
-    </div>
-  </div>
-</div>
+function showSeriesDetail(name){const g=getSeriesGroups();const d=g[name];if(!d)return;let rows=d.models.map(m=>`<tr><td class="model-cell">${m[0]}</td><td>${m[1]}</td><td>${parseInt(m[2]).toLocaleString()}</td><td>${m[3]}</td><td>${m[4]}</td><td>${m[5]}</td></tr>`).join('');C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showGPCatalog()">← Back to Catalog</button><div class="page-header"><div class="page-header-icon">📖</div><div><h2>${name}</h2><p><span class="brand-label gp">GP</span> ${d.models.length} models · ${d.minGPM}–${d.maxGPM} GPM · ${d.minPSI.toLocaleString()}–${d.maxPSI.toLocaleString()} PSI</p></div></div><div class="card"><div style="max-height:500px;overflow-y:auto"><table class="data-table"><thead><tr><th>Model</th><th>GPM</th><th>PSI</th><th>RPM</th><th>HP</th><th>Wt</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;C.scrollTop=0;}
 
-<!-- ── SCREENSHOT PREVIEW ── -->
-<div class="modal-overlay" id="screenshot-modal">
-  <div class="modal" style="max-width:500px">
-    <h3>Map Screenshot</h3>
-    <img id="screenshot-img" style="width:100%;border-radius:8px;border:2px solid var(--surface2)" src="" alt="Map capture">
-    <div class="modal-btns" style="margin-top:12px">
-      <button class="m-btn cancel" onclick="closeModal('screenshot-modal')">Close</button>
-      <button class="m-btn copy" onclick="downloadScreenshot()">⬇ Download</button>
-      <button class="m-btn email" onclick="shareScreenshot()">📤 Share</button>
-    </div>
-  </div>
-</div>
+function showGPAccessories(){setActive('gp-accessories');const cats=Object.entries(KB.gp.accessories);let cards=cats.map(([n,items])=>`<div class="acc-cat-card" onclick="showAccDetail('${esc(n)}')"><h5>${n}</h5><span>${items.length} items</span></div>`).join('');C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">🔗</div><div><h2>Accessories</h2><p><span class="brand-label gp">GENERAL PUMP</span> ${cats.reduce((a,c)=>a+c[1].length,0)} items · ${cats.length} categories</p></div></div><div class="card"><h4>Browse by Category</h4><div class="acc-cat-grid">${cards}</div></div></div>`;C.scrollTop=0;}
 
-<!-- ── AI PRICE MODAL ── -->
-<div class="modal-overlay" id="ai-price-modal">
-  <div class="modal">
-    <h3>✨ AI Price Suggestion</h3>
-    <div id="ai-price-content" class="ai-price-content"></div>
-    <div class="modal-btns" style="margin-top:14px">
-      <button class="m-btn cancel" onclick="closeModal('ai-price-modal')">Dismiss</button>
-      <button class="m-btn copy" id="apply-price-btn" onclick="applyAiPrice()">Apply Recommended</button>
-    </div>
-  </div>
-</div>
+function showAccDetail(name){const items=KB.gp.accessories[name];if(!items)return;let rows=items.map(x=>`<tr><td class="model-cell">${x[0]}</td><td style="font-family:var(--font-body);color:var(--text-muted)">${x[1]}</td></tr>`).join('');C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showGPAccessories()">← Back</button><div class="page-header"><div class="page-header-icon">🔗</div><div><h2>${name}</h2><p>${items.length} items</p></div></div><div class="card"><div style="max-height:600px;overflow-y:auto"><table class="data-table"><thead><tr><th>Part Number</th><th>Description</th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;C.scrollTop=0;}
 
-<!-- ── TOAST ── -->
-<div id="toast"></div>
+function showAlkTrouble(key){const t=KB.alk.troubleshooting[key];if(!t)return;setActive('alk-ts-'+key);C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">${t.icon}</div><div><h2>${t.title}</h2><p><span class="brand-label alk">ALKOTA</span> ${t.causes.length} cause/remedy pairs</p></div></div><div class="card"><h4 class="alk-h">Possible Causes &amp; Remedies</h4>${renderCauses(t.causes)}</div></div>`;C.scrollTop=0;}
 
-<script src="/js/app.js"></script>
+function showAlkMaint(){setActive('alk-maintenance');const m=KB.alk.maintenance;let h=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">🗓️</div><div><h2>Maintenance</h2><p><span class="brand-label alk">ALKOTA</span></p></div></div>`;for(const[key,val]of Object.entries(m.general)){const title=key.replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase()).trim();h+=`<div class="card"><h4 class="alk-h">${title}</h4><div class="info-block"><p>${val}</p></div></div>`;}h+=`</div>`;C.innerHTML=h;C.scrollTop=0;}
+
+function showAlkInstall(){setActive('alk-installation');const inst=KB.alk.installation;let h=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">🏗️</div><div><h2>Installation Guide</h2><p><span class="brand-label alk">ALKOTA</span></p></div></div>`;for(const[key,val]of Object.entries(inst)){const title=key.replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase()).trim();h+=`<div class="card"><h4 class="alk-h">${title}</h4><div class="info-block"><p>${val}</p></div></div>`;}h+=`</div>`;C.innerHTML=h;C.scrollTop=0;}
+
+function showAlkStartup(){setActive('alk-startup');const m=KB.alk.maintenance;C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="page-header"><div class="page-header-icon">▶️</div><div><h2>Start-Up &amp; Shutdown</h2><p><span class="brand-label alk">ALKOTA</span></p></div></div><div class="card"><h4 class="alk-h">Start-Up Procedure</h4>${renderSteps(m.startup)}</div><div class="card"><h4 class="alk-h">Shutdown Procedure</h4>${renderSteps(m.shutdown)}</div></div>`;C.scrollTop=0;}
+
+/* ═══ SEARCH ═══ */
+function genResponse(query){const q=norm(query);let html='';let found=false;
+  const pr=KB.gp.pumpModels.filter(m=>{const mn=norm(m[0]);return mn===q||q.includes(mn)||mn.includes(q);});
+  if(pr.length>0&&pr.length<=20){html+=`<h4><span class="brand-label gp">GP</span> Pump Specifications</h4><table class="data-table"><thead><tr><th>Model</th><th>GPM</th><th>PSI</th><th>RPM</th><th>HP</th><th>Wt</th><th>Series</th></tr></thead><tbody>`;for(const m of pr)html+=`<tr><td class="model-cell">${m[0]}</td><td>${m[1]}</td><td>${parseInt(m[2]).toLocaleString()}</td><td>${m[3]}</td><td>${m[4]}</td><td>${m[5]}</td><td>${m[6]}</td></tr>`;html+=`</tbody></table>`;found=true;}
+  const oilR=findOil(query);if(oilR.length>0){html+=`<h4><span class="brand-label gp">GP</span> Oil Recommendation</h4>`;for(const r of oilR)html+=`<div class="oil-result"><span class="model">${r.model}</span> → <span class="oil-badge ${r.badge}">${r.oil}</span> (${r.weight})</div>`;html+=`<div class="info-block"><p>⏱️ ${KB.gp.maintenance.oilChange}</p></div>`;found=true;}else if(/oil|lubric|lube|what oil|which oil/.test(q)){html+=`<h4><span class="brand-label gp">GP</span> Oil</h4><div class="info-block"><p><span class="oil-badge s100">100</span> 30W · <span class="oil-badge s220">220</span> 50W · <span class="oil-badge s8090">8090</span> 80/90 Gear Lube — provide model for specific rec.</p></div>`;found=true;}
+  const gpmM=q.match(/(\d+\.?\d*)\s*gpm/),psiM=q.match(/(\d+)\s*psi/);if((gpmM||psiM)&&/find|need|looking|want|recommend|which|what pump|select/.test(q)){const tG=gpmM?parseFloat(gpmM[1]):null,tP=psiM?parseInt(psiM[1]):null;let r=KB.gp.pumpModels.filter(m=>{const g=parseFloat(m[1]),p=parseInt(m[2]);if(tG&&(g<tG*0.85||g>tG*1.3))return false;if(tP&&(p<tP*0.85||p>tP*1.15))return false;return true;}).slice(0,15);if(r.length>0){html+=`<h4><span class="brand-label gp">GP</span> Matching Pumps</h4><table class="data-table"><thead><tr><th>Model</th><th>GPM</th><th>PSI</th><th>RPM</th><th>HP</th><th>Series</th></tr></thead><tbody>`;for(const m of r)html+=`<tr><td class="model-cell">${m[0]}</td><td>${m[1]}</td><td>${parseInt(m[2]).toLocaleString()}</td><td>${m[3]}</td><td>${m[4]}</td><td>${m[6]}</td></tr>`;html+=`</tbody></table>`;found=true;}}
+  if(/how (do|to)|service|replace|repair|remove|install|fix|rebuild|steps|procedure/.test(q)){const procs=[];if(/valve/.test(q))procs.push(KB.gp.serviceProcedures.valves);if(/plunger/.test(q))procs.push(KB.gp.serviceProcedures.plungers);if(/v.?pack|packing|seal replace/.test(q))procs.push(KB.gp.serviceProcedures.vpackings);if(procs.length>0){for(const p of procs){html+=`<h4><span class="brand-label gp">GP</span> ${p.title}</h4>${renderSteps(p.steps)}`;if(p.notes)html+=`<div class="info-block"><p>📌 ${p.notes}</p></div>`;}found=true;}}
+  const gpKW={pressure:["low pressure","no pressure","pressure drop","losing pressure"],pulsation:["pulsation","pulse","pulsing","surging"],rough:["rough","very low","cavitation","no output"],noise:["knock","knocking","loud noise","banging","noise","rattle"],packing:["packing failure","packing wear","premature packing"],overheating:["overheat","overheating","pump hot","running hot"],leak:["leak","leaking","drip","water leak","oil leak","milky oil","water in crankcase"]};for(const[k,kws]of Object.entries(gpKW)){if(kws.some(kw=>q.includes(kw))){const t=KB.gp.troubleshooting[k];if(t){html+=`<h4><span class="brand-label gp">GP</span> ${t.icon} ${t.title}</h4>`;const causes=t.causes||(t.items?t.items.flatMap(i=>i.causes):[]);html+=renderCauses(causes);found=true;}}}
+  for(const[key,val]of Object.entries(KB.alk.troubleshooting)){const tw=norm(val.title).split(' ');const match=tw.some(w=>w.length>3&&q.includes(w))||val.causes.some(c=>norm(c.cause).split(' ').some(w=>w.length>4&&q.includes(w)));if(match){html+=`<h4><span class="brand-label alk">ALKOTA</span> ${val.icon} ${val.title}</h4>${renderCauses(val.causes.slice(0,10))}`;found=true;}}
+  if(/maintenance|schedule|interval|when should|how often/.test(q)&&!found){html+=`<h4><span class="brand-label gp">GP</span> Maintenance</h4><div class="info-block"><p>${KB.gp.maintenance.oilChange}</p><p><strong>Every 500h:</strong> ${KB.gp.maintenance.every500.join(', ')}</p></div><h4 style="margin-top:1rem"><span class="brand-label alk">ALKOTA</span> Maintenance</h4>`;for(const[k,v]of Object.entries(KB.alk.maintenance.general).slice(0,4))html+=`<div class="info-block"><p><strong>${k.replace(/([A-Z])/g,' $1').trim()}:</strong> ${v}</p></div>`;found=true;}
+  if(/warranty|coverage|covered/.test(q)&&!found){html+=`<h4><span class="brand-label gp">GP</span> Warranty</h4><div class="info-block"><p><strong>Pumps:</strong> ${KB.gp.warranty.pumpWarranty}</p><p><strong>Manifolds:</strong> ${KB.gp.warranty.manifoldWarranty}</p></div>`;found=true;}
+  if(/system|motor|engine|pulley|spray tip|unloader|thermal|hose|plumbing/.test(q)&&!found){html+=`<h4><span class="brand-label gp">GP</span> System Design</h4>`;for(const item of Object.values(KB.gp.systemDesign)){const tw=norm(item.title).split(' ');if(tw.some(w=>w.length>3&&q.includes(w)))html+=`<div class="info-block"><p><strong>${item.title}:</strong> ${item.text}</p></div>`;}found=true;}
+  if(!found){const ar=[];for(const[cat,items]of Object.entries(KB.gp.accessories))for(const item of items)if(norm(item[0]).includes(q)||norm(item[1]).includes(q))ar.push({cat,part:item[0],desc:item[1]});if(ar.length>0){html+=`<h4><span class="brand-label gp">GP</span> Accessories</h4><table class="data-table"><thead><tr><th>Part</th><th>Category</th><th>Description</th></tr></thead><tbody>`;for(const r of ar.slice(0,20))html+=`<tr><td class="model-cell">${r.part}</td><td>${r.cat}</td><td style="font-family:var(--font-body);color:var(--text-muted)">${r.desc}</td></tr>`;html+=`</tbody></table>`;found=true;}}
+  if(!found)html+=`<div class="info-block"><p>I can help with:</p><p>🔍 <span class="brand-label gp">GP</span> Pump lookup — model or specs</p><p>🔧 <span class="brand-label gp">GP</span> Troubleshooting — pressure, leaks, noise, packing</p><p>🛢️ <span class="brand-label gp">GP</span> Oil — "oil for TS2021"</p><p>🔥 <span class="brand-label alk">ALK</span> Troubleshooting — burner, pilot, motor, temperature</p><p>🗓️ Maintenance — schedules for both brands</p></div>`;
+  return html;}
+
+function showSearch(query){setActive('home');C.innerHTML=`<div class="section-page"><button class="back-btn" onclick="showHome()">← Back</button><div class="messages"><div class="msg msg-user"><div class="bubble">${esc(query)}</div></div><div class="msg msg-bot"><div class="bot-avatar">⚙️</div><div class="bubble">${genResponse(query)}</div></div></div></div>`;C.scrollTop=0;}
+
+/* ═══ ROUTING ═══ */
+function nav(t){
+  if(t==='home')return showHome();
+  if(t.startsWith('gp-')){const k=t.slice(3);if(KB.gp.troubleshooting[k])return showGPTrouble(k);if(k==='valves'||k==='plungers'||k==='vpackings')return showGPService(k);if(k==='oil')return showGPOil();if(k==='maintenance')return showGPMaint();if(k==='catalog')return showGPCatalog();if(k==='accessories')return showGPAccessories();if(k==='system')return showGPSystem();if(k==='warranty')return showGPWarranty();}
+  if(t.startsWith('alk-ts-'))return showAlkTrouble(t.slice(7));
+  if(t==='alk-maintenance')return showAlkMaint();if(t==='alk-installation')return showAlkInstall();if(t==='alk-startup')return showAlkStartup();}
+
+function handleSend(){const q=I.value.trim();if(!q)return;I.value='';showSearch(q);}
+function askQ(q){I.value=q;handleSend();}
+I.addEventListener('keydown',e=>{if(e.key==='Enter')handleSend()});
+
+if(typeof KB!=='undefined'&&KB.meta){document.getElementById('headerStats').innerHTML=`<div class="stat"><div class="stat-val">${KB.meta.stats.gpPumps}</div><div class="stat-label">Pumps</div></div><div class="stat"><div class="stat-val">${KB.meta.stats.totalSources}</div><div class="stat-label">Sources</div></div><div class="stat"><div class="stat-val">2</div><div class="stat-label">Brands</div></div>`;}
+buildSidebar();showHome();I.focus();
+</script>
 </body>
 </html>

@@ -103,12 +103,18 @@ function initMap() {
 
 function setDrawMode(mode) {
   if (!draw) return;
-  draw.changeMode(mode);
+  try {
+    draw.changeMode(mode);
+  } catch(e) {
+    console.warn('Draw mode error:', e);
+    return;
+  }
   document.querySelectorAll('.map-tool-btn').forEach(b => b.classList.remove('active'));
-  const id = mode === 'draw_polygon' ? 'tool-polygon'
-           : mode === 'draw_line_string' ? 'tool-line'
-           : 'tool-rect';
-  document.getElementById(id)?.classList.add('active');
+  const id = mode === 'draw_polygon'     ? 'tool-polygon'
+           : mode === 'draw_line_string'  ? 'tool-line'
+           : mode === 'simple_select'     ? 'tool-select'
+           : null;
+  if (id) document.getElementById(id)?.classList.add('active');
 }
 
 function onDrawChange(e) {
