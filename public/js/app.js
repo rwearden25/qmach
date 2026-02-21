@@ -1,36 +1,120 @@
-// ── State
-let map, draw;
+// ══════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════
+let map = null;
+let draw = null;
 let mapboxToken = '';
 let drawnFeature = null;
-let drawnType = null; // 'polygon' | 'line'
+let drawnRawMeters = 0;
+let drawnRawType = 'area';
 let lastAddress = '';
-let lastLat = null, lastLng = null;
+let lastLat = null;
+let lastLng = null;
 let chatHistory = [];
 let aiPriceData = null;
-let panelY = 0;
-let isDragging = false;
 let screenshotDataURL = null;
-const PANEL_MIN_HEIGHT = 44;
+let isDragging = false;
+let mapStyleHasLabels = true;
+let debounceTimer = null;
 
-// ── Boot
-(async function init() {
+// ══════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', async () => {
+  buildPriceDropdowns();
+  updateCalc();
+  initPanelDrag();
+  initModalBackdrops();
+  loadSavedCount();
+
+  // ── Map toolbar
+  on('tool-polygon',    () => setDrawMode('draw_polygon'));
+  on('tool-line',       () => setDrawMode('draw_line_string'));
+  on('tool-select',     () => setDrawMode('simple_select'));
+  on('tool-clear',      () => clearDrawing());
+  on('tool-screenshot', () => takeScreenshot());
+  on('tool-satellite',  () => toggleLabels());
+  on('search-btn',      () => geocodeAddress());
+  on('badge-clear-btn', () => clearDrawing());
+
+  // ── Address input
+  const addr = document.getElementById('addr-input');
+  if (addr) {
+    addr.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      const q = addr.value.trim();
+      if (q.length < 3) { clearAutocomplete(); return; }
+      debounceTimer = setTimeout(() => fetchSuggestions(q), 300);
+    });
+    addr.addEventListener('keydown', e => { if (e.key === 'Enter') geocodeAddress(); });
+  }
+
+  // ── Tabs
+  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+    btn.addEventListener('click', () => showTab(['quote','saved','stats'][i]));
+  });
+
+  // ── Calc triggers
+  ['measure-type','qty','price-dollars','price-cents','markup','project-type'].forEach(id =>
+    on(id, () => updateCalc(), 'change'));
+  on('manual-area', () => updateCalc(), 'input');
+
+  // ── Quote actions
+  on('btn-save',      () => saveQuote());
+  on('btn-narrative', () => generateNarrative());
+  on('btn-print',     () => printQuote());
+  on('btn-share',     () => openShareModal(null));
+  on('btn-new',       () => newQuote());
+  on('ai-suggest-btn',() => aiSuggestPrice());
+  on('btn-narrative-regen', () => generateNarrative());
+
+  // ── Header
+  on('ai-chat-btn',   () => openAiPanel());
+
+  // ── AI panel
+  on('ai-panel-close',() => closeAiPanel());
+  on('ai-overlay',    () => closeAiPanel());
+  on('chat-send-btn', () => sendChat());
+  const chatIn = document.getElementById('chat-input');
+  if (chatIn) chatIn.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+  // ── Share modal
+  on('share-cancel',  () => closeModal('share-modal'));
+  on('share-copy',    () => copyShare());
+  on('share-sms',     () => smsShare());
+  on('share-email',   () => emailShare());
+
+  // ── Screenshot modal
+  on('ss-close',      () => closeModal('screenshot-modal'));
+  on('ss-download',   () => downloadScreenshot());
+  on('ss-share',      () => shareScreenshot());
+
+  // ── AI price modal
+  on('ai-price-dismiss', () => closeModal('ai-price-modal'));
+  on('ai-price-apply',   () => applyAiPrice());
+
+  // ── Saved tab
+  on('search-input',  () => loadSaved(), 'input');
+  on('export-btn',    () => exportAll());
+
+  // ── Load map config
   try {
     const cfg = await fetch('/api/config').then(r => r.json());
-    mapboxToken = cfg.mapboxToken;
-    if (!mapboxToken) {
-      document.getElementById('map-hint').textContent = '⚠️ Mapbox token not configured — set MAPBOX_TOKEN env var';
-      return;
-    }
+    mapboxToken = cfg.mapboxToken || '';
+    if (!mapboxToken) { setMapHint('⚠️ Map unavailable — MAPBOX_TOKEN not set'); return; }
     initMap();
-    buildPriceDropdowns();
-    updateCalc();
-    loadSavedCount();
-    initPanelDrag();
     geolocateUser();
   } catch (err) {
-    console.error('Init error:', err);
+    console.error('Boot error:', err);
+    setMapHint('⚠️ Failed to load config');
   }
-})();
+});
+
+// Helper: bind click (or other event) to element by id
+function on(id, fn, evt = 'click') {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(evt, fn);
+}
 
 // ══════════════════════════════════════════
 //  MAP
@@ -41,7 +125,7 @@ function initMap() {
   map = new mapboxgl.Map({
     container: 'map',
     style: 'mapbox://styles/mapbox/satellite-streets-v12',
-    center: [-96.7970, 32.7767], // DFW default
+    center: [-96.7970, 32.7767],
     zoom: 17,
     attributionControl: true,
     logoPosition: 'bottom-left'
@@ -53,147 +137,84 @@ function initMap() {
     trackUserLocation: false
   }), 'bottom-right');
 
-  // Mapbox Draw
   draw = new MapboxDraw({
     displayControlsDefault: false,
     controls: {},
     styles: [
-      {
-        id: 'gl-draw-polygon-fill',
-        type: 'fill',
+      { id: 'gl-draw-polygon-fill', type: 'fill',
         filter: ['all', ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
-        paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.25 }
-      },
-      {
-        id: 'gl-draw-polygon-stroke',
-        type: 'line',
-        filter: ['all', ['==', '$type', 'Polygon'], ['!=', 'mode', 'static']],
-        paint: { 'line-color': '#E8A020', 'line-width': 3 }
-      },
-      {
-        id: 'gl-draw-line',
-        type: 'line',
+        paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.22 } },
+      { id: 'gl-draw-polygon-stroke', type: 'line',
+        filter: ['all', ['==', '$type', 'Polygon']],
+        paint: { 'line-color': '#E8A020', 'line-width': 3 } },
+      { id: 'gl-draw-line', type: 'line',
         filter: ['all', ['==', '$type', 'LineString'], ['!=', 'mode', 'static']],
-        paint: { 'line-color': '#E8A020', 'line-width': 4, 'line-dasharray': [2, 1] }
-      },
-      {
-        id: 'gl-draw-vertex',
-        type: 'circle',
-        filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point'], ['!=', 'mode', 'static']],
-        paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': 'white', 'circle-stroke-width': 2 }
-      },
-      {
-        id: 'gl-draw-midpoint',
-        type: 'circle',
+        paint: { 'line-color': '#E8A020', 'line-width': 4, 'line-dasharray': [2,1] } },
+      { id: 'gl-draw-vertex', type: 'circle',
+        filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point']],
+        paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } },
+      { id: 'gl-draw-midpoint', type: 'circle',
         filter: ['all', ['==', 'meta', 'midpoint'], ['==', '$type', 'Point']],
-        paint: { 'circle-radius': 4, 'circle-color': '#F5C35A', 'circle-stroke-color': 'white', 'circle-stroke-width': 1 }
-      }
+        paint: { 'circle-radius': 4, 'circle-color': '#F5C35A' } }
     ]
   });
-  map.addControl(draw);
 
+  map.addControl(draw);
   map.on('draw.create', onDrawChange);
   map.on('draw.update', onDrawChange);
   map.on('draw.delete', onDrawDelete);
 
-  // Wait for map to fully load before activating draw tools
   map.on('load', () => {
-    setDrawMode('draw_polygon');
-    document.getElementById('map-hint').classList.remove('hidden');
+    activateTool('tool-polygon');
+    setMapHint('Tap ⬡ then draw on the map to measure');
   });
 }
 
+// ── Draw tools
 function setDrawMode(mode) {
-  if (!draw || !map) return;
-  if (!map.loaded()) {
-    map.once('load', () => setDrawMode(mode));
-    return;
-  }
+  if (!draw || !map) { showToast('Map loading...'); return; }
+  if (!map.loaded()) { map.once('load', () => setDrawMode(mode)); return; }
   try {
     draw.changeMode(mode);
-    document.querySelectorAll('.map-tool-btn').forEach(b => b.classList.remove('active'));
-    const id = mode === 'draw_polygon'     ? 'tool-polygon'
-             : mode === 'draw_line_string'  ? 'tool-line'
-             : mode === 'simple_select'     ? 'tool-select'
-             : null;
-    if (id) document.getElementById(id)?.classList.add('active');
+    const ids = { draw_polygon:'tool-polygon', draw_line_string:'tool-line', simple_select:'tool-select' };
+    activateTool(ids[mode] || null);
   } catch(e) {
-    console.warn('setDrawMode error:', mode, e);
+    console.warn('setDrawMode:', e.message);
   }
 }
 
-function onDrawChange(e) {
+function activateTool(id) {
+  document.querySelectorAll('.map-tool-btn').forEach(b => b.classList.remove('active'));
+  if (id) document.getElementById(id)?.classList.add('active');
+}
+
+function onDrawChange() {
   const data = draw.getAll();
   if (!data.features.length) return;
   drawnFeature = data.features[0];
-  drawnType = drawnFeature.geometry.type === 'LineString' ? 'line' : 'polygon';
-  calculateFromFeature(drawnFeature, drawnType);
-  document.getElementById('map-hint').classList.add('hidden');
-}
-
-function onDrawDelete() {
-  drawnFeature = null;
-  drawnType = null;
-  document.getElementById('measure-badge').style.display = 'none';
-  document.getElementById('map-hint').classList.remove('hidden');
-  document.getElementById('manual-area').value = '';
-  updateCalc();
-}
-
-function calculateFromFeature(feature, type) {
-  if (type === 'line') {
-    const length = turf.length(feature, { units: 'meters' });
-    // Store raw meters
-    feature._rawMeters = length;
-    feature._rawType = 'line';
+  if (drawnFeature.geometry.type === 'LineString') {
+    drawnRawMeters = turf.length(drawnFeature, { units: 'meters' });
+    drawnRawType = 'line';
     document.getElementById('measure-type').value = 'linft';
   } else {
-    const area = turf.area(feature); // sq meters
-    feature._rawMeters = area;
-    feature._rawType = 'area';
+    drawnRawMeters = turf.area(drawnFeature);
+    drawnRawType = 'area';
     document.getElementById('measure-type').value = 'sqft';
   }
   document.getElementById('manual-area').value = '';
   updateCalc();
-  showMeasureBadge();
+  updateBadge();
+  setMapHint('');
 }
 
-function getRawMeasurement() {
-  if (!drawnFeature) return 0;
-  return drawnFeature._rawMeters || 0;
-}
-
-function getDisplayMeasurement() {
-  const manual = parseFloat(document.getElementById('manual-area').value);
-  const type = document.getElementById('measure-type').value;
-
-  if (!isNaN(manual) && manual > 0) {
-    return manual;
-  }
-
-  const raw = getRawMeasurement();
-  if (!raw) return 0;
-
-  const isLine = drawnFeature?._rawType === 'line';
-  switch (type) {
-    case 'sqft':  return isLine ? raw * 3.28084  : raw * 10.7639;
-    case 'linft': return raw * 3.28084;
-    case 'sqyd':  return raw * 1.19599;
-    case 'acre':  return raw / 4046.86;
-    default:      return raw * 10.7639;
-  }
-}
-
-function unitLabel(type) {
-  return { sqft: 'sq ft', linft: 'lin ft', sqyd: 'sq yd', acre: 'acres' }[type] || 'sq ft';
-}
-
-function showMeasureBadge() {
-  const val = getDisplayMeasurement();
-  const type = document.getElementById('measure-type').value;
-  document.getElementById('badge-val').textContent = val.toLocaleString(undefined, { maximumFractionDigits: 1 });
-  document.getElementById('badge-unit').textContent = unitLabel(type);
-  document.getElementById('measure-badge').style.display = 'flex';
+function onDrawDelete() {
+  drawnFeature = null;
+  drawnRawMeters = 0;
+  drawnRawType = 'area';
+  document.getElementById('measure-badge').style.display = 'none';
+  document.getElementById('manual-area').value = '';
+  setMapHint('Tap ⬡ then draw on the map to measure');
+  updateCalc();
 }
 
 function clearDrawing() {
@@ -201,116 +222,131 @@ function clearDrawing() {
   onDrawDelete();
 }
 
+function getDisplayMeasurement() {
+  const manual = parseFloat(document.getElementById('manual-area').value);
+  if (!isNaN(manual) && manual > 0) return manual;
+  if (!drawnRawMeters) return 0;
+  const type = document.getElementById('measure-type').value;
+  if (drawnRawType === 'line') return drawnRawMeters * 3.28084;
+  switch (type) {
+    case 'sqft':  return drawnRawMeters * 10.7639;
+    case 'linft': return drawnRawMeters * 3.28084;
+    case 'sqyd':  return drawnRawMeters * 1.19599;
+    case 'acre':  return drawnRawMeters / 4046.86;
+    default:      return drawnRawMeters * 10.7639;
+  }
+}
+
+function unitLabel(type) {
+  return { sqft:'sq ft', linft:'lin ft', sqyd:'sq yd', acre:'acres' }[type] || 'sq ft';
+}
+
+function updateBadge() {
+  const val = getDisplayMeasurement();
+  const type = document.getElementById('measure-type').value;
+  document.getElementById('badge-val').textContent = fmt(val);
+  document.getElementById('badge-unit').textContent = unitLabel(type);
+  document.getElementById('measure-badge').style.display = 'flex';
+}
+
+function setMapHint(msg) {
+  const el = document.getElementById('map-hint');
+  if (!el) return;
+  if (msg) { el.textContent = msg; el.style.display = 'block'; }
+  else { el.style.display = 'none'; }
+}
+
+// ── Toggle labels
 function toggleLabels() {
   if (!map) return;
-  const style = map.getStyle().name;
-  if (style && style.includes('satellite-streets')) {
-    map.setStyle('mapbox://styles/mapbox/satellite-v9');
-    showToast('Labels hidden');
-  } else {
-    map.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
-    showToast('Labels shown');
-  }
-  // Re-add draw control after style change
+  mapStyleHasLabels = !mapStyleHasLabels;
+  const style = mapStyleHasLabels
+    ? 'mapbox://styles/mapbox/satellite-streets-v12'
+    : 'mapbox://styles/mapbox/satellite-v9';
+  const saved = draw ? draw.getAll() : null;
+  map.setStyle(style);
   map.once('style.load', () => {
-    map.addControl(draw);
+    if (draw) {
+      try { map.removeControl(draw); } catch(e) {}
+      map.addControl(draw);
+      if (saved && saved.features.length) draw.add(saved);
+    }
+    showToast(mapStyleHasLabels ? 'Labels on' : 'Labels off');
   });
 }
 
+// ── Screenshot
 function takeScreenshot() {
-  showToast('Capturing map...');
-  const mapCanvas = map.getCanvas();
-  const dataURL = mapCanvas.toDataURL('image/png');
-  screenshotDataURL = dataURL;
-  document.getElementById('screenshot-img').src = dataURL;
-  openModal('screenshot-modal');
+  if (!map) { showToast('Map not loaded'); return; }
+  try {
+    screenshotDataURL = map.getCanvas().toDataURL('image/png');
+    document.getElementById('screenshot-img').src = screenshotDataURL;
+    openModal('screenshot-modal');
+  } catch(e) { showToast('Screenshot failed'); }
 }
 
 function downloadScreenshot() {
   if (!screenshotDataURL) return;
   const a = document.createElement('a');
   a.href = screenshotDataURL;
-  const addr = lastAddress ? lastAddress.split(',')[0].replace(/\s/g, '_') : 'map';
-  a.download = `quote-machine-${addr}-${Date.now()}.png`;
+  a.download = 'quote-map-' + Date.now() + '.png';
   a.click();
 }
 
 function shareScreenshot() {
-  if (!screenshotDataURL) return;
-  // Convert dataURL to blob for Web Share API
-  fetch(screenshotDataURL)
-    .then(r => r.blob())
-    .then(blob => {
-      const file = new File([blob], 'quote-map.png', { type: 'image/png' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: 'QUOTE machine map' });
-      } else {
-        downloadScreenshot();
-      }
-    });
+  if (!screenshotDataURL) { downloadScreenshot(); return; }
+  fetch(screenshotDataURL).then(r => r.blob()).then(blob => {
+    const file = new File([blob], 'quote-map.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'QUOTE machine' });
+    } else { downloadScreenshot(); }
+  });
 }
-
-// ── Address Geocoding (Mapbox)
-let debounceTimer;
-document.getElementById('addr-input').addEventListener('input', function() {
-  clearTimeout(debounceTimer);
-  const q = this.value.trim();
-  if (q.length < 3) {
-    document.getElementById('autocomplete-list').innerHTML = '';
-    return;
-  }
-  debounceTimer = setTimeout(() => fetchSuggestions(q), 300);
-});
 
 async function fetchSuggestions(q) {
   if (!mapboxToken) return;
   try {
-    const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=5&country=US`
-    );
-    const data = await res.json();
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=5&country=US`;
+    const data = await fetch(url).then(r => r.json());
     const list = document.getElementById('autocomplete-list');
     list.innerHTML = '';
     (data.features || []).forEach(f => {
       const item = document.createElement('div');
       item.className = 'autocomplete-item';
       item.textContent = f.place_name;
-      item.onclick = () => {
+      item.addEventListener('click', () => {
         document.getElementById('addr-input').value = f.place_name;
-        list.innerHTML = '';
+        clearAutocomplete();
         flyTo(f.center[0], f.center[1], f.place_name);
-      };
+      });
       list.appendChild(item);
     });
-  } catch (e) {}
+  } catch(e) {}
 }
 
 async function geocodeAddress() {
   const q = document.getElementById('addr-input').value.trim();
-  if (!q || !mapboxToken) return;
-  document.getElementById('autocomplete-list').innerHTML = '';
+  if (!q) return;
+  clearAutocomplete();
+  if (!mapboxToken) { showToast('Map not available'); return; }
   try {
-    const res = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=1`
-    );
-    const data = await res.json();
-    if (data.features?.length) {
-      const f = data.features[0];
-      flyTo(f.center[0], f.center[1], f.place_name);
-    } else {
-      showToast('Address not found');
-    }
-  } catch (e) {
-    showToast('Search error');
-  }
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=1`;
+    const data = await fetch(url).then(r => r.json());
+    if (data.features?.length) { const f = data.features[0]; flyTo(f.center[0], f.center[1], f.place_name); }
+    else showToast('Address not found');
+  } catch { showToast('Search error'); }
 }
 
-function flyTo(lng, lat, placeName) {
-  lastLat = lat;
-  lastLng = lng;
-  lastAddress = placeName;
-  document.getElementById('address-display').textContent = placeName.split(',').slice(0, 2).join(',');
-  map.flyTo({ center: [lng, lat], zoom: 19, speed: 1.5 });
+function clearAutocomplete() {
+  const el = document.getElementById('autocomplete-list');
+  if (el) el.innerHTML = '';
+}
+
+function flyTo(lng, lat, name) {
+  lastLat = lat; lastLng = lng; lastAddress = name;
+  const el = document.getElementById('address-display');
+  if (el) el.textContent = name.split(',').slice(0,2).join(',');
+  if (map) map.flyTo({ center: [lng, lat], zoom: 19, speed: 1.5 });
 }
 
 function geolocateUser() {
@@ -321,45 +357,41 @@ function geolocateUser() {
 }
 
 // ══════════════════════════════════════════
-//  PRICING CALC
+//  PRICING
 // ══════════════════════════════════════════
 function buildPriceDropdowns() {
   const dSel = document.getElementById('price-dollars');
   const cSel = document.getElementById('price-cents');
-  for (let d = 0; d <= 5; d++) {
-    const o = new Option('$' + d, d);
-    dSel.appendChild(o);
-  }
+  if (!dSel || !cSel) return;
+  for (let d = 0; d <= 5; d++) dSel.appendChild(new Option('$' + d, d));
   for (let c = 0; c <= 99; c++) {
-    const o = new Option(c.toString().padStart(2, '0') + '¢', c);
+    const o = new Option(c.toString().padStart(2,'0') + '¢', c);
     if (c === 5) o.selected = true;
     cSel.appendChild(o);
   }
 }
 
 function getPrice() {
-  const d = parseFloat(document.getElementById('price-dollars').value) || 0;
-  const c = parseFloat(document.getElementById('price-cents').value) || 0;
-  const markup = parseFloat(document.getElementById('markup').value) || 0;
-  const base = d + c / 100;
-  return base * (1 + markup / 100);
+  const d = parseFloat(document.getElementById('price-dollars')?.value) || 0;
+  const c = parseFloat(document.getElementById('price-cents')?.value) || 0;
+  const markup = parseFloat(document.getElementById('markup')?.value) || 0;
+  return (d + c / 100) * (1 + markup / 100);
 }
 
 function updateCalc() {
-  const area = getDisplayMeasurement();
-  const qty = parseInt(document.getElementById('qty').value) || 1;
-  const type = document.getElementById('measure-type').value;
+  const area  = getDisplayMeasurement();
+  const qty   = parseInt(document.getElementById('qty')?.value) || 1;
+  const type  = document.getElementById('measure-type')?.value || 'sqft';
   const price = getPrice();
   const totalArea = area * qty;
   const total = totalArea * price;
 
-  document.getElementById('area-display').textContent = totalArea.toLocaleString(undefined, { maximumFractionDigits: 1 });
-  document.getElementById('unit-display').textContent = unitLabel(type) + (qty > 1 ? ' × ' + qty : '');
-  document.getElementById('total-display').textContent = '$' + total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  document.getElementById('breakdown-display').textContent =
-    totalArea.toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' ' + unitLabel(type) + ' × $' + price.toFixed(2);
+  setText('area-display', fmt(totalArea));
+  setText('unit-display', unitLabel(type) + (qty > 1 ? ' ×' + qty : ''));
+  setText('total-display', '$' + fmtMoney(total));
+  setText('breakdown-display', fmt(totalArea) + ' ' + unitLabel(type) + ' × $' + price.toFixed(2));
 
-  if (drawnFeature) showMeasureBadge();
+  if (drawnFeature) updateBadge();
 }
 
 // ══════════════════════════════════════════
@@ -367,128 +399,97 @@ function updateCalc() {
 // ══════════════════════════════════════════
 async function aiSuggestPrice() {
   const btn = document.getElementById('ai-suggest-btn');
-  const projType = document.getElementById('project-type').value;
   const area = getDisplayMeasurement();
-  const unit = unitLabel(document.getElementById('measure-type').value);
-
-  if (!area || area <= 0) {
-    showToast('Draw a shape or enter area first');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = '⏳ Loading...';
-
+  if (!area) { showToast('Draw or enter an area first'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳...'; }
   try {
     const res = await fetch('/api/ai/suggest-price', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        project_type: projType,
+        project_type: document.getElementById('project-type')?.value,
         area: area.toFixed(1),
-        unit,
+        unit: unitLabel(document.getElementById('measure-type')?.value),
         location: lastAddress || 'DFW Texas'
       })
     });
-
-    if (!res.ok) throw new Error('AI request failed');
+    if (!res.ok) throw new Error();
     aiPriceData = await res.json();
     showAiPriceModal(aiPriceData);
-  } catch (err) {
-    showToast('AI pricing request failed');
-    console.error(err);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '✨ AI Suggest';
-  }
+  } catch { showToast('AI pricing failed'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '✨ AI Suggest'; } }
 }
 
-function showAiPriceModal(data) {
-  const fmtUSD = v => '$' + parseFloat(v).toFixed(2);
-  const content = document.getElementById('ai-price-content');
-  content.innerHTML = `
+function showAiPriceModal(d) {
+  const f2 = v => '$' + parseFloat(v||0).toFixed(2);
+  document.getElementById('ai-price-content').innerHTML = `
     <div class="price-tier low">
-      <div><div class="tier-label">🟢 Low</div><div style="font-size:11px;color:#666">Budget competitive</div></div>
-      <div><div class="tier-val">${fmtUSD(data.low_per_unit)}<small style="font-size:14px">/unit</small></div><div style="font-size:12px;text-align:right;color:#555">Total: ${fmtUSD(data.low_total)}</div></div>
+      <div><div class="tier-label">🟢 Low</div><div class="tier-sub">Budget rate</div></div>
+      <div class="tier-right"><div class="tier-val">${f2(d.low_per_unit)}<span>/unit</span></div><div class="tier-total">Total: ${f2(d.low_total)}</div></div>
     </div>
     <div class="price-tier mid">
-      <div><div class="tier-label">⭐ Recommended</div><div style="font-size:11px;color:#666">Market rate</div></div>
-      <div><div class="tier-val">${fmtUSD(data.recommended_per_unit)}<small style="font-size:14px">/unit</small></div><div style="font-size:12px;text-align:right;color:#555">Total: ${fmtUSD(data.mid_total)}</div></div>
+      <div><div class="tier-label">⭐ Recommended</div><div class="tier-sub">Market rate</div></div>
+      <div class="tier-right"><div class="tier-val">${f2(d.recommended_per_unit)}<span>/unit</span></div><div class="tier-total">Total: ${f2(d.mid_total)}</div></div>
     </div>
     <div class="price-tier high">
-      <div><div class="tier-label">🔴 Premium</div><div style="font-size:11px;color:#666">High-end market</div></div>
-      <div><div class="tier-val">${fmtUSD(data.high_per_unit)}<small style="font-size:14px">/unit</small></div><div style="font-size:12px;text-align:right;color:#555">Total: ${fmtUSD(data.high_total)}</div></div>
+      <div><div class="tier-label">🔴 Premium</div><div class="tier-sub">High-end</div></div>
+      <div class="tier-right"><div class="tier-val">${f2(d.high_per_unit)}<span>/unit</span></div><div class="tier-total">Total: ${f2(d.high_total)}</div></div>
     </div>
-    ${data.reasoning ? `<div class="ai-reasoning">💡 ${data.reasoning}</div>` : ''}
-    ${data.factors?.length ? `<div class="ai-reasoning" style="margin-top:6px">Factors: ${data.factors.join(' · ')}</div>` : ''}
-  `;
+    ${d.reasoning ? `<div class="ai-reasoning">💡 ${d.reasoning}</div>` : ''}
+    ${d.factors?.length ? `<div class="ai-reasoning">Factors: ${d.factors.join(' · ')}</div>` : ''}`;
   openModal('ai-price-modal');
 }
 
 function applyAiPrice() {
   if (!aiPriceData) return;
-  const recommended = parseFloat(aiPriceData.recommended_per_unit);
-  const dollars = Math.floor(recommended);
-  const cents = Math.round((recommended - dollars) * 100);
-  document.getElementById('price-dollars').value = dollars > 5 ? 5 : dollars;
-  document.getElementById('price-cents').value = cents;
+  const rec = parseFloat(aiPriceData.recommended_per_unit);
+  const dollars = Math.min(5, Math.floor(rec));
+  const cents = Math.round((rec - Math.floor(rec)) * 100);
+  const dSel = document.getElementById('price-dollars');
+  const cSel = document.getElementById('price-cents');
+  if (dSel) dSel.value = dollars;
+  if (cSel) cSel.value = cents;
   updateCalc();
   closeModal('ai-price-modal');
-  showToast('AI price applied! ✨');
+  showToast('AI price applied ✨');
 }
 
 async function generateNarrative() {
-  const client = document.getElementById('client-name').value.trim();
-  const projType = document.getElementById('project-type').value;
+  const client = document.getElementById('client-name')?.value.trim();
+  if (!client) { showToast('Enter a client name first'); return; }
+  const section = document.getElementById('narrative-section');
+  const box = document.getElementById('narrative-text');
+  section.style.display = 'block';
+  box.textContent = '✍️ Generating...';
   const area = getDisplayMeasurement();
-  const unit = unitLabel(document.getElementById('measure-type').value);
+  const unit = unitLabel(document.getElementById('measure-type')?.value);
   const price = getPrice();
-  const qty = parseInt(document.getElementById('qty').value) || 1;
-  const total = (area * qty * price).toFixed(2);
-  const notes = document.getElementById('notes').value;
-
-  if (!client) {
-    showToast('Enter a client name first');
-    return;
-  }
-
-  const narSection = document.getElementById('narrative-section');
-  const narText = document.getElementById('narrative-text');
-  narSection.style.display = 'block';
-  narText.textContent = '✍️ Generating professional narrative...';
-
+  const qty = parseInt(document.getElementById('qty')?.value) || 1;
   try {
     const res = await fetch('/api/ai/generate-narrative', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client_name: client,
-        project_type: projType.replace(/-/g, ' '),
-        area: area.toFixed(1),
-        unit,
-        price_per_unit: price.toFixed(2),
-        total,
-        notes,
-        address: lastAddress,
-        qty
+        project_type: document.getElementById('project-type')?.value.replace(/-/g,' '),
+        area: area.toFixed(1), unit, price_per_unit: price.toFixed(2),
+        total: (area * qty * price).toFixed(2),
+        notes: document.getElementById('notes')?.value || '',
+        address: lastAddress, qty
       })
     });
     const data = await res.json();
-    narText.textContent = data.narrative || 'No narrative generated.';
-    showToast('Narrative generated! ✍️');
-  } catch (err) {
-    narText.textContent = 'Failed to generate narrative. Check your connection.';
-  }
+    box.textContent = data.narrative || 'No narrative returned.';
+    showToast('Narrative ready ✍️');
+  } catch { box.textContent = 'Failed — check connection.'; }
 }
 
-// ── AI Chat
+// AI Chat
 function openAiPanel() {
   document.getElementById('ai-panel').classList.add('open');
   document.getElementById('ai-overlay').classList.add('open');
   if (!chatHistory.length) {
-    addChatMsg('ai', "Hi! I'm your QUOTE machine assistant. Ask me about pricing, measurements, or anything trades-related. 💡");
+    addChatMsg('ai', "Hi! I'm your QUOTE machine assistant. Ask me about pricing, measurements, or anything trades-related 💡");
   }
-  setTimeout(() => document.getElementById('chat-input').focus(), 300);
+  setTimeout(() => document.getElementById('chat-input')?.focus(), 300);
 }
 
 function closeAiPanel() {
@@ -496,49 +497,39 @@ function closeAiPanel() {
   document.getElementById('ai-overlay').classList.remove('open');
 }
 
-document.getElementById('ai-chat-btn').onclick = openAiPanel;
-
 async function sendChat() {
   const input = document.getElementById('chat-input');
-  const msg = input.value.trim();
+  const msg = input?.value.trim();
   if (!msg) return;
   input.value = '';
-
   addChatMsg('user', msg);
   chatHistory.push({ role: 'user', content: msg });
-
-  // typing indicator
-  const typingId = addChatMsg('ai', '...', true);
-
+  const tid = addChatMsg('ai', '...', true);
   try {
-    const context = {
-      project_type: document.getElementById('project-type').value,
-      area: getDisplayMeasurement().toFixed(1),
-      unit: unitLabel(document.getElementById('measure-type').value),
-      price: getPrice().toFixed(2),
-      address: lastAddress
-    };
-
     const res = await fetch('/api/ai/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: chatHistory, context })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: chatHistory.slice(-10),
+        context: {
+          project_type: document.getElementById('project-type')?.value,
+          area: getDisplayMeasurement().toFixed(1),
+          unit: unitLabel(document.getElementById('measure-type')?.value),
+          price: getPrice().toFixed(2), address: lastAddress
+        }
+      })
     });
     const data = await res.json();
-    removeTyping(typingId);
-    const reply = data.reply || 'Sorry, I had trouble responding.';
+    removeMsg(tid);
+    const reply = data.reply || 'Something went wrong.';
     addChatMsg('ai', reply);
     chatHistory.push({ role: 'assistant', content: reply });
-    if (chatHistory.length > 20) chatHistory = chatHistory.slice(-20);
-  } catch {
-    removeTyping(typingId);
-    addChatMsg('ai', 'Connection error. Please try again.');
-  }
+  } catch { removeMsg(tid); addChatMsg('ai', 'Connection error.'); }
 }
 
 function addChatMsg(role, text, isTyping = false) {
   const container = document.getElementById('chat-messages');
-  const id = 'msg-' + Date.now();
+  if (!container) return '';
+  const id = 'msg-' + Date.now() + Math.random();
   const div = document.createElement('div');
   div.id = id;
   div.className = `chat-msg ${role}${isTyping ? ' typing' : ''}`;
@@ -548,147 +539,126 @@ function addChatMsg(role, text, isTyping = false) {
   return id;
 }
 
-function removeTyping(id) {
-  document.getElementById(id)?.remove();
-}
+function removeMsg(id) { document.getElementById(id)?.remove(); }
 
 // ══════════════════════════════════════════
 //  SAVE / LOAD / DELETE
 // ══════════════════════════════════════════
 async function saveQuote() {
-  const client = document.getElementById('client-name').value.trim();
+  const client = document.getElementById('client-name')?.value.trim();
   if (!client) { showToast('Enter a client name first'); return; }
-
   const area = getDisplayMeasurement();
-  const qty = parseInt(document.getElementById('qty').value) || 1;
+  const qty = parseInt(document.getElementById('qty')?.value) || 1;
   const price = getPrice();
-  const unit = document.getElementById('measure-type').value;
-  const total = area * qty * price;
-  const narrative = document.getElementById('narrative-text').textContent;
-
-  const payload = {
-    client_name: client,
-    project_type: document.getElementById('project-type').value,
-    area, unit,
-    price_per_unit: price,
-    total,
-    qty,
-    notes: document.getElementById('notes').value,
-    address: lastAddress || document.getElementById('notes').value.split('\n')[0],
-    lat: lastLat, lng: lastLng,
-    polygon_geojson: drawnFeature ? drawnFeature.geometry : null,
-    ai_narrative: narrative && !narrative.includes('Generating') ? narrative : ''
-  };
-
+  const unit = document.getElementById('measure-type')?.value || 'sqft';
+  const narrative = document.getElementById('narrative-text')?.textContent || '';
   try {
     const res = await fetch('/api/quotes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_name: client,
+        project_type: document.getElementById('project-type')?.value,
+        area, unit, price_per_unit: price, total: area * qty * price, qty,
+        notes: document.getElementById('notes')?.value || '',
+        address: lastAddress, lat: lastLat, lng: lastLng,
+        polygon_geojson: drawnFeature ? drawnFeature.geometry : null,
+        ai_narrative: (narrative && !narrative.includes('Generating')) ? narrative : ''
+      })
     });
     if (!res.ok) throw new Error();
     showToast('Quote saved! 💾');
     loadSavedCount();
-  } catch {
-    showToast('Save failed — check server');
-  }
-}
-
-async function loadSaved() {
-  const search = document.getElementById('search-input')?.value || '';
-  try {
-    const res = await fetch(`/api/quotes?search=${encodeURIComponent(search)}&limit=30`);
-    const data = await res.json();
-    renderSavedList(data.quotes || []);
-  } catch {
-    document.getElementById('saved-list').innerHTML =
-      '<div class="empty-state">Failed to load quotes.</div>';
-  }
+  } catch { showToast('Save failed — check connection'); }
 }
 
 async function loadSavedCount() {
   try {
-    const res = await fetch('/api/stats');
-    const data = await res.json();
-    document.getElementById('saved-count').textContent = data.total_quotes || 0;
+    const data = await fetch('/api/stats').then(r => r.json());
+    setText('saved-count', data.total_quotes || 0);
   } catch {}
+}
+
+async function loadSaved() {
+  const search = document.getElementById('search-input')?.value || '';
+  const container = document.getElementById('saved-list');
+  try {
+    const data = await fetch(`/api/quotes?search=${encodeURIComponent(search)}&limit=30`).then(r => r.json());
+    renderSavedList(data.quotes || []);
+  } catch {
+    if (container) container.innerHTML = '<div class="empty-state">Failed to load.</div>';
+  }
 }
 
 function renderSavedList(quotes) {
   const container = document.getElementById('saved-list');
-  if (!quotes.length) {
-    container.innerHTML = '<div class="empty-state">No quotes found.</div>';
-    return;
-  }
+  if (!quotes.length) { container.innerHTML = '<div class="empty-state">No quotes found.</div>'; return; }
   container.innerHTML = quotes.map(q => {
     const date = new Date(q.created_at).toLocaleDateString();
-    const typeLabel = q.project_type.replace(/-/g, ' ');
-    return `
-    <div class="quote-card">
+    const label = (q.project_type||'').replace(/-/g,' ');
+    return `<div class="quote-card">
       <div class="qc-header">
         <div>
-          <div class="qc-client">${q.client_name}</div>
-          <div class="qc-meta">${typeLabel} · ${date}</div>
+          <div class="qc-client">${esc(q.client_name)}</div>
+          <div class="qc-meta">${label} · ${date}</div>
         </div>
-        <div class="qc-total">$${parseFloat(q.total).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        <div class="qc-total">$${fmtMoney(q.total)}</div>
       </div>
-      <div class="qc-meta">${parseFloat(q.area).toLocaleString(undefined,{maximumFractionDigits:1})} ${unitLabel(q.unit)} × $${parseFloat(q.price_per_unit).toFixed(2)}/unit${q.qty>1?' ('+q.qty+'x)':''}</div>
-      ${q.address ? `<div class="qc-meta">📍 ${q.address.split(',').slice(0,2).join(',')}</div>` : ''}
+      <div class="qc-meta">${fmt(q.area)} ${unitLabel(q.unit)} × $${parseFloat(q.price_per_unit).toFixed(2)}${q.qty>1?' ('+q.qty+'x)':''}</div>
+      ${q.address ? `<div class="qc-meta">📍 ${esc(q.address.split(',').slice(0,2).join(','))}</div>` : ''}
       <div class="qc-actions">
-        <button class="mini-btn load" onclick="loadQuote('${q.id}')">Load</button>
-        <button class="mini-btn share" onclick="shareQuoteObj(${JSON.stringify(q).replace(/"/g,'&quot;')})">Share</button>
-        <button class="mini-btn del" onclick="deleteQuote('${q.id}')">Delete</button>
+        <button class="mini-btn load" data-id="${q.id}">Load</button>
+        <button class="mini-btn share" data-idx="${q.id}">Share</button>
+        <button class="mini-btn del" data-id="${q.id}">Delete</button>
       </div>
     </div>`;
   }).join('');
+
+  // Store quotes for share lookup
+  window._savedQuotes = {};
+  quotes.forEach(q => { window._savedQuotes[q.id] = q; });
+
+  container.querySelectorAll('.mini-btn.load').forEach(btn =>
+    btn.addEventListener('click', () => loadQuote(btn.dataset.id)));
+  container.querySelectorAll('.mini-btn.share').forEach(btn =>
+    btn.addEventListener('click', () => openShareModal(window._savedQuotes[btn.dataset.idx])));
+  container.querySelectorAll('.mini-btn.del').forEach(btn =>
+    btn.addEventListener('click', () => deleteQuote(btn.dataset.id)));
 }
 
 async function loadQuote(id) {
   try {
     const q = await fetch(`/api/quotes/${id}`).then(r => r.json());
-    document.getElementById('client-name').value = q.client_name;
-    document.getElementById('project-type').value = q.project_type;
+    if (q.error) throw new Error();
+    document.getElementById('client-name').value = q.client_name || '';
+    document.getElementById('project-type').value = q.project_type || 'parking-lot-striping';
     document.getElementById('notes').value = q.notes || '';
-    document.getElementById('manual-area').value = q.area;
-    document.getElementById('measure-type').value = q.unit;
+    document.getElementById('manual-area').value = q.area || '';
+    document.getElementById('measure-type').value = q.unit || 'sqft';
     document.getElementById('qty').value = q.qty || 1;
-
-    const dollars = Math.floor(q.price_per_unit);
-    const cents = Math.round((q.price_per_unit - dollars) * 100);
-    document.getElementById('price-dollars').value = Math.min(5, dollars);
-    document.getElementById('price-cents').value = cents;
-
+    document.getElementById('markup').value = 0;
+    const d = Math.min(5, Math.floor(q.price_per_unit));
+    const c = Math.round((q.price_per_unit - Math.floor(q.price_per_unit)) * 100);
+    document.getElementById('price-dollars').value = d;
+    document.getElementById('price-cents').value = c;
     if (q.ai_narrative) {
       document.getElementById('narrative-text').textContent = q.ai_narrative;
       document.getElementById('narrative-section').style.display = 'block';
     }
-
-    // Restore polygon on map
-    if (q.polygon_geojson && map && draw) {
+    if (q.polygon_geojson && draw) {
       draw.deleteAll();
-      const feature = { type: 'Feature', geometry: q.polygon_geojson, properties: {} };
-      draw.add(feature);
-      drawnFeature = feature;
-      drawnType = q.polygon_geojson.type === 'LineString' ? 'line' : 'polygon';
-      feature._rawType = drawnType === 'line' ? 'line' : 'area';
-
-      if (q.lat && q.lng) {
-        map.flyTo({ center: [q.lng, q.lat], zoom: 18 });
-        lastLat = q.lat; lastLng = q.lng;
-      }
+      drawnFeature = { type: 'Feature', geometry: q.polygon_geojson, properties: {} };
+      draw.add(drawnFeature);
+      drawnRawType = q.polygon_geojson.type === 'LineString' ? 'line' : 'area';
+      if (q.lat && q.lng && map) map.flyTo({ center: [q.lng, q.lat], zoom: 18 });
     }
-
     if (q.address) {
-      lastAddress = q.address;
-      document.getElementById('address-display').textContent = q.address.split(',').slice(0,2).join(',');
+      lastAddress = q.address; lastLat = q.lat; lastLng = q.lng;
+      setText('address-display', q.address.split(',').slice(0,2).join(','));
     }
-
     updateCalc();
     showTab('quote');
-    showToast('Quote loaded!');
-  } catch {
-    showToast('Failed to load quote');
-  }
+    showToast('Quote loaded ✓');
+  } catch { showToast('Failed to load quote'); }
 }
 
 async function deleteQuote(id) {
@@ -696,66 +666,62 @@ async function deleteQuote(id) {
   try {
     await fetch(`/api/quotes/${id}`, { method: 'DELETE' });
     showToast('Deleted');
-    loadSaved();
-    loadSavedCount();
-  } catch {
-    showToast('Delete failed');
-  }
+    loadSaved(); loadSavedCount();
+  } catch { showToast('Delete failed'); }
+}
+
+async function exportAll() {
+  try {
+    const data = await fetch('/api/quotes?limit=500').then(r => r.json());
+    const text = (data.quotes||[]).map(q => buildShareText(q)).join('\n\n══════════════\n\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type:'text/plain' }));
+    a.download = 'quotes-' + Date.now() + '.txt';
+    a.click();
+    showToast('Exported!');
+  } catch { showToast('Export failed'); }
 }
 
 // ══════════════════════════════════════════
-//  PRINT / SHARE / EXPORT
+//  PRINT / SHARE
 // ══════════════════════════════════════════
 function printQuote() {
-  const client = document.getElementById('client-name').value || 'Client';
-  const projType = document.getElementById('project-type').value.replace(/-/g, ' ');
-  const area = getDisplayMeasurement();
-  const unit = unitLabel(document.getElementById('measure-type').value);
-  const qty = parseInt(document.getElementById('qty').value) || 1;
-  const price = getPrice();
-  const total = area * qty * price;
-  const notes = document.getElementById('notes').value;
-  const narrative = document.getElementById('narrative-text').textContent;
-  const addr = lastAddress;
-  const today = new Date().toLocaleDateString();
-
+  const client   = document.getElementById('client-name')?.value || 'Client';
+  const projType = (document.getElementById('project-type')?.value||'').replace(/-/g,' ');
+  const area     = getDisplayMeasurement();
+  const unit     = unitLabel(document.getElementById('measure-type')?.value);
+  const qty      = parseInt(document.getElementById('qty')?.value) || 1;
+  const price    = getPrice();
+  const total    = area * qty * price;
+  const notes    = document.getElementById('notes')?.value || '';
+  const narrative= document.getElementById('narrative-text')?.textContent || '';
+  const today    = new Date().toLocaleDateString();
   const win = window.open('', '_blank');
+  if (!win) { showToast('Allow popups to print'); return; }
   win.document.write(`<!DOCTYPE html><html><head><title>Quote - ${client}</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<style>
-  body{font-family:'DM Sans',sans-serif;padding:40px;color:#0D1F33;max-width:640px;margin:0 auto}
-  h1{font-family:'Bebas Neue',sans-serif;font-size:40px;letter-spacing:4px;color:#1C3A5E;margin-bottom:2px}
-  .sub{color:#6B8FAD;font-size:13px;margin-bottom:30px}
-  .row{display:flex;gap:24px;margin-bottom:18px}
-  .block{flex:1}
-  .lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:3px}
-  .val{font-size:16px;font-weight:600;text-transform:capitalize}
-  .total-box{background:#1C3A5E;color:white;padding:20px 24px;border-radius:12px;margin:24px 0;display:flex;justify-content:space-between;align-items:center}
-  .t-lbl{font-size:11px;letter-spacing:1px;text-transform:uppercase;opacity:.7}
-  .t-val{font-family:'Bebas Neue',sans-serif;font-size:44px;color:#E8A020}
-  .narrative{background:#EDF3FA;border-radius:8px;padding:16px;font-size:13px;line-height:1.6;margin-bottom:20px;color:#2B4B6F}
-  .footer{font-size:11px;color:#9ab;margin-top:30px;text-align:center}
-  @media print{button{display:none!important}}
-</style></head><body>
+<style>*{box-sizing:border-box}body{font-family:'DM Sans',sans-serif;padding:40px;color:#0D1F33;max-width:640px;margin:0 auto}
+h1{font-family:'Bebas Neue',sans-serif;font-size:40px;letter-spacing:4px;color:#1C3A5E;margin-bottom:2px}
+.sub{color:#6B8FAD;font-size:13px;margin-bottom:28px}.row{display:flex;gap:24px;margin-bottom:16px;flex-wrap:wrap}
+.block{flex:1;min-width:120px}.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:3px}
+.val{font-size:16px;font-weight:600;text-transform:capitalize}
+.total-box{background:#1C3A5E;color:white;padding:20px 24px;border-radius:12px;margin:24px 0;display:flex;justify-content:space-between;align-items:center}
+.t-lbl{font-size:11px;letter-spacing:1px;text-transform:uppercase;opacity:.7}
+.t-val{font-family:'Bebas Neue',sans-serif;font-size:44px;color:#E8A020}
+.narrative{background:#EDF3FA;border-radius:8px;padding:16px;font-size:13px;line-height:1.7;margin-bottom:20px;color:#2B4B6F;white-space:pre-wrap}
+.footer{font-size:11px;color:#9ab;margin-top:30px;text-align:center}@media print{.no-print{display:none!important}}</style></head><body>
 <h1>QUOTE<span style="color:#E8A020">machine</span></h1>
-<div class="sub">Estimate generated ${today}</div>
-<div class="row">
-  <div class="block"><div class="lbl">Client</div><div class="val">${client}</div></div>
-  <div class="block"><div class="lbl">Project Type</div><div class="val">${projType}</div></div>
-</div>
-${addr ? `<div class="row"><div class="block"><div class="lbl">Location</div><div class="val" style="text-transform:none">${addr}</div></div></div>` : ''}
-<div class="row">
-  <div class="block"><div class="lbl">Measurement</div><div class="val">${(area*qty).toLocaleString(undefined,{maximumFractionDigits:1})} ${unit}${qty>1?' ('+qty+'x)':''}</div></div>
-  <div class="block"><div class="lbl">Rate</div><div class="val">$${price.toFixed(2)} / ${unit}</div></div>
-</div>
-${notes ? `<div class="row"><div class="block"><div class="lbl">Notes</div><div class="val" style="font-weight:400">${notes}</div></div></div>` : ''}
-${narrative && !narrative.includes('Generating') ? `<div class="lbl" style="margin-bottom:8px">Scope of Work</div><div class="narrative">${narrative}</div>` : ''}
-<div class="total-box">
-  <div><div class="t-lbl">Estimated Total</div></div>
-  <div class="t-val">$${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-</div>
-<div class="footer">This is an estimate only. Final pricing subject to on-site inspection.</div>
-<br><button onclick="window.print()" style="padding:12px 24px;background:#1C3A5E;color:white;border:none;border-radius:8px;font-size:15px;cursor:pointer">🖨️ Print / Save PDF</button>
+<div class="sub">Estimate · ${today}</div>
+<div class="row"><div class="block"><div class="lbl">Client</div><div class="val">${client}</div></div>
+<div class="block"><div class="lbl">Project</div><div class="val">${projType}</div></div></div>
+${lastAddress?`<div class="row"><div class="block"><div class="lbl">Location</div><div class="val" style="text-transform:none">${lastAddress}</div></div></div>`:''}
+<div class="row"><div class="block"><div class="lbl">Measurement</div><div class="val">${fmt(area*qty)} ${unit}${qty>1?' ('+qty+'x)':''}</div></div>
+<div class="block"><div class="lbl">Rate</div><div class="val">$${price.toFixed(2)} / ${unit}</div></div></div>
+${notes?`<div class="row"><div class="block"><div class="lbl">Notes</div><div class="val" style="font-weight:400">${notes}</div></div></div>`:''}
+${narrative&&!narrative.includes('Generating')?`<div class="lbl" style="margin-bottom:8px">Scope of Work</div><div class="narrative">${narrative}</div>`:''}
+<div class="total-box"><div class="t-lbl">Estimated Total</div><div class="t-val">$${fmtMoney(total)}</div></div>
+<div class="footer">Estimate only. Final pricing subject to on-site inspection.</div>
+<br><button class="no-print" onclick="window.print()" style="padding:12px 24px;background:#1C3A5E;color:white;border:none;border-radius:8px;font-size:15px;cursor:pointer">🖨️ Print / Save PDF</button>
 </body></html>`);
   win.document.close();
 }
@@ -764,77 +730,53 @@ function buildShareText(q) {
   if (q) {
     return `📋 QUOTE machine Estimate
 Client: ${q.client_name}
-Type: ${q.project_type.replace(/-/g,' ')}
-Area: ${parseFloat(q.area).toLocaleString(undefined,{maximumFractionDigits:1})} ${unitLabel(q.unit)}${q.qty>1?' × '+q.qty:''}
+Type: ${(q.project_type||'').replace(/-/g,' ')}
+Area: ${fmt(q.area)} ${unitLabel(q.unit)}${q.qty>1?' ×'+q.qty:''}
 Rate: $${parseFloat(q.price_per_unit).toFixed(2)}/${unitLabel(q.unit)}
-${q.address ? 'Address: '+q.address : ''}
+${q.address?'Location: '+q.address:''}
 ──────────────────
-TOTAL: $${parseFloat(q.total).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
-${q.notes ? '\nNotes: '+q.notes : ''}
-Date: ${new Date(q.created_at).toLocaleDateString()}`;
+TOTAL: $${fmtMoney(q.total)}
+${q.notes?'Notes: '+q.notes:''}
+Date: ${new Date(q.created_at).toLocaleDateString()}`.replace(/\n{3,}/g,'\n\n');
   }
-
-  const client = document.getElementById('client-name').value || 'Client';
-  const projType = document.getElementById('project-type').value.replace(/-/g,' ');
+  const client = document.getElementById('client-name')?.value || 'Client';
+  const projType = (document.getElementById('project-type')?.value||'').replace(/-/g,' ');
   const area = getDisplayMeasurement();
-  const unit = unitLabel(document.getElementById('measure-type').value);
-  const qty = parseInt(document.getElementById('qty').value) || 1;
+  const unit = unitLabel(document.getElementById('measure-type')?.value);
+  const qty = parseInt(document.getElementById('qty')?.value) || 1;
   const price = getPrice();
-  const total = area * qty * price;
-  const notes = document.getElementById('notes').value;
-
+  const notes = document.getElementById('notes')?.value || '';
   return `📋 QUOTE machine Estimate
 Client: ${client}
 Type: ${projType}
-Area: ${(area*qty).toLocaleString(undefined,{maximumFractionDigits:1})} ${unit}${qty>1?' × '+qty:''}
+Area: ${fmt(area*qty)} ${unit}${qty>1?' ×'+qty:''}
 Rate: $${price.toFixed(2)}/${unit}
-${lastAddress ? 'Address: '+lastAddress : ''}
+${lastAddress?'Location: '+lastAddress:''}
 ──────────────────
-TOTAL: $${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
-${notes ? '\nNotes: '+notes : ''}
-Date: ${new Date().toLocaleDateString()}`;
+TOTAL: $${fmtMoney(area*qty*price)}
+${notes?'Notes: '+notes:''}
+Date: ${new Date().toLocaleDateString()}`.replace(/\n{3,}/g,'\n\n');
 }
 
 function openShareModal(q) {
-  document.getElementById('share-text').value = buildShareText(q || null);
+  document.getElementById('share-text').value = buildShareText(q||null);
   openModal('share-modal');
 }
 
-function shareQuoteObj(q) { openShareModal(q); }
-
 function copyShare() {
   const text = document.getElementById('share-text').value;
-  navigator.clipboard.writeText(text).then(() => {
-    showToast('Copied! 📋');
-    closeModal('share-modal');
-  });
+  navigator.clipboard.writeText(text)
+    .then(() => { showToast('Copied! 📋'); closeModal('share-modal'); })
+    .catch(() => showToast('Copy failed'));
 }
 
 function smsShare() {
-  const text = encodeURIComponent(document.getElementById('share-text').value);
-  window.open('sms:?body=' + text);
+  window.open('sms:?body=' + encodeURIComponent(document.getElementById('share-text').value));
 }
 
 function emailShare() {
-  const text = encodeURIComponent(document.getElementById('share-text').value);
-  const subj = encodeURIComponent('Quote Estimate - QUOTE machine');
-  window.open(`mailto:?subject=${subj}&body=${text}`);
-}
-
-async function exportAll() {
-  try {
-    const res = await fetch('/api/quotes?limit=500');
-    const data = await res.json();
-    const text = (data.quotes || []).map(q => buildShareText(q)).join('\n\n══════════════\n\n');
-    const blob = new Blob([text], { type: 'text/plain' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `quotes-export-${Date.now()}.txt`;
-    a.click();
-    showToast('Exported!');
-  } catch {
-    showToast('Export failed');
-  }
+  const b = encodeURIComponent(document.getElementById('share-text').value);
+  window.open(`mailto:?subject=${encodeURIComponent('Quote Estimate')}&body=${b}`);
 }
 
 // ══════════════════════════════════════════
@@ -844,26 +786,23 @@ async function loadStats() {
   const container = document.getElementById('stats-content');
   try {
     const s = await fetch('/api/stats').then(r => r.json());
-    const fmtUSD = v => '$' + parseFloat(v || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
-    let typeRows = (s.by_type || []).map(t => `
+    const mu = v => '$' + parseFloat(v||0).toLocaleString(undefined,{maximumFractionDigits:0});
+    const rows = (s.by_type||[]).map(t => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--surface2)">
-        <div style="font-size:13px;font-weight:600;text-transform:capitalize">${t.project_type.replace(/-/g,' ')}</div>
+        <div style="font-size:13px;font-weight:600;text-transform:capitalize">${(t.project_type||'').replace(/-/g,' ')}</div>
         <div style="text-align:right">
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--accent)">${fmtUSD(t.revenue)}</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--accent)">${mu(t.revenue)}</div>
           <div style="font-size:10px;color:var(--text-lt)">${t.count} quote${t.count!=1?'s':''}</div>
         </div>
       </div>`).join('');
-
     container.innerHTML = `
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-val">${s.total_quotes}</div><div class="stat-lbl">Total Quotes</div></div>
-        <div class="stat-card"><div class="stat-val">${fmtUSD(s.total_value)}</div><div class="stat-lbl">Total Value</div></div>
-        <div class="stat-card"><div class="stat-val">${fmtUSD(s.avg_quote)}</div><div class="stat-lbl">Avg Quote</div></div>
+        <div class="stat-card"><div class="stat-val">${mu(s.total_value)}</div><div class="stat-lbl">Total Value</div></div>
+        <div class="stat-card"><div class="stat-val">${mu(s.avg_quote)}</div><div class="stat-lbl">Avg Quote</div></div>
         <div class="stat-card"><div class="stat-val">${s.this_month}</div><div class="stat-lbl">This Month</div></div>
       </div>
-      ${typeRows ? `<div class="section-title">By Project Type</div><div>${typeRows}</div>` : ''}
-    `;
+      ${rows?`<div class="section-title" style="margin-top:14px">By Type</div><div>${rows}</div>`:''}`;
   } catch {
     container.innerHTML = '<div class="empty-state">Failed to load stats.</div>';
   }
@@ -874,7 +813,8 @@ async function loadStats() {
 // ══════════════════════════════════════════
 function showTab(tab) {
   ['quote','saved','stats'].forEach(t => {
-    document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
+    const el = document.getElementById('tab-' + t);
+    if (el) el.style.display = t === tab ? 'block' : 'none';
   });
   document.querySelectorAll('.tab-btn').forEach((btn, i) => {
     btn.classList.toggle('active', ['quote','saved','stats'][i] === tab);
@@ -883,58 +823,65 @@ function showTab(tab) {
   if (tab === 'stats') loadStats();
 }
 
-function showView(tab) { showTab(tab); }
-
 function newQuote() {
   document.getElementById('client-name').value = '';
   document.getElementById('notes').value = '';
   document.getElementById('manual-area').value = '';
-  document.getElementById('qty').value = '1';
-  document.getElementById('price-dollars').value = '0';
-  document.getElementById('price-cents').value = '5';
-  document.getElementById('markup').value = '0';
+  document.getElementById('qty').value = 1;
+  document.getElementById('markup').value = 0;
+  document.getElementById('price-dollars').selectedIndex = 0;
+  document.getElementById('price-cents').value = 5;
   document.getElementById('narrative-section').style.display = 'none';
   document.getElementById('ai-price-banner').style.display = 'none';
   clearDrawing();
-  showToast('New quote started!');
+  updateCalc();
+  showToast('New quote ready');
 }
 
-function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function openModal(id) { document.getElementById(id)?.classList.add('open'); }
+function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
 
-// Close modals on backdrop click
-document.querySelectorAll('.modal-overlay').forEach(overlay => {
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay) overlay.classList.remove('open');
+function initModalBackdrops() {
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) overlay.classList.remove('open');
+    });
   });
-});
+}
 
 function showToast(msg) {
-  const toast = document.getElementById('toast');
-  toast.textContent = msg;
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2800);
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2800);
 }
 
-// ── Panel drag (resize bottom panel)
+function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+function fmt(n) { return parseFloat(n||0).toLocaleString(undefined,{maximumFractionDigits:1}); }
+function fmtMoney(n) { return parseFloat(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ══════════════════════════════════════════
+//  PANEL DRAG
+// ══════════════════════════════════════════
 function initPanelDrag() {
   const handle = document.getElementById('panel-drag');
-  const panel = document.getElementById('bottom-panel');
-  let startY, startH;
-
-  handle.addEventListener('touchstart', e => {
-    isDragging = true;
-    startY = e.touches[0].clientY;
-    startH = panel.offsetHeight;
-    e.preventDefault();
-  }, { passive: false });
-
-  document.addEventListener('touchmove', e => {
+  const panel  = document.getElementById('bottom-panel');
+  if (!handle || !panel) return;
+  let startY = 0, startH = 0;
+  const onStart = y => { isDragging = true; startY = y; startH = panel.offsetHeight; };
+  const onMove  = y => {
     if (!isDragging) return;
-    const delta = startY - e.touches[0].clientY;
-    const newH = Math.max(PANEL_MIN_HEIGHT, Math.min(window.innerHeight * 0.8, startH + delta));
+    const newH = Math.max(50, Math.min(window.innerHeight * 0.85, startH + (startY - y)));
+    panel.style.height = newH + 'px';
     panel.style.maxHeight = newH + 'px';
-  }, { passive: true });
-
-  document.addEventListener('touchend', () => { isDragging = false; });
+  };
+  const onEnd = () => { isDragging = false; };
+  handle.addEventListener('touchstart', e => onStart(e.touches[0].clientY), { passive: true });
+  document.addEventListener('touchmove', e => { if (isDragging) onMove(e.touches[0].clientY); }, { passive: true });
+  document.addEventListener('touchend', onEnd);
+  handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
+  document.addEventListener('mousemove', e => { if (isDragging) onMove(e.clientY); });
+  document.addEventListener('mouseup', onEnd);
 }
