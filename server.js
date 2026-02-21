@@ -55,6 +55,21 @@ const aiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: '
 app.use('/api/', apiLimiter);
 app.use('/api/ai/', aiLimiter);
 
+// ── Auto-migrate: add new columns if they don't exist
+try {
+  const cols = db.pragma('table_info(quotes)').map(c => c.name);
+  if (!cols.includes('line_items')) {
+    db.exec('ALTER TABLE quotes ADD COLUMN line_items TEXT');
+    console.log('[DB] Added line_items column');
+  }
+  if (!cols.includes('markup')) {
+    db.exec('ALTER TABLE quotes ADD COLUMN markup REAL DEFAULT 0');
+    console.log('[DB] Added markup column');
+  }
+} catch (err) {
+  console.error('[DB] Migration error:', err.message);
+}
+
 // ── Auth endpoint (no auth required)
 app.post('/api/auth', (req, res) => {
   const { password } = req.body;
@@ -140,29 +155,31 @@ app.post('/api/quotes', (req, res) => {
     const {
       client_name, project_type, area, unit, price_per_unit,
       total, notes, address, lat, lng, polygon_geojson, qty,
-      ai_narrative
+      ai_narrative, line_items, markup
     } = req.body;
 
-    if (!client_name || !project_type || area === undefined || !unit) {
-      return res.status(400).json({ error: 'Missing required fields: client_name, project_type, area, unit' });
+    if (!client_name) {
+      return res.status(400).json({ error: 'Missing required field: client_name' });
     }
 
     const id = uuidv4();
     db.prepare(`
       INSERT INTO quotes
         (id, client_name, project_type, area, unit, price_per_unit, total, notes,
-         address, lat, lng, polygon_geojson, qty, ai_narrative)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         address, lat, lng, polygon_geojson, qty, ai_narrative, line_items, markup)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, client_name, project_type,
-      parseFloat(area), unit,
+      id, client_name, project_type || 'custom',
+      parseFloat(area) || 0, unit || 'sqft',
       parseFloat(price_per_unit) || 0,
       parseFloat(total) || 0,
       notes || '',
       address || '', lat || null, lng || null,
       polygon_geojson ? JSON.stringify(polygon_geojson) : null,
       parseInt(qty) || 1,
-      ai_narrative || ''
+      ai_narrative || '',
+      line_items ? JSON.stringify(line_items) : null,
+      parseFloat(markup) || 0
     );
 
     const created = db.prepare('SELECT * FROM quotes WHERE id = ?').get(id);
@@ -179,14 +196,14 @@ app.put('/api/quotes/:id', (req, res) => {
     const existing = db.prepare('SELECT id FROM quotes WHERE id = ?').get(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Quote not found' });
 
-    const fields = ['client_name','project_type','area','unit','price_per_unit','total','notes','address','lat','lng','polygon_geojson','qty','ai_narrative'];
+    const fields = ['client_name','project_type','area','unit','price_per_unit','total','notes','address','lat','lng','polygon_geojson','qty','ai_narrative','line_items','markup'];
     const updates = [];
     const values = [];
 
     fields.forEach(f => {
       if (req.body[f] !== undefined) {
         updates.push(`${f} = ?`);
-        values.push(f === 'polygon_geojson' ? JSON.stringify(req.body[f]) : req.body[f]);
+        values.push((f === 'polygon_geojson' || f === 'line_items') ? JSON.stringify(req.body[f]) : req.body[f]);
       }
     });
 

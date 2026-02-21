@@ -9,6 +9,8 @@
 <meta name="theme-color" content="#0D2137">
 <title>QUOTE machine</title>
 <link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
@@ -134,60 +136,34 @@
         </div>
       </div>
 
-      <!-- Client + Job type -->
+      <!-- Client info -->
       <div class="form-row">
-        <div class="field">
+        <div class="field" style="flex:1">
           <label>Client Name</label>
           <input type="text" id="client-name" placeholder="Name or company">
         </div>
-        <div class="field">
-          <label>Job Type</label>
-          <select id="project-type">
-            <option value="pressure-washing">Pressure Washing</option>
-            <option value="parking-lot-striping">Parking Lot Striping</option>
-            <option value="sealcoating">Sealcoating</option>
-            <option value="painting">Painting / Coating</option>
-            <option value="roofing">Roofing</option>
-            <option value="concrete">Concrete</option>
-            <option value="landscaping">Landscaping</option>
-            <option value="custom">Other / Custom</option>
-          </select>
+      </div>
+      <div class="form-row">
+        <div class="field" style="flex:1">
+          <label>Job Address</label>
+          <div class="addr-field-row">
+            <input type="text" id="quote-address" placeholder="Enter or use map search 📍">
+            <button class="btn-addr-use" id="btn-use-map-addr" title="Use map address">📍</button>
+          </div>
         </div>
       </div>
 
-      <!-- Price per unit — dollars dropdown + cents dropdown + optional override -->
-      <div class="price-section">
-        <div class="price-section-label">Price per <span id="price-unit-label">sq ft</span></div>
-        <div class="price-dropdowns">
-          <div class="price-drop-group">
-            <label>$ Dollars</label>
-            <select id="price-dollars"></select>
-          </div>
-          <div class="price-drop-sep">.</div>
-          <div class="price-drop-group">
-            <label>¢ Cents</label>
-            <select id="price-cents"></select>
-          </div>
-          <div class="price-drop-group">
-            <label>or enter $</label>
-            <div class="price-input-wrap">
-              <span class="dollar-sign">$</span>
-              <input type="number" id="price-per-unit" placeholder="0.00" min="0" step="0.01">
-            </div>
-          </div>
-        </div>
+      <!-- ═══ LINE ITEMS ═══ -->
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+        <span>Line Items</span>
+        <button class="btn-add-item" id="btn-add-item">+ Add Item</button>
       </div>
-      <div class="form-row">
-        <div class="field">
-          <label>Passes / Qty</label>
-          <select id="qty">
-            <option value="1">1×</option>
-            <option value="2">2×</option>
-            <option value="3">3×</option>
-            <option value="4">4×</option>
-            <option value="5">5×</option>
-          </select>
-        </div>
+      <div id="line-items-container">
+        <!-- line items render here -->
+      </div>
+
+      <!-- Markup -->
+      <div class="form-row" style="margin-top:10px">
         <div class="field">
           <label>Markup %</label>
           <select id="markup">
@@ -234,6 +210,10 @@
         <button class="action-btn save" id="btn-save">💾 Save</button>
         <button class="action-btn narrative" id="btn-narrative">✍️ Narrative</button>
         <button class="action-btn share" id="btn-share">📤 Share</button>
+      </div>
+      <div class="action-row" style="margin-top:0">
+        <button class="action-btn save" id="btn-pdf" style="background:var(--accent);color:var(--navy)">📄 PDF</button>
+        <button class="action-btn save" id="btn-pdf-plain" style="background:var(--surface2);color:var(--navy)">📄 PDF (plain)</button>
       </div>
       <button class="btn-new-quote" id="btn-new">＋ Start New Quote</button>
 
