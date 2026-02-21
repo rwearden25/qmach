@@ -283,21 +283,54 @@ header {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: height .3s ease, max-height .3s ease;
+  will-change: height;
+}
+#bottom-panel.dragging {
+  transition: none;
+}
+#bottom-panel.snap-collapsed {
+  height: 64px !important;
+  max-height: 64px !important;
+}
+#bottom-panel.snap-full {
+  height: calc(100dvh - 48px) !important;
+  max-height: calc(100dvh - 48px) !important;
 }
 .panel-drag {
-  height: 20px;
+  height: 32px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   cursor: row-resize;
   flex-shrink: 0;
   background: var(--surface);
+  gap: 3px;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
 .drag-bar {
-  width: 40px; height: 4px;
-  background: var(--surface2);
-  border-radius: 2px;
+  width: 48px; height: 5px;
+  background: var(--navy-mid);
+  border-radius: 3px;
+  opacity: 0.6;
+  transition: opacity .15s, background .15s;
 }
+.panel-drag:active .drag-bar,
+.panel-drag:hover .drag-bar {
+  opacity: 1;
+  background: var(--accent);
+}
+.drag-chevron {
+  font-size: 10px;
+  color: var(--navy-mid);
+  line-height: 1;
+  opacity: 0.5;
+  transition: opacity .15s;
+}
+.panel-drag:active .drag-chevron { opacity: 1; color: var(--accent); }
 .panel-scroll {
   overflow-y: auto;
   overflow-x: hidden;
@@ -870,7 +903,24 @@ textarea { height: 60px; resize: vertical; }
 @media (min-width: 768px) {
   #bottom-panel { height: 45vh; max-height: 45vh; }
   .form-row { gap: 14px; }
+  .drag-chevron { display: none; }
 }
 @media (min-width: 1024px) {
   #bottom-panel { height: 42vh; max-height: 42vh; }
+}
+
+/* ═══ MOBILE PANEL ENHANCEMENTS ═══ */
+@media (max-width: 767px) {
+  #bottom-panel {
+    border-top: none;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.15);
+  }
+  .panel-drag {
+    height: 36px;
+    border-radius: 16px 16px 0 0;
+  }
+  #bottom-panel.snap-collapsed .panel-scroll {
+    overflow: hidden;
+  }
 }

@@ -1132,20 +1132,119 @@ function esc(s)      { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function initPanelDrag() {
   const handle = document.getElementById('panel-drag');
   const panel  = document.getElementById('bottom-panel');
+  const chevron = document.getElementById('drag-chevron');
   if (!handle || !panel) return;
-  let startY = 0, startH = 0;
-  const onStart = y => { isDragging = true; startY = y; startH = panel.offsetHeight; };
-  const onMove  = y => {
+
+  // Snap heights (calculated on use to handle rotation)
+  const getSnaps = () => {
+    const vh = window.innerHeight;
+    return {
+      collapsed: 64,
+      half: Math.round(vh * 0.52),
+      full: vh - 48  // minus header
+    };
+  };
+
+  let startY = 0, startH = 0, startTime = 0, lastY = 0;
+  let currentSnap = 'half';
+
+  const updateChevron = () => {
+    if (!chevron) return;
+    if (currentSnap === 'collapsed') chevron.textContent = '▲';
+    else if (currentSnap === 'full') chevron.textContent = '▼';
+    else chevron.textContent = '▲ ▼';
+  };
+  updateChevron();
+
+  const snapTo = (snapName, animate) => {
+    const snaps = getSnaps();
+    const h = snaps[snapName] || snaps.half;
+    currentSnap = snapName;
+    panel.classList.remove('dragging', 'snap-collapsed', 'snap-full');
+    if (animate !== false) {
+      // Use CSS transition
+      panel.style.height = h + 'px';
+      panel.style.maxHeight = h + 'px';
+    }
+    if (snapName === 'collapsed') panel.classList.add('snap-collapsed');
+    if (snapName === 'full') panel.classList.add('snap-full');
+    updateChevron();
+  };
+
+  const onStart = y => {
+    isDragging = true;
+    startY = y;
+    lastY = y;
+    startH = panel.offsetHeight;
+    startTime = Date.now();
+    panel.classList.add('dragging');
+    panel.classList.remove('snap-collapsed', 'snap-full');
+  };
+
+  const onMove = y => {
     if (!isDragging) return;
-    const newH = Math.max(56, Math.min(window.innerHeight * 0.85, startH + (startY - y)));
+    lastY = y;
+    const snaps = getSnaps();
+    const newH = Math.max(snaps.collapsed, Math.min(snaps.full, startH + (startY - y)));
     panel.style.height = newH + 'px';
     panel.style.maxHeight = newH + 'px';
   };
-  const onEnd = () => { isDragging = false; };
-  handle.addEventListener('touchstart', e => onStart(e.touches[0].clientY), { passive: true });
-  document.addEventListener('touchmove', e => { if (isDragging) onMove(e.touches[0].clientY); }, { passive: true });
+
+  const onEnd = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    panel.classList.remove('dragging');
+    const snaps = getSnaps();
+    const h = panel.offsetHeight;
+    const dt = Date.now() - startTime;
+    const dy = startY - lastY; // positive = swiped up
+    const velocity = dt > 0 ? dy / dt : 0; // px/ms
+
+    // Fast swipe detection (> 0.4 px/ms)
+    if (Math.abs(velocity) > 0.4) {
+      if (velocity > 0) {
+        // Swiped up — go to next higher snap
+        snapTo(currentSnap === 'collapsed' ? 'half' : 'full', true);
+      } else {
+        // Swiped down — go to next lower snap
+        snapTo(currentSnap === 'full' ? 'half' : 'collapsed', true);
+      }
+      return;
+    }
+
+    // Slow drag — snap to nearest
+    const dists = [
+      { name: 'collapsed', d: Math.abs(h - snaps.collapsed) },
+      { name: 'half',      d: Math.abs(h - snaps.half) },
+      { name: 'full',      d: Math.abs(h - snaps.full) }
+    ];
+    dists.sort((a, b) => a.d - b.d);
+    snapTo(dists[0].name, true);
+  };
+
+  // Touch events
+  handle.addEventListener('touchstart', e => {
+    e.preventDefault();
+    onStart(e.touches[0].clientY);
+  }, { passive: false });
+  document.addEventListener('touchmove', e => {
+    if (isDragging) onMove(e.touches[0].clientY);
+  }, { passive: true });
   document.addEventListener('touchend', onEnd);
+
+  // Mouse events (desktop)
   handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
   document.addEventListener('mousemove', e => { if (isDragging) onMove(e.clientY); });
   document.addEventListener('mouseup', onEnd);
+
+  // Double-tap to toggle between collapsed and full
+  let lastTap = 0;
+  handle.addEventListener('click', () => {
+    const now = Date.now();
+    if (now - lastTap < 350) {
+      // Double tap
+      snapTo(currentSnap === 'full' ? 'collapsed' : 'full', true);
+    }
+    lastTap = now;
+  });
 }
