@@ -14,6 +14,8 @@ let chatHistory = [];
 let aiPriceData = null;
 let screenshotDataURL = null;
 let isDragging = false;
+let lastMapPixel = { x: 0, y: 0 };
+let drawClickCount = 0;
 let mapStyleHasLabels = true;
 let debounceTimer = null;
 
@@ -165,8 +167,40 @@ function initMap() {
   map.on('draw.delete', onDrawDelete);
 
   map.on('load', () => {
+    const canvas = map.getCanvas();
+
+    // Track last cursor/touch position so finish button dblclicks at correct spot
+    canvas.addEventListener('mousemove', e => { lastMapPixel = { x: e.offsetX, y: e.offsetY }; });
+    canvas.addEventListener('click', e => {
+      lastMapPixel = { x: e.offsetX, y: e.offsetY };
+      drawClickCount++;
+      if (drawClickCount >= 2 && (draw.getMode() === 'draw_polygon' || draw.getMode() === 'draw_line_string')) {
+        showFinishBtn(true);
+      }
+    });
+    canvas.addEventListener('touchend', e => {
+      if (e.changedTouches.length) {
+        const rect = canvas.getBoundingClientRect();
+        lastMapPixel = { x: e.changedTouches[0].clientX - rect.left, y: e.changedTouches[0].clientY - rect.top };
+        drawClickCount++;
+        if (drawClickCount >= 2 && (draw.getMode() === 'draw_polygon' || draw.getMode() === 'draw_line_string')) {
+          showFinishBtn(true);
+        }
+      }
+    }, { passive: true });
+
+    // Hide finish button when drawing ends naturally
+    map.on('draw.modechange', e => {
+      if (e.mode === 'simple_select' || e.mode === 'direct_select') {
+        showFinishBtn(false);
+        drawClickCount = 0;
+      }
+    });
+
     activateTool('tool-polygon');
-    setMapHint('Tap ⬡ then draw on the map to measure');
+    setMapHint('Tap ⬡ to start drawing');
+    const fb = document.getElementById('finish-draw-btn');
+    if (fb) fb.addEventListener('click', finishDrawing);
   });
 }
 
@@ -178,9 +212,57 @@ function setDrawMode(mode) {
     draw.changeMode(mode);
     const ids = { draw_polygon:'tool-polygon', draw_line_string:'tool-line', simple_select:'tool-select' };
     activateTool(ids[mode] || null);
+
+    // Show contextual hint
+    if (mode === 'draw_polygon') {
+      drawClickCount = 0;
+      setMapHint('Click points on map — tap ✓ Finish or double-click last point');
+      showFinishBtn(false); // shown after 2+ clicks
+    } else if (mode === 'draw_line_string') {
+      drawClickCount = 0;
+      setMapHint('Click points on map — tap ✓ Finish or double-click last point');
+      showFinishBtn(false);
+    } else {
+      setMapHint('');
+      showFinishBtn(false);
+    }
   } catch(e) {
     console.warn('setDrawMode:', e.message);
   }
+}
+
+function showFinishBtn(visible) {
+  const wrap = document.getElementById('finish-btn-wrap');
+  if (wrap) wrap.style.display = visible ? 'block' : 'none';
+}
+
+function finishDrawing() {
+  if (!draw || !map) return;
+  const mode = draw.getMode();
+  if (mode !== 'draw_polygon' && mode !== 'draw_line_string') return;
+
+  // Dispatch a real dblclick at the last known cursor position.
+  // This is the ONLY reliable way to finish a Mapbox Draw polygon —
+  // calling changeMode() directly trashes the in-progress feature.
+  try {
+    const canvas = map.getCanvas();
+    const rect = canvas.getBoundingClientRect();
+    const cx = rect.left + (lastMapPixel.x || rect.width / 2);
+    const cy = rect.top  + (lastMapPixel.y || rect.height / 2);
+
+    const dbl = new MouseEvent('dblclick', {
+      bubbles: true, cancelable: true,
+      clientX: cx, clientY: cy,
+      screenX: cx, screenY: cy,
+      view: window
+    });
+    canvas.dispatchEvent(dbl);
+  } catch(e) {
+    console.warn('finishDrawing dblclick:', e.message);
+  }
+
+  showFinishBtn(false);
+  drawClickCount = 0;
 }
 
 function activateTool(id) {
@@ -230,9 +312,11 @@ function onDrawDelete() {
   drawnFeature = null;
   drawnRawMeters = 0;
   drawnRawType = 'area';
+  drawClickCount = 0;
   document.getElementById('measure-badge').style.display = 'none';
   document.getElementById('manual-area').value = '';
-  setMapHint('Tap ⬡ then draw on the map to measure');
+  setMapHint('Tap ⬡ to start drawing');
+  showFinishBtn(false);
   updateCalc();
 }
 
