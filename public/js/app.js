@@ -1360,3 +1360,84 @@ function initPanelDrag() {
     lastTap = now;
   });
 }
+
+// ═══════════════════════════════════════
+//  PULL TO REFRESH
+// ═══════════════════════════════════════
+(function initPullToRefresh() {
+  const indicator = document.getElementById('ptr-indicator');
+  if (!indicator) return;
+  let ptrStartY = 0;
+  let ptrActive = false;
+  let ptrTriggered = false;
+  const THRESHOLD = 80;
+
+  document.addEventListener('touchstart', e => {
+    // Only activate if at top of page and touch is on map area
+    const t = e.target;
+    const isMap = t.closest('#map-container') || t.closest('header');
+    if (!isMap) return;
+    if (window.scrollY > 0) return;
+    ptrStartY = e.touches[0].clientY;
+    ptrActive = true;
+    ptrTriggered = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!ptrActive) return;
+    const dy = e.touches[0].clientY - ptrStartY;
+    if (dy > 20 && dy < THRESHOLD * 1.5) {
+      indicator.classList.add('visible');
+      indicator.querySelector('span').textContent = dy > THRESHOLD ? 'Release to refresh' : 'Pull down to refresh';
+    }
+    if (dy > THRESHOLD) ptrTriggered = true;
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    if (!ptrActive) return;
+    ptrActive = false;
+    if (ptrTriggered) {
+      indicator.querySelector('span').textContent = 'Refreshing...';
+      indicator.classList.add('refreshing');
+      setTimeout(() => window.location.reload(), 400);
+    } else {
+      indicator.classList.remove('visible');
+    }
+  });
+})();
+
+// ═══════════════════════════════════════
+//  PWA INSTALL PROMPT
+// ═══════════════════════════════════════
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  // Don't show if user dismissed before
+  if (sessionStorage.getItem('qmach_install_dismissed')) return;
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.style.display = 'block';
+});
+
+document.getElementById('install-btn')?.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const result = await deferredInstallPrompt.userChoice;
+  if (result.outcome === 'accepted') {
+    showToast('App installed! 📲');
+  }
+  deferredInstallPrompt = null;
+  document.getElementById('install-banner').style.display = 'none';
+});
+
+document.getElementById('install-dismiss')?.addEventListener('click', () => {
+  document.getElementById('install-banner').style.display = 'none';
+  sessionStorage.setItem('qmach_install_dismissed', '1');
+});
+
+// Detect if already installed
+window.addEventListener('appinstalled', () => {
+  document.getElementById('install-banner').style.display = 'none';
+  deferredInstallPrompt = null;
+});

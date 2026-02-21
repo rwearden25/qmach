@@ -957,6 +957,78 @@ textarea { height: 60px; resize: vertical; }
   padding: 32px 16px;
   font-size: 14px;
 }
+
+/* ═══ PULL TO REFRESH ═══ */
+#ptr-indicator {
+  position: fixed;
+  top: -50px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--navy);
+  color: white;
+  border-radius: 0 0 12px 12px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 8000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: top .25s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,.2);
+}
+#ptr-indicator.visible { top: 0; }
+#ptr-indicator.refreshing .ptr-spinner {
+  animation: spin 0.6s linear infinite;
+}
+.ptr-spinner { font-size: 18px; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ═══ INSTALL BANNER ═══ */
+.install-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0; right: 0;
+  z-index: 7000;
+  background: var(--navy);
+  border-top: 2px solid var(--accent);
+  padding: 14px 16px;
+  box-shadow: 0 -4px 20px rgba(0,0,0,.3);
+}
+.install-inner {
+  max-width: 500px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: white;
+  font-size: 13px;
+}
+.install-inner strong { color: var(--accent); }
+.install-btns { display: flex; gap: 8px; flex-shrink: 0; }
+#install-btn {
+  background: var(--accent);
+  color: var(--navy);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+}
+#install-btn:hover { filter: brightness(1.1); }
+.install-banner .dismiss {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,.3);
+  color: rgba(255,255,255,.7);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+}
 .section-title {
   font-size: 11px;
   font-weight: 700;
