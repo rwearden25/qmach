@@ -58,9 +58,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   on('btn-cancel-drawing', () => cancelDrawing());
 
   // Quote form — auto-recalc
-  ['measure-type','qty','markup','project-type'].forEach(id => on(id, () => updateCalc(), 'change'));
-  on('price-per-unit', () => updateCalc(), 'input');
+  ['measure-type','qty','markup','project-type','price-dollars','price-cents'].forEach(id => on(id, () => updateCalc(), 'change'));
+  on('price-per-unit', () => {
+    // When user types in the manual box, clear the dropdowns
+    const v = parseFloat(document.getElementById('price-per-unit').value);
+    if (!isNaN(v) && v >= 0) {
+      const dSel = document.getElementById('price-dollars');
+      const cSel = document.getElementById('price-cents');
+      if (dSel) dSel.value = '';
+      if (cSel) cSel.value = '';
+    }
+    updateCalc();
+  }, 'input');
   on('manual-area',    () => { drawnRawMeters = 0; updateCalc(); }, 'input');
+  // Build price dropdowns
+  buildPriceDropdowns();
 
   // Quote actions
   on('btn-save',            () => saveQuote());
@@ -115,6 +127,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 function on(id, fn, evt = 'click') {
   const el = document.getElementById(id);
   if (el) el.addEventListener(evt, fn);
+}
+
+// ═══════════════════════════════════════
+//  PRICE DROPDOWNS
+// ═══════════════════════════════════════
+function buildPriceDropdowns() {
+  const dSel = document.getElementById('price-dollars');
+  const cSel = document.getElementById('price-cents');
+  if (!dSel || !cSel) return;
+  dSel.innerHTML = '<option value="">--</option>';
+  for (let d = 0; d <= 9; d++) dSel.appendChild(new Option('$' + d, d));
+  cSel.innerHTML = '<option value="">--</option>';
+  for (let c = 0; c <= 99; c++) {
+    const o = new Option(c.toString().padStart(2,'0') + '¢', c);
+    if (c === 5) o.selected = true;
+    cSel.appendChild(o);
+  }
+  // Set initial dollars to 0
+  dSel.value = '0';
 }
 
 // ═══════════════════════════════════════
@@ -191,6 +222,8 @@ function initMap() {
       if (!isDrawing) return;
       const pt = [e.lngLat.lng, e.lngLat.lat];
       trackedPoints.push(pt);
+      console.log('Point added:', pt, '— total:', trackedPoints.length);
+      updatePointCounter();
       updateDrawPreview();
     });
 
@@ -207,8 +240,9 @@ function startDrawing(mode) {
   draw.deleteAll();
   clearPreview();
 
-  // Update toolbar
+  // Update toolbar & counter
   activateTool(mode === 'polygon' ? 'tool-draw' : 'tool-line');
+  updatePointCounter();
 
   // Show drawing overlay
   const inst = document.getElementById('drawing-instructions');
@@ -226,7 +260,11 @@ function startDrawing(mode) {
 
 function finishDrawing() {
   if (!isDrawing) return;
-  if (trackedPoints.length < 2) {
+
+  const ptCount = trackedPoints.length;
+  console.log('finishDrawing: points =', ptCount, trackedPoints);
+
+  if (ptCount < 2) {
     showToast('Tap at least 2 points on the map first');
     return;
   }
@@ -237,8 +275,11 @@ function finishDrawing() {
   clearPreview();
 
   let feature;
-  if (drawMode === 'polygon' && trackedPoints.length >= 3) {
-    // Close the polygon
+
+  // Always try polygon if 3+ points, otherwise line
+  const usePolygon = drawMode === 'polygon' && ptCount >= 3;
+
+  if (usePolygon) {
     const ring = [...trackedPoints, trackedPoints[0]];
     feature = {
       type: 'Feature',
@@ -246,22 +287,35 @@ function finishDrawing() {
       properties: {}
     };
     try {
-      drawnRawMeters = turf.area(feature);
+      const sq = turf.area(feature);
+      console.log('turf.area result:', sq, 'sq meters');
+      if (!sq || sq <= 0) throw new Error('Zero area');
+      drawnRawMeters = sq;
       drawnRawType = 'area';
       document.getElementById('measure-type').value = 'sqft';
-    } catch(e) { showToast('Could not calculate area'); return; }
+    } catch(e) {
+      console.error('Area calculation error:', e);
+      showToast('Area calculation failed — try drawing again');
+      return;
+    }
   } else {
-    // Line (or polygon with only 2 points — treat as line)
     feature = {
       type: 'Feature',
       geometry: { type: 'LineString', coordinates: trackedPoints },
       properties: {}
     };
     try {
-      drawnRawMeters = turf.length(feature, { units: 'meters' });
+      const len = turf.length(feature, { units: 'meters' });
+      console.log('turf.length result:', len, 'meters');
+      if (!len || len <= 0) throw new Error('Zero length');
+      drawnRawMeters = len;
       drawnRawType = 'line';
       document.getElementById('measure-type').value = 'linft';
-    } catch(e) { showToast('Could not calculate length'); return; }
+    } catch(e) {
+      console.error('Length calculation error:', e);
+      showToast('Length calculation failed — try drawing again');
+      return;
+    }
   }
 
   drawnFeature = feature;
@@ -352,6 +406,22 @@ function clearPreview() {
 function activateTool(id) {
   document.querySelectorAll('.map-tool-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(id)?.classList.add('active');
+}
+
+// ─── Point counter during drawing
+function updatePointCounter() {
+  const el = document.getElementById('point-counter');
+  if (!el) return;
+  const n = trackedPoints.length;
+  if (n === 0) {
+    el.textContent = 'Tap on the map to add points';
+  } else if (n === 1) {
+    el.textContent = '1 point — tap more corners';
+  } else if (n === 2) {
+    el.textContent = '2 points — tap more or tap Done for a line';
+  } else {
+    el.textContent = `${n} points — tap Done to finish`;
+  }
 }
 
 // ─── Toggle satellite labels
@@ -455,9 +525,19 @@ function unitLabel(type) {
 }
 
 function getPrice() {
-  const p = parseFloat(document.getElementById('price-per-unit')?.value) || 0;
+  // Check if user typed a manual override price
+  const manual = parseFloat(document.getElementById('price-per-unit')?.value);
+  let basePrice = 0;
+  if (!isNaN(manual) && manual > 0) {
+    basePrice = manual;
+  } else {
+    // Use dropdowns
+    const d = parseFloat(document.getElementById('price-dollars')?.value) || 0;
+    const c = parseFloat(document.getElementById('price-cents')?.value) || 0;
+    basePrice = d + (c / 100);
+  }
   const markup = parseFloat(document.getElementById('markup')?.value) || 0;
-  return p * (1 + markup / 100);
+  return basePrice * (1 + markup / 100);
 }
 
 function updateCalc() {
@@ -532,8 +612,16 @@ function showAiPriceModal(d) {
 function applyAiPrice() {
   if (!aiPriceData) return;
   const rec = parseFloat(aiPriceData.recommended_per_unit);
-  const input = document.getElementById('price-per-unit');
-  if (input) input.value = rec.toFixed(2);
+  // Apply to dropdowns
+  const dollars = Math.min(9, Math.floor(rec));
+  const cents = Math.round((rec - Math.floor(rec)) * 100);
+  const dSel = document.getElementById('price-dollars');
+  const cSel = document.getElementById('price-cents');
+  if (dSel) dSel.value = dollars;
+  if (cSel) cSel.value = cents;
+  // Clear manual override
+  const manInput = document.getElementById('price-per-unit');
+  if (manInput) manInput.value = '';
   updateCalc();
   closeModal('ai-price-modal');
   showToast('AI price applied ✨');
@@ -712,7 +800,16 @@ async function loadQuote(id) {
     document.getElementById('measure-type').value = q.unit || 'sqft';
     document.getElementById('qty').value = q.qty || 1;
     document.getElementById('markup').value = 0;
-    document.getElementById('price-per-unit').value = parseFloat(q.price_per_unit).toFixed(2);
+    // Restore price to dropdowns + manual field
+    const savedPrice = parseFloat(q.price_per_unit) || 0;
+    const dollars = Math.min(9, Math.floor(savedPrice));
+    const cents = Math.round((savedPrice - Math.floor(savedPrice)) * 100);
+    const dSel = document.getElementById('price-dollars');
+    const cSel = document.getElementById('price-cents');
+    if (dSel) dSel.value = dollars;
+    if (cSel) cSel.value = cents;
+    const priceInput = document.getElementById('price-per-unit');
+    if (priceInput) priceInput.value = '';
     drawnRawMeters = 0; // use manual area
     if (q.ai_narrative) {
       document.getElementById('narrative-text').textContent = q.ai_narrative;
@@ -889,7 +986,13 @@ function newQuote() {
   document.getElementById('manual-area').value = '';
   document.getElementById('qty').value = 1;
   document.getElementById('markup').value = 0;
-  document.getElementById('price-per-unit').value = '0.05';
+  // Reset price
+  const dSel = document.getElementById('price-dollars');
+  const cSel = document.getElementById('price-cents');
+  if (dSel) dSel.value = '0';
+  if (cSel) cSel.value = '5';
+  const priceInput = document.getElementById('price-per-unit');
+  if (priceInput) priceInput.value = '';
   document.getElementById('narrative-section').style.display = 'none';
   clearDrawing();
   updateCalc();

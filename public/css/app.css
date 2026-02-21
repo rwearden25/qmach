@@ -167,48 +167,70 @@ header {
 .tool-label { font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
 
 /* ═══ DRAWING OVERLAY ═══ */
+/* Drawing mode — floating bar at bottom, clicks pass THROUGH to map */
 #drawing-overlay {
   position: absolute;
   bottom: 0;
   left: 0; right: 0;
   z-index: 500;
-  background: rgba(13,33,55,.9);
-  backdrop-filter: blur(6px);
-  padding: 12px 16px;
-  border-top: 3px solid var(--success);
+  pointer-events: none;   /* ← map clicks pass through */
+  padding: 0 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
+/* Instruction pill — no background block */
 #drawing-instructions {
+  pointer-events: none;
+  background: rgba(13,33,55,.88);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(232,160,32,.5);
   color: white;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 18px;
+  border-radius: 20px;
   text-align: center;
+  margin-bottom: 2px;
 }
 #drawing-instructions strong { color: var(--accent); }
+/* Point counter badge */
+#point-counter {
+  pointer-events: none;
+  color: rgba(255,255,255,.7);
+  font-size: 12px;
+  background: rgba(13,33,55,.7);
+  padding: 3px 12px;
+  border-radius: 10px;
+}
+/* Done button — re-enable pointer events */
 #btn-done-drawing {
+  pointer-events: all;
   background: var(--success);
   color: white;
   border: none;
-  border-radius: 24px;
-  padding: 13px 36px;
-  font-size: 16px;
+  border-radius: 28px;
+  padding: 14px 40px;
+  font-size: 17px;
   font-weight: 700;
   font-family: 'DM Sans', sans-serif;
   cursor: pointer;
   width: 100%;
-  max-width: 320px;
+  max-width: 340px;
   letter-spacing: .3px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.35);
 }
 #btn-done-drawing:hover { background: #219150; }
 #btn-cancel-drawing {
-  background: transparent;
-  color: rgba(255,255,255,.6);
+  pointer-events: all;
+  background: rgba(13,33,55,.7);
+  color: rgba(255,255,255,.7);
   border: none;
   font-size: 13px;
   cursor: pointer;
-  padding: 4px;
+  padding: 5px 14px;
+  border-radius: 10px;
 }
 #btn-cancel-drawing:hover { color: white; }
 
@@ -418,6 +440,78 @@ textarea { height: 60px; resize: vertical; }
   border: none;
   border-radius: 0;
   padding-left: 4px;
+}
+.price-input-wrap input:focus { border-color: transparent; }
+
+/* ═══ PRICE SECTION ═══ */
+.price-section {
+  background: white;
+  border: 1.5px solid var(--surface2);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  margin-bottom: 10px;
+}
+.price-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--text-lt);
+  margin-bottom: 8px;
+}
+.price-dropdowns {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.price-drop-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.price-drop-group label {
+  font-size: 10px;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.price-drop-group select {
+  width: auto;
+  min-width: 80px;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.price-drop-sep {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-lt);
+  padding-bottom: 6px;
+  line-height: 1;
+}
+.price-input-wrap {
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1.5px solid var(--surface2);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color .15s;
+  width: 100px;
+}
+.price-input-wrap:focus-within { border-color: var(--sky); }
+.dollar-sign {
+  padding: 8px 0 8px 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--navy-pale);
+}
+.price-input-wrap input {
+  border: none;
+  border-radius: 0;
+  padding: 8px 8px 8px 3px;
+  width: 60px;
+  font-size: 14px;
 }
 .price-input-wrap input:focus { border-color: transparent; }
 

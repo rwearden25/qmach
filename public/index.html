@@ -61,10 +61,12 @@
   </div>
 
   <!-- Drawing mode overlay — shown while actively drawing -->
+  <!-- Drawing mode bar — shown while drawing, clicks pass through to map -->
   <div id="drawing-overlay" style="display:none">
     <div id="drawing-instructions">
-      <strong>Tap to add points</strong> around the work area
+      <strong>Tap corners</strong> of the work area
     </div>
+    <div id="point-counter">0 points</div>
     <button id="btn-done-drawing">✓ Done — Calculate Area</button>
     <button id="btn-cancel-drawing">✕ Cancel</button>
   </div>
@@ -133,15 +135,29 @@
         </div>
       </div>
 
-      <!-- Price per unit -->
-      <div class="form-row">
-        <div class="field field-wide">
-          <label>Price per <span id="price-unit-label">sq ft</span></label>
-          <div class="price-input-wrap">
-            <span class="dollar-sign">$</span>
-            <input type="number" id="price-per-unit" value="0.05" min="0" step="0.01" placeholder="0.00">
+      <!-- Price per unit — dollars dropdown + cents dropdown + optional override -->
+      <div class="price-section">
+        <div class="price-section-label">Price per <span id="price-unit-label">sq ft</span></div>
+        <div class="price-dropdowns">
+          <div class="price-drop-group">
+            <label>$ Dollars</label>
+            <select id="price-dollars"></select>
+          </div>
+          <div class="price-drop-sep">.</div>
+          <div class="price-drop-group">
+            <label>¢ Cents</label>
+            <select id="price-cents"></select>
+          </div>
+          <div class="price-drop-group">
+            <label>or enter $</label>
+            <div class="price-input-wrap">
+              <span class="dollar-sign">$</span>
+              <input type="number" id="price-per-unit" placeholder="0.00" min="0" step="0.01">
+            </div>
           </div>
         </div>
+      </div>
+      <div class="form-row">
         <div class="field">
           <label>Passes / Qty</label>
           <select id="qty">
@@ -153,7 +169,7 @@
           </select>
         </div>
         <div class="field">
-          <label>Markup</label>
+          <label>Markup %</label>
           <select id="markup">
             <option value="0">0%</option>
             <option value="5">5%</option>
