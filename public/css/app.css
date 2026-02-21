@@ -1201,15 +1201,19 @@ textarea { height: 60px; resize: vertical; }
 @media (min-width: 1024px) {
   body {
     flex-direction: row;
-    flex-wrap: wrap;
   }
   header {
-    width: 100%;
-    flex-shrink: 0;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+  }
+  #map-container, #bottom-panel {
+    margin-top: 48px;
   }
   #map-container {
-    flex: 1 1 auto;
-    width: calc(100vw - 420px);
+    flex: 1;
     min-width: 0;
     height: calc(100dvh - 48px);
   }

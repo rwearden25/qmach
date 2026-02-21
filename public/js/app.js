@@ -258,6 +258,7 @@ async function bootApp() {
     mapboxToken = cfg.mapboxToken || '';
     if (!mapboxToken) return;
     initMap();
+    setTimeout(() => { if (map && map.resize) map.resize(); }, 100);
     geolocateUser();
   } catch(err) {
     console.error('Boot:', err);
