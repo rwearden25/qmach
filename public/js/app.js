@@ -313,6 +313,9 @@ function startDrawing(mode) {
   }
   setEl('drawing-overlay', 'display', 'block');
   setEl('measure-badge', 'display', 'none');
+  // Update done button text
+  const doneBtn = document.getElementById('btn-done-drawing');
+  if (doneBtn) doneBtn.textContent = mode === 'polygon' ? '✓ Done — Calculate Area' : '✓ Done — Calculate Length';
 
   // Change cursor
   map.getCanvas().style.cursor = 'crosshair';
@@ -355,7 +358,6 @@ function finishDrawing() {
       drawnRawMeters = sq;
       drawnPerimeterMeters = perim;
       drawnRawType = 'area';
-      document.getElementById('measure-type').value = 'sqft';
     } catch(e) {
       console.error('Area calculation error:', e);
       showToast('Area calculation failed — try drawing again');
@@ -373,7 +375,6 @@ function finishDrawing() {
       if (!len || len <= 0) throw new Error('Zero length');
       drawnRawMeters = len;
       drawnRawType = 'line';
-      document.getElementById('measure-type').value = 'linft';
     } catch(e) {
       console.error('Length calculation error:', e);
       showToast('Length calculation failed — try drawing again');
@@ -389,6 +390,7 @@ function finishDrawing() {
 
   // Update form
   document.getElementById('manual-area').value = '';
+  updateMeasureOptions();
   updateCalc();
   updateBadge();
 
@@ -422,6 +424,7 @@ function clearDrawing() {
   clearPreview();
   setEl('measure-badge', 'display', 'none');
   document.getElementById('manual-area').value = '';
+  updateMeasureOptions();
   updateCalc();
 }
 
@@ -569,6 +572,23 @@ function geolocateUser() {
 // ═══════════════════════════════════════
 //  MEASUREMENT & CALC
 // ═══════════════════════════════════════
+function updateMeasureOptions() {
+  const sel = document.getElementById('measure-type');
+  const label = document.querySelector('.mrow-label');
+  if (!sel) return;
+
+  if (drawnRawType === 'line') {
+    // Line: only linear units make sense
+    sel.innerHTML = '<option value="linft">Lin Ft</option><option value="sqyd">Yards</option>';
+    sel.value = 'linft';
+    if (label) label.textContent = 'Measured Length';
+  } else {
+    // Polygon or default: all units
+    sel.innerHTML = '<option value="sqft">Sq Ft</option><option value="linft">Lin Ft</option><option value="sqyd">Sq Yd</option><option value="acre">Acres</option>';
+    if (label) label.textContent = 'Measured Area';
+  }
+}
+
 function getDisplayMeasurement() {
   const manual = parseFloat(document.getElementById('manual-area')?.value);
   if (!isNaN(manual) && manual > 0) return manual;
@@ -597,6 +617,9 @@ function getDisplayMeasurement() {
 }
 
 function unitLabel(type) {
+  if (drawnRawType === 'line') {
+    return { linft: 'lin ft', sqyd: 'yd' }[type] || 'lin ft';
+  }
   return { sqft: 'sq ft', linft: 'lin ft', sqyd: 'sq yd', acre: 'acres' }[type] || 'sq ft';
 }
 
@@ -873,7 +896,6 @@ async function loadQuote(id) {
     document.getElementById('project-type').value = q.project_type || 'pressure-washing';
     document.getElementById('notes').value = q.notes || '';
     document.getElementById('manual-area').value = q.area || '';
-    document.getElementById('measure-type').value = q.unit || 'sqft';
     document.getElementById('qty').value = q.qty || 1;
     document.getElementById('markup').value = 0;
     // Restore price to dropdowns + manual field
@@ -904,6 +926,11 @@ async function loadQuote(id) {
       lastAddress = q.address; lastLat = q.lat; lastLng = q.lng;
       setText('address-display', q.address.split(',').slice(0,2).join(','));
     }
+    updateMeasureOptions();
+    // Restore unit after options rebuilt
+    const selU = document.getElementById('measure-type');
+    const savedU = q.unit || 'sqft';
+    if (selU && [...selU.options].some(o => o.value === savedU)) selU.value = savedU;
     updateCalc();
     showTab('quote');
     showToast('Quote loaded ✓');
