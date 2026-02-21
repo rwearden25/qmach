@@ -196,7 +196,7 @@ header {
   bottom: 60px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(28,58,94,.85);
+  background: rgba(28,58,94,.88);
   color: white;
   font-size: 12px;
   font-weight: 500;
@@ -207,15 +207,14 @@ header {
   white-space: nowrap;
   backdrop-filter: blur(4px);
   border: 1px solid rgba(255,255,255,.15);
-  transition: opacity .3s;
 }
-.map-hint.hidden { opacity: 0; }
 
 /* Measure badge */
 #measure-badge {
   position: absolute;
   bottom: 16px;
-  left: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   background: var(--navy);
   color: white;
   border-radius: 12px;
@@ -226,6 +225,7 @@ header {
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 .badge-val {
   font-family: 'Bebas Neue', sans-serif;
@@ -250,19 +250,19 @@ header {
   display: flex; align-items: center; justify-content: center;
 }
 
-/* Map toolbar */
+/* Map toolbar — left side to avoid conflict with Mapbox controls */
 #map-toolbar {
   position: absolute;
-  bottom: 16px;
-  right: 10px;
+  top: 70px;
+  left: 10px;
   z-index: 500;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: rgba(28,58,94,.9);
+  background: rgba(28,58,94,.92);
   border-radius: 10px;
   padding: 8px;
-  border: 1px solid rgba(255,255,255,.15);
+  border: 1px solid rgba(255,255,255,.18);
   box-shadow: var(--shadow);
 }
 .map-tool-btn {
@@ -300,9 +300,11 @@ header {
 
 .panel-scroll {
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
-  padding: 0 14px 20px;
+  padding: 0 14px 24px;
   -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
 }
 
 /* Tabs */

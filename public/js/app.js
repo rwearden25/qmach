@@ -188,23 +188,42 @@ function activateTool(id) {
   if (id) document.getElementById(id)?.classList.add('active');
 }
 
-function onDrawChange() {
-  const data = draw.getAll();
-  if (!data.features.length) return;
-  drawnFeature = data.features[0];
-  if (drawnFeature.geometry.type === 'LineString') {
-    drawnRawMeters = turf.length(drawnFeature, { units: 'meters' });
-    drawnRawType = 'line';
-    document.getElementById('measure-type').value = 'linft';
+function onDrawChange(e) {
+  // Use event features first, fall back to getAll
+  let feature = null;
+  if (e && e.features && e.features.length) {
+    feature = e.features[0];
   } else {
-    drawnRawMeters = turf.area(drawnFeature);
-    drawnRawType = 'area';
-    document.getElementById('measure-type').value = 'sqft';
+    const data = draw.getAll();
+    if (!data.features.length) return;
+    feature = data.features[0];
   }
+
+  drawnFeature = feature;
+
+  try {
+    if (feature.geometry.type === 'LineString') {
+      drawnRawMeters = turf.length(feature, { units: 'meters' });
+      drawnRawType = 'line';
+      document.getElementById('measure-type').value = 'linft';
+    } else {
+      drawnRawMeters = turf.area(feature);
+      drawnRawType = 'area';
+      document.getElementById('measure-type').value = 'sqft';
+    }
+  } catch(err) {
+    console.error('Measurement error:', err);
+    return;
+  }
+
   document.getElementById('manual-area').value = '';
   updateCalc();
   updateBadge();
   setMapHint('');
+
+  // Scroll panel to top so user sees the measurement
+  const scroll = document.getElementById('panel-scroll');
+  if (scroll) scroll.scrollTop = 0;
 }
 
 function onDrawDelete() {
@@ -819,6 +838,9 @@ function showTab(tab) {
   document.querySelectorAll('.tab-btn').forEach((btn, i) => {
     btn.classList.toggle('active', ['quote','saved','stats'][i] === tab);
   });
+  // Always scroll to top when switching tabs
+  const scroll = document.getElementById('panel-scroll');
+  if (scroll) scroll.scrollTop = 0;
   if (tab === 'saved') loadSaved();
   if (tab === 'stats') loadStats();
 }
