@@ -348,8 +348,8 @@ header {
 #bottom-panel {
   background: var(--surface);
   flex-shrink: 0;
-  height: 52vh;
-  max-height: 52vh;
+  height: 42vh;
+  max-height: 42vh;
   border-top: 3px solid var(--navy-mid);
   display: flex;
   flex-direction: column;
@@ -1244,28 +1244,105 @@ textarea { height: 60px; resize: vertical; }
   .drag-chevron { display: none; }
 }
 
-/* ═══ MOBILE PANEL ENHANCEMENTS ═══ */
+/* ═══ MOBILE OPTIMIZATIONS ═══ */
 @media (max-width: 767px) {
+
+  /* Panel — rounded top, sheet feel */
   #bottom-panel {
     border-top: none;
-    border-radius: 16px 16px 0 0;
-    box-shadow: 0 -4px 20px rgba(0,0,0,.15);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -6px 24px rgba(0,0,0,.25);
   }
   .panel-drag {
-    height: 36px;
-    border-radius: 16px 16px 0 0;
+    height: 40px;
+    border-radius: 20px 20px 0 0;
   }
   #bottom-panel.snap-collapsed .panel-scroll {
     overflow: hidden;
   }
-  /* Bigger touch targets on mobile */
-  .tab-btn { padding: 10px 4px; font-size: 12px; }
-  .action-btn { padding: 12px 6px; font-size: 13px; }
-  .mini-btn { padding: 6px 10px; font-size: 11px; }
-  .li-fields { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .li-field input, .li-field select { padding: 8px; font-size: 14px; }
-  .li-header select { padding: 8px; font-size: 14px; }
-  .field input, .field select, .field textarea { font-size: 16px; padding: 10px; }
-  /* Prevent iOS zoom on focus */
+
+  /* Toolbar — horizontal row at bottom-left instead of tall column */
+  #map-toolbar {
+    top: auto;
+    bottom: calc(42vh + 12px);
+    left: 8px;
+    flex-direction: row;
+    gap: 6px;
+  }
+  .map-tool-btn {
+    min-width: 44px;
+    padding: 7px 8px;
+    flex-direction: row;
+    gap: 4px;
+  }
+  .tool-label { font-size: 8px; }
+  .tool-icon { font-size: 16px; }
+
+  /* Search bar — full width, better fit */
+  #geocoder-wrapper {
+    width: calc(100% - 16px);
+    left: 8px;
+    transform: none;
+  }
+  #geocoder-inner {
+    border-radius: 12px;
+  }
+  #addr-input { font-size: 15px; padding: 10px 12px; }
+  #search-btn { padding: 10px 14px; font-size: 14px; }
+
+  /* Tabs — equal width, bigger tap area */
+  .tab-row { gap: 4px; }
+  .tab-btn { 
+    padding: 11px 6px; 
+    font-size: 12px; 
+    flex: 1;
+    border-radius: 10px;
+  }
+
+  /* Measurement row — tighter on mobile */
+  #measurement-row { gap: 8px; padding: 12px; }
+  .mrow-value { font-size: 22px; }
+  #measure-type { font-size: 15px; padding: 8px; }
+
+  /* Form fields — large enough to tap, prevent iOS zoom */
   input, select, textarea { font-size: 16px !important; }
+  .field input, .field select, .field textarea { 
+    padding: 11px 12px; 
+    border-radius: 10px;
+  }
+  label { font-size: 11px; margin-bottom: 4px; }
+
+  /* Line item fields */
+  .li-fields { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .li-field input, .li-field select { padding: 9px; font-size: 15px; }
+  .li-header select { padding: 9px; font-size: 15px; }
+
+  /* Action buttons — full width pairs */
+  .action-btn { padding: 13px 6px; font-size: 13px; border-radius: 12px; }
+
+  /* Total card — bigger number */
+  .total-amount { font-size: 32px; }
+  .btn-print-big { padding: 12px 16px; font-size: 14px; }
+
+  /* AI suggest button */
+  .btn-ai-suggest { padding: 13px; font-size: 14px; border-radius: 12px; }
+
+  /* New quote button */
+  .btn-new-quote { padding: 13px; font-size: 14px; margin-top: 8px; }
+
+  /* Panel scroll padding */
+  .panel-scroll { padding: 0 12px 32px; }
+
+  /* Markup select full width */
+  #markup { width: 100%; }
+
+  /* Drawing overlay — position above toolbar */
+  #drawing-overlay {
+    bottom: calc(42vh + 60px);
+  }
+
+  /* Measure badge — move above toolbar */
+  #measure-badge {
+    bottom: calc(42vh + 60px);
+  }
 }
