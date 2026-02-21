@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>QUOTE machine</title>
+
+<!-- Mapbox GL -->
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+
+<!-- Mapbox Draw -->
+<link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+
+<!-- Turf.js for area calculations -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+
+<!-- html2canvas for screenshots -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="logo">QUOTE<span>machine</span></div>
+  <div class="header-center" id="address-display"></div>
+  <div class="header-actions">
+    <button class="icon-btn" id="ai-chat-btn" title="AI Assistant">🤖</button>
+    <button class="icon-btn" onclick="showView('saved')" title="Saved Quotes">📋</button>
+  </div>
+</header>
+
+<!-- ── MAP ── -->
+<div id="map-container">
+  <div id="map"></div>
+
+  <!-- Address search -->
+  <div id="geocoder-wrapper">
+    <div id="geocoder-inner">
+      <input type="text" id="addr-input" placeholder="🔍  Enter address or place..." autocomplete="off"
+             onkeydown="if(event.key==='Enter')geocodeAddress()">
+      <button id="search-btn" onclick="geocodeAddress()">Go</button>
+    </div>
+    <div id="autocomplete-list"></div>
+  </div>
+
+  <!-- Map hint -->
+  <div class="map-hint" id="map-hint">
+    Draw a polygon or line on the map to measure
+  </div>
+
+  <!-- Measure badge -->
+  <div id="measure-badge" style="display:none">
+    <div class="badge-val" id="badge-val">0</div>
+    <div class="badge-unit" id="badge-unit">sq ft</div>
+    <button class="badge-clear" onclick="clearDrawing()">✕</button>
+  </div>
+
+  <!-- Map toolbar -->
+  <div id="map-toolbar">
+    <button class="map-tool-btn active" id="tool-polygon" onclick="setDrawMode('draw_polygon')" title="Draw Polygon">⬡</button>
+    <button class="map-tool-btn" id="tool-line" onclick="setDrawMode('draw_line_string')" title="Draw Line">╱</button>
+    <button class="map-tool-btn" id="tool-rect" onclick="setDrawMode('draw_rectangle')" title="Draw Rectangle">▭</button>
+    <div class="tool-divider"></div>
+    <button class="map-tool-btn" id="tool-screenshot" onclick="takeScreenshot()" title="Screenshot">📷</button>
+    <button class="map-tool-btn" id="tool-satellite" onclick="toggleLabels()" title="Toggle Labels">🏷️</button>
+  </div>
+</div>
+
+<!-- ── BOTTOM PANEL ── -->
+<div id="bottom-panel">
+  <div class="panel-drag" id="panel-drag">
+    <div class="drag-bar"></div>
+  </div>
+  <div class="panel-scroll" id="panel-scroll">
+
+    <!-- Tab row -->
+    <div class="tab-row">
+      <button class="tab-btn active" onclick="showTab('quote')">📐 Quote</button>
+      <button class="tab-btn" onclick="showTab('saved')">📋 Saved (<span id="saved-count">0</span>)</button>
+      <button class="tab-btn" onclick="showTab('stats')">📊 Stats</button>
+    </div>
+
+    <!-- ════ QUOTE TAB ════ -->
+    <div id="tab-quote">
+      <div class="section-title">Project Info</div>
+      <div class="form-row">
+        <div class="field">
+          <label>Client Name</label>
+          <input type="text" id="client-name" placeholder="Client / Company">
+        </div>
+        <div class="field">
+          <label>Project Type</label>
+          <select id="project-type" onchange="updateCalc()">
+            <option value="parking-lot-striping">Parking Lot Striping</option>
+            <option value="roofing">Roofing</option>
+            <option value="painting">Painting / Coating</option>
+            <option value="sealcoating">Sealcoating</option>
+            <option value="concrete">Concrete</option>
+            <option value="landscaping">Landscaping</option>
+            <option value="pressure-washing">Pressure Washing</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row full">
+        <div class="field">
+          <label>Notes / Address</label>
+          <textarea id="notes" placeholder="Job notes, conditions, address details..."></textarea>
+        </div>
+      </div>
+
+      <div class="section-title">Measurement</div>
+      <div class="form-row trio">
+        <div class="field">
+          <label>Unit</label>
+          <select id="measure-type" onchange="updateCalc()">
+            <option value="sqft">Sq Ft</option>
+            <option value="linft">Lin Ft</option>
+            <option value="sqyd">Sq Yd</option>
+            <option value="acre">Acres</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Area / Length</label>
+          <input type="number" id="manual-area" placeholder="Map / Enter" min="0" step="1" oninput="updateCalc()">
+        </div>
+        <div class="field">
+          <label>Passes</label>
+          <select id="qty" onchange="updateCalc()">
+            <option value="1">1×</option>
+            <option value="2">2×</option>
+            <option value="3">3×</option>
+            <option value="4">4×</option>
+            <option value="5">5×</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="section-title">
+        Pricing
+        <button class="ai-suggest-btn" id="ai-suggest-btn" onclick="aiSuggestPrice()">✨ AI Suggest</button>
+      </div>
+      <div id="ai-price-banner" style="display:none" class="ai-banner"></div>
+      <div class="form-row trio">
+        <div class="field">
+          <label>$ Dollars</label>
+          <select id="price-dollars" onchange="updateCalc()"></select>
+        </div>
+        <div class="field">
+          <label>¢ Cents</label>
+          <select id="price-cents" onchange="updateCalc()"></select>
+        </div>
+        <div class="field">
+          <label>Markup %</label>
+          <select id="markup" onchange="updateCalc()">
+            <option value="0">0%</option>
+            <option value="5">5%</option>
+            <option value="10">10%</option>
+            <option value="15">15%</option>
+            <option value="20">20%</option>
+            <option value="25">25%</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Total display -->
+      <div class="price-card">
+        <div>
+          <div class="price-label">Estimated Total</div>
+          <div class="price-total" id="total-display">$0.00</div>
+          <div class="price-breakdown" id="breakdown-display">—</div>
+        </div>
+        <div style="text-align:right">
+          <div class="price-label">Area</div>
+          <div class="area-num" id="area-display">0</div>
+          <div class="area-unit" id="unit-display">sq ft</div>
+        </div>
+      </div>
+
+      <!-- AI Narrative -->
+      <div id="narrative-section" style="display:none">
+        <div class="section-title">
+          AI Quote Narrative
+          <button class="ai-suggest-btn" onclick="generateNarrative()">↺ Regenerate</button>
+        </div>
+        <div id="narrative-text" class="narrative-box"></div>
+      </div>
+
+      <!-- Actions -->
+      <div class="btn-row">
+        <button class="btn btn-save" onclick="saveQuote()">
+          <span>💾</span>Save
+        </button>
+        <button class="btn btn-narrative" onclick="generateNarrative()">
+          <span>✍️</span>Narrative
+        </button>
+        <button class="btn btn-print" onclick="printQuote()">
+          <span>🖨️</span>Print
+        </button>
+        <button class="btn btn-share" onclick="openShareModal()">
+          <span>📤</span>Share
+        </button>
+      </div>
+      <button class="btn-new" onclick="newQuote()">＋ New Quote</button>
+    </div>
+
+    <!-- ════ SAVED TAB ════ -->
+    <div id="tab-saved" style="display:none">
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Search client, type, address..." oninput="loadSaved()">
+        <button onclick="exportAll()">Export</button>
+      </div>
+      <div id="saved-list">
+        <div class="empty-state">No saved quotes yet. Create your first quote!</div>
+      </div>
+    </div>
+
+    <!-- ════ STATS TAB ════ -->
+    <div id="tab-stats" style="display:none">
+      <div id="stats-content">
+        <div class="empty-state">Loading stats...</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── AI CHAT PANEL ── -->
+<div id="ai-panel" class="side-panel">
+  <div class="side-panel-header">
+    <span>🤖 AI Assistant</span>
+    <button onclick="closeAiPanel()">✕</button>
+  </div>
+  <div id="chat-messages" class="chat-messages"></div>
+  <div class="chat-input-row">
+    <input type="text" id="chat-input" placeholder="Ask about pricing, measurements..."
+           onkeydown="if(event.key==='Enter')sendChat()">
+    <button onclick="sendChat()">➤</button>
+  </div>
+</div>
+<div id="ai-overlay" onclick="closeAiPanel()"></div>
+
+<!-- ── SHARE MODAL ── -->
+<div class="modal-overlay" id="share-modal">
+  <div class="modal">
+    <h3>Share Quote</h3>
+    <div class="field" style="margin-bottom:12px">
+      <label>Quote Summary</label>
+      <textarea id="share-text" style="height:130px;font-size:13px;"></textarea>
+    </div>
+    <div class="modal-btns">
+      <button class="m-btn cancel" onclick="closeModal('share-modal')">Cancel</button>
+      <button class="m-btn copy" onclick="copyShare()">📋 Copy</button>
+    </div>
+    <div class="modal-btns" style="margin-top:8px">
+      <button class="m-btn sms" onclick="smsShare()">💬 Text</button>
+      <button class="m-btn email" onclick="emailShare()">✉️ Email</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCREENSHOT PREVIEW ── -->
+<div class="modal-overlay" id="screenshot-modal">
+  <div class="modal" style="max-width:500px">
+    <h3>Map Screenshot</h3>
+    <img id="screenshot-img" style="width:100%;border-radius:8px;border:2px solid var(--surface2)" src="" alt="Map capture">
+    <div class="modal-btns" style="margin-top:12px">
+      <button class="m-btn cancel" onclick="closeModal('screenshot-modal')">Close</button>
+      <button class="m-btn copy" onclick="downloadScreenshot()">⬇ Download</button>
+      <button class="m-btn email" onclick="shareScreenshot()">📤 Share</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── AI PRICE MODAL ── -->
+<div class="modal-overlay" id="ai-price-modal">
+  <div class="modal">
+    <h3>✨ AI Price Suggestion</h3>
+    <div id="ai-price-content" class="ai-price-content"></div>
+    <div class="modal-btns" style="margin-top:14px">
+      <button class="m-btn cancel" onclick="closeModal('ai-price-modal')">Dismiss</button>
+      <button class="m-btn copy" id="apply-price-btn" onclick="applyAiPrice()">Apply Recommended</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div id="toast"></div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
