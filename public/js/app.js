@@ -1,4 +1,46 @@
 // ═══════════════════════════════════════
+//  GEOMETRY MATH (no external library)
+//  Replaces turf.js which fails CSP eval check
+// ═══════════════════════════════════════
+
+// Haversine distance between two [lng, lat] points in meters
+function haversineMeters(a, b) {
+  const R = 6371008.8; // Earth radius in meters
+  const lat1 = a[1] * Math.PI / 180;
+  const lat2 = b[1] * Math.PI / 180;
+  const dLat = (b[1] - a[1]) * Math.PI / 180;
+  const dLng = (b[0] - a[0]) * Math.PI / 180;
+  const x = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1) * Math.cos(lat2) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+// Polygon area in square meters using spherical excess (shoelace on projected coords)
+function polygonAreaMeters(ring) {
+  // Convert lng/lat to approximate meters using equirectangular projection
+  const R = 6371008.8;
+  const toRad = d => d * Math.PI / 180;
+  const pts = ring.map(p => [
+    R * toRad(p[0]) * Math.cos(toRad(p[1])),
+    R * toRad(p[1])
+  ]);
+  // Shoelace formula
+  let area = 0;
+  for (let i = 0, n = pts.length, j = n - 1; i < n; j = i++) {
+    area += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]);
+  }
+  return Math.abs(area / 2);
+}
+
+// LineString total length in meters
+function lineStringMeters(coords) {
+  let total = 0;
+  for (let i = 1; i < coords.length; i++) total += haversineMeters(coords[i-1], coords[i]);
+  return total;
+}
+
+// ═══════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════
 let map = null;
@@ -217,12 +259,29 @@ function initMap() {
       paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 }
     });
 
-    // Click to add points during drawing
-    map.on('click', e => {
+    // ── Direct canvas listener bypasses MapboxDraw event interception
+    // map.on('click') does NOT fire when MapboxDraw is attached.
+    // We use pointerup on the raw canvas + map.unproject() instead.
+    const canvas = map.getCanvas();
+
+    canvas.addEventListener('pointerup', e => {
       if (!isDrawing) return;
-      const pt = [e.lngLat.lng, e.lngLat.lat];
+      // Only handle left-click / single touch (button 0)
+      if (e.button !== undefined && e.button !== 0) return;
+      // Ignore if the tap was on a UI element (button, select, input)
+      if (e.target && e.target !== canvas) return;
+
+      // Get pixel position relative to canvas
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // Convert pixel to lng/lat
+      const lngLat = map.unproject([x, y]);
+      const pt = [lngLat.lng, lngLat.lat];
+
       trackedPoints.push(pt);
-      console.log('Point added:', pt, '— total:', trackedPoints.length);
+      console.log('Point added via canvas:', pt, '— total:', trackedPoints.length);
       updatePointCounter();
       updateDrawPreview();
     });
@@ -287,8 +346,9 @@ function finishDrawing() {
       properties: {}
     };
     try {
-      const sq = turf.area(feature);
-      console.log('turf.area result:', sq, 'sq meters');
+      const ring = feature.geometry.coordinates[0];
+      const sq = polygonAreaMeters(ring);
+      console.log('Area result:', sq, 'sq meters');
       if (!sq || sq <= 0) throw new Error('Zero area');
       drawnRawMeters = sq;
       drawnRawType = 'area';
@@ -305,8 +365,8 @@ function finishDrawing() {
       properties: {}
     };
     try {
-      const len = turf.length(feature, { units: 'meters' });
-      console.log('turf.length result:', len, 'meters');
+      const len = lineStringMeters(feature.geometry.coordinates);
+      console.log('Length result:', len, 'meters');
       if (!len || len <= 0) throw new Error('Zero length');
       drawnRawMeters = len;
       drawnRawType = 'line';
