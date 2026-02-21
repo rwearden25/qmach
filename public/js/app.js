@@ -48,6 +48,7 @@ let draw = null;
 let mapboxToken = '';
 let drawnFeature = null;
 let drawnRawMeters = 0;
+let drawnPerimeterMeters = 0;
 let drawnRawType = 'area';   // 'area' | 'line'
 let isDrawing = false;
 let drawMode = 'polygon';    // 'polygon' | 'line'
@@ -112,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     updateCalc();
   }, 'input');
-  on('manual-area',    () => { drawnRawMeters = 0; updateCalc(); }, 'input');
+  on('manual-area',    () => { drawnRawMeters = 0; drawnPerimeterMeters = 0; updateCalc(); }, 'input');
   // Build price dropdowns
   buildPriceDropdowns();
 
@@ -348,9 +349,11 @@ function finishDrawing() {
     try {
       const ring = feature.geometry.coordinates[0];
       const sq = polygonAreaMeters(ring);
-      console.log('Area result:', sq, 'sq meters');
+      const perim = lineStringMeters(ring);
+      console.log('Area result:', sq, 'sq meters, perimeter:', perim, 'meters');
       if (!sq || sq <= 0) throw new Error('Zero area');
       drawnRawMeters = sq;
+      drawnPerimeterMeters = perim;
       drawnRawType = 'area';
       document.getElementById('measure-type').value = 'sqft';
     } catch(e) {
@@ -412,6 +415,7 @@ function clearDrawing() {
   if (isDrawing) cancelDrawing();
   drawnFeature = null;
   drawnRawMeters = 0;
+  drawnPerimeterMeters = 0;
   drawnRawType = 'area';
   trackedPoints = [];
   if (draw) draw.deleteAll();
@@ -570,10 +574,22 @@ function getDisplayMeasurement() {
   if (!isNaN(manual) && manual > 0) return manual;
   if (!drawnRawMeters) return 0;
   const type = document.getElementById('measure-type')?.value || 'sqft';
-  if (drawnRawType === 'line') return drawnRawMeters * 3.28084;
+
+  if (drawnRawType === 'line') {
+    // drawnRawMeters = length in meters
+    switch (type) {
+      case 'linft': return drawnRawMeters * 3.28084;
+      case 'sqft':  return drawnRawMeters * 3.28084;   // line has no area — show length in ft
+      case 'sqyd':  return drawnRawMeters * 1.09361;   // meters → yards
+      case 'acre':  return drawnRawMeters * 3.28084;   // no area — show length in ft
+      default:      return drawnRawMeters * 3.28084;
+    }
+  }
+
+  // drawnRawType === 'area' → drawnRawMeters = area in sq meters
   switch (type) {
     case 'sqft':  return drawnRawMeters * 10.7639;
-    case 'linft': return drawnRawMeters * 3.28084;
+    case 'linft': return drawnPerimeterMeters * 3.28084;  // perimeter in feet
     case 'sqyd':  return drawnRawMeters * 1.19599;
     case 'acre':  return drawnRawMeters / 4046.86;
     default:      return drawnRawMeters * 10.7639;
@@ -871,6 +887,7 @@ async function loadQuote(id) {
     const priceInput = document.getElementById('price-per-unit');
     if (priceInput) priceInput.value = '';
     drawnRawMeters = 0; // use manual area
+    drawnPerimeterMeters = 0;
     if (q.ai_narrative) {
       document.getElementById('narrative-text').textContent = q.ai_narrative;
       document.getElementById('narrative-section').style.display = 'block';
