@@ -17,6 +17,17 @@
 </head>
 <body>
 
+<!-- LOGIN GATE -->
+<div id="login-gate">
+  <div class="login-card">
+    <div class="login-logo">QUOTE<span>machine</span></div>
+    <div class="login-sub">Enter password to continue</div>
+    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+    <button id="login-btn">Sign In</button>
+    <div id="login-error" class="login-error"></div>
+  </div>
+</div>
+
 <!-- HEADER -->
 <header>
   <div class="logo">QUOTE<span>machine</span></div>
@@ -57,6 +68,10 @@
     <button class="map-tool-btn" id="tool-satellite" title="Toggle Labels">
       <span class="tool-icon">🗺</span>
       <span class="tool-label">Labels</span>
+    </button>
+    <button class="map-tool-btn" id="tool-streetview" title="Street View">
+      <span class="tool-icon">👁</span>
+      <span class="tool-label">360°</span>
     </button>
   </div>
 

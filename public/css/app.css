@@ -34,6 +34,77 @@ body {
   height: 100dvh;
 }
 
+/* ═══ LOGIN GATE ═══ */
+#login-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--navy);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+#login-gate.hidden { display: none; }
+.login-card {
+  background: white;
+  border-radius: 16px;
+  padding: 36px 28px;
+  width: 100%;
+  max-width: 340px;
+  box-shadow: 0 12px 48px rgba(0,0,0,.3);
+  text-align: center;
+}
+.login-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 32px;
+  letter-spacing: 3px;
+  color: var(--navy);
+  margin-bottom: 4px;
+}
+.login-logo span { color: var(--accent); }
+.login-sub {
+  font-size: 13px;
+  color: var(--text-lt);
+  margin-bottom: 24px;
+}
+#login-password {
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid var(--surface2);
+  border-radius: 10px;
+  font-size: 16px;
+  font-family: 'DM Sans', sans-serif;
+  outline: none;
+  text-align: center;
+  letter-spacing: 2px;
+  transition: border-color .2s;
+}
+#login-password:focus { border-color: var(--accent); }
+#login-btn {
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px;
+  background: var(--navy-mid);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  transition: background .15s;
+}
+#login-btn:hover { background: var(--navy-pale); }
+#login-btn:disabled { opacity: .5; cursor: not-allowed; }
+.login-error {
+  color: #DC2626;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 10px;
+  min-height: 18px;
+}
+
 /* ═══ HEADER ═══ */
 header {
   background: var(--navy);

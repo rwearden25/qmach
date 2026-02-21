@@ -61,11 +61,98 @@ let aiPriceData = null;
 let isDragging = false;
 let mapStyleHasLabels = true;
 let debounceTimer = null;
+let authToken = sessionStorage.getItem('qmach_token') || '';
+
+// ═══════════════════════════════════════
+//  AUTH
+// ═══════════════════════════════════════
+async function authFetch(url, options = {}) {
+  if (!options.headers) options.headers = {};
+  if (authToken) options.headers['x-auth-token'] = authToken;
+  const resp = await fetch(url, options);
+  if (resp.status === 401) {
+    // Session expired — show login
+    sessionStorage.removeItem('qmach_token');
+    authToken = '';
+    showLoginGate();
+    throw new Error('Unauthorized');
+  }
+  return resp;
+}
+
+function showLoginGate() {
+  const gate = document.getElementById('login-gate');
+  if (gate) gate.classList.remove('hidden');
+}
+
+function hideLoginGate() {
+  const gate = document.getElementById('login-gate');
+  if (gate) gate.classList.add('hidden');
+}
+
+async function checkAuth() {
+  try {
+    const resp = await fetch('/api/auth/check', {
+      headers: authToken ? { 'x-auth-token': authToken } : {}
+    });
+    const data = await resp.json();
+    if (data.valid) {
+      hideLoginGate();
+      return true;
+    }
+  } catch {}
+  showLoginGate();
+  return false;
+}
+
+async function doLogin() {
+  const btn = document.getElementById('login-btn');
+  const pw = document.getElementById('login-password');
+  const err = document.getElementById('login-error');
+  if (!pw.value.trim()) { err.textContent = 'Enter a password'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+  err.textContent = '';
+  try {
+    const resp = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw.value.trim() })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      authToken = data.token;
+      sessionStorage.setItem('qmach_token', authToken);
+      hideLoginGate();
+      bootApp();
+    } else {
+      err.textContent = 'Wrong password';
+      pw.value = '';
+      pw.focus();
+    }
+  } catch {
+    err.textContent = 'Connection error';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Sign In';
+}
 
 // ═══════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  // Wire login form
+  document.getElementById('login-btn')?.addEventListener('click', doLogin);
+  document.getElementById('login-password')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+
+  // Check if already authed
+  const authed = await checkAuth();
+  if (authed) bootApp();
+});
+
+async function bootApp() {
   updateCalc();
   initPanelDrag();
   initModalBackdrops();
@@ -93,6 +180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   on('tool-line',      () => startDrawing('line'));
   on('tool-clear',     () => clearDrawing());
   on('tool-satellite', () => toggleLabels());
+  on('tool-streetview', () => openStreetView());
   on('search-btn',     () => geocodeAddress());
   on('badge-clear-btn',() => clearDrawing());
 
@@ -157,7 +245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load map
   try {
-    const cfg = await fetch('/api/config').then(r => r.json());
+    const cfg = await authFetch('/api/config').then(r => r.json());
     mapboxToken = cfg.mapboxToken || '';
     if (!mapboxToken) return;
     initMap();
@@ -165,7 +253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch(err) {
     console.error('Boot:', err);
   }
-});
+}
 
 function on(id, fn, evt = 'click') {
   const el = document.getElementById(id);
@@ -492,6 +580,27 @@ function updatePointCounter() {
 }
 
 // ─── Toggle satellite labels
+// ─── Street View / 360°
+function openStreetView() {
+  let lat, lng;
+  if (map) {
+    const center = map.getCenter();
+    lat = center.lat;
+    lng = center.lng;
+  }
+  if (lastLat && lastLng) {
+    lat = lastLat;
+    lng = lastLng;
+  }
+  if (!lat || !lng) {
+    showToast('Search an address first');
+    return;
+  }
+  // Open Google Street View in new tab
+  const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}&heading=0&pitch=0&fov=90`;
+  window.open(url, '_blank');
+}
+
 function toggleLabels() {
   if (!map) return;
   mapStyleHasLabels = !mapStyleHasLabels;
@@ -673,7 +782,7 @@ async function aiSuggestPrice() {
   if (!area) { showToast('Draw or enter an area first'); return; }
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Getting prices...'; }
   try {
-    const res = await fetch('/api/ai/suggest-price', {
+    const res = await authFetch('/api/ai/suggest-price', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         project_type: document.getElementById('project-type')?.value,
@@ -738,7 +847,7 @@ async function generateNarrative() {
   const price = getPrice();
   const qty = parseInt(document.getElementById('qty')?.value) || 1;
   try {
-    const res = await fetch('/api/ai/generate-narrative', {
+    const res = await authFetch('/api/ai/generate-narrative', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client_name: client,
@@ -776,7 +885,7 @@ async function sendChat() {
   chatHistory.push({ role: 'user', content: msg });
   const tid = addChatMsg('ai', '...', true);
   try {
-    const res = await fetch('/api/ai/chat', {
+    const res = await authFetch('/api/ai/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         messages: chatHistory.slice(-10),
@@ -822,7 +931,7 @@ async function saveQuote() {
   const unit  = document.getElementById('measure-type')?.value || 'sqft';
   const narrative = document.getElementById('narrative-text')?.textContent || '';
   try {
-    const res = await fetch('/api/quotes', {
+    const res = await authFetch('/api/quotes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         client_name: client,
@@ -842,7 +951,7 @@ async function saveQuote() {
 
 async function loadSavedCount() {
   try {
-    const data = await fetch('/api/stats').then(r => r.json());
+    const data = await authFetch('/api/stats').then(r => r.json());
     const n = data.total_quotes || 0;
     setText('saved-count', n);
     setText('saved-count-tab', n);
@@ -853,7 +962,7 @@ async function loadSaved() {
   const search = document.getElementById('search-input')?.value || '';
   const container = document.getElementById('saved-list');
   try {
-    const data = await fetch(`/api/quotes?search=${encodeURIComponent(search)}&limit=30`).then(r => r.json());
+    const data = await authFetch(`/api/quotes?search=${encodeURIComponent(search)}&limit=30`).then(r => r.json());
     renderSavedList(data.quotes || []);
   } catch {
     if (container) container.innerHTML = '<div class="empty-state">Failed to load.</div>';
@@ -890,7 +999,7 @@ function renderSavedList(quotes) {
 
 async function loadQuote(id) {
   try {
-    const q = await fetch(`/api/quotes/${id}`).then(r => r.json());
+    const q = await authFetch(`/api/quotes/${id}`).then(r => r.json());
     if (q.error) throw new Error();
     document.getElementById('client-name').value = q.client_name || '';
     document.getElementById('project-type').value = q.project_type || 'pressure-washing';
@@ -940,7 +1049,7 @@ async function loadQuote(id) {
 async function deleteQuote(id) {
   if (!confirm('Delete this quote?')) return;
   try {
-    await fetch(`/api/quotes/${id}`, { method: 'DELETE' });
+    await authFetch(`/api/quotes/${id}`, { method: 'DELETE' });
     showToast('Deleted');
     loadSaved(); loadSavedCount();
   } catch { showToast('Delete failed'); }
@@ -948,7 +1057,7 @@ async function deleteQuote(id) {
 
 async function exportAll() {
   try {
-    const data = await fetch('/api/quotes?limit=500').then(r => r.json());
+    const data = await authFetch('/api/quotes?limit=500').then(r => r.json());
     const text = (data.quotes||[]).map(q => buildShareText(q)).join('\n\n══════════════\n\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
@@ -1045,7 +1154,7 @@ function emailShare() {
 async function loadStats() {
   const container = document.getElementById('stats-content');
   try {
-    const s = await fetch('/api/stats').then(r => r.json());
+    const s = await authFetch('/api/stats').then(r => r.json());
     const mu = v => '$' + parseFloat(v||0).toLocaleString(undefined,{maximumFractionDigits:0});
     const rows = (s.by_type||[]).map(t => `
       <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #E8EEF4">
@@ -1169,6 +1278,8 @@ function initPanelDrag() {
     if (snapName === 'collapsed') panel.classList.add('snap-collapsed');
     if (snapName === 'full') panel.classList.add('snap-full');
     updateChevron();
+    // Resize map to fill available space
+    if (map) { map.resize(); setTimeout(() => map.resize(), 350); }
   };
 
   const onStart = y => {
@@ -1188,6 +1299,7 @@ function initPanelDrag() {
     const newH = Math.max(snaps.collapsed, Math.min(snaps.full, startH + (startY - y)));
     panel.style.height = newH + 'px';
     panel.style.maxHeight = newH + 'px';
+    if (map) map.resize();
   };
 
   const onEnd = () => {

@@ -14,6 +14,21 @@ const PORT = process.env.PORT || 3000;
 // ── Anthropic client
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ══════════════════════════════════════════
+//  AUTH — password from Railway env var
+// ══════════════════════════════════════════
+const AUTH_PASSWORD = process.env.QMACH_PASSWORD || '';
+const sessions = new Map(); // token → { created, expires }
+const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+// Clean expired sessions every 30 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, sess] of sessions) {
+    if (now > sess.expires) sessions.delete(token);
+  }
+}, 30 * 60 * 1000);
+
 // ── Middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -39,6 +54,46 @@ const aiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: '
 
 app.use('/api/', apiLimiter);
 app.use('/api/ai/', aiLimiter);
+
+// ── Auth endpoint (no auth required)
+app.post('/api/auth', (req, res) => {
+  const { password } = req.body;
+  if (!AUTH_PASSWORD) {
+    // No password set — open access
+    return res.json({ success: true, token: 'open', message: 'No password configured' });
+  }
+  if (password === AUTH_PASSWORD) {
+    const token = uuidv4();
+    sessions.set(token, { created: Date.now(), expires: Date.now() + SESSION_TTL });
+    console.log(`[Auth] Login success, sessions active: ${sessions.size}`);
+    return res.json({ success: true, token });
+  }
+  console.log(`[Auth] Login failed`);
+  res.status(401).json({ success: false, error: 'Wrong password' });
+});
+
+// ── Auth check endpoint
+app.get('/api/auth/check', (req, res) => {
+  if (!AUTH_PASSWORD) return res.json({ valid: true });
+  const token = req.headers['x-auth-token'];
+  if (token && sessions.has(token) && Date.now() < sessions.get(token).expires) {
+    return res.json({ valid: true });
+  }
+  res.status(401).json({ valid: false });
+});
+
+// ── Auth middleware — protect all /api/ routes except auth + config + health
+app.use('/api/', (req, res, next) => {
+  // Skip auth for these paths
+  if (req.path === '/auth' || req.path === '/auth/check' || req.path === '/config') return next();
+  // Skip if no password is configured
+  if (!AUTH_PASSWORD) return next();
+  const token = req.headers['x-auth-token'];
+  if (token && sessions.has(token) && Date.now() < sessions.get(token).expires) {
+    return next();
+  }
+  res.status(401).json({ error: 'Unauthorized — please log in' });
+});
 
 // ══════════════════════════════════════════
 //  QUOTES ROUTES
@@ -327,4 +382,6 @@ app.get('*', (req, res) => {
 // ── Start
 app.listen(PORT, () => {
   console.log(`QUOTE machine running on port ${PORT}`);
+  console.log(`Auth: ${AUTH_PASSWORD ? '✓ Password protected' : '✗ Open access (set QMACH_PASSWORD to enable)'}`);
+  console.log(`AI:   ${process.env.ANTHROPIC_API_KEY ? '✓ Configured' : '✗ Set ANTHROPIC_API_KEY to enable'}`);
 });
