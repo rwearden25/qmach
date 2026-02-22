@@ -21,6 +21,136 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
+<style>
+/* ── NEW 4-UNIT MEASUREMENT PANEL ── */
+#measurement-row {
+  background: var(--surface2, #F4F7FA);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+#measurement-row:focus-within {
+  border-color: var(--accent, #E8A020);
+}
+.mrow-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.mrow-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--navy, #0D2137);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.mrow-hint {
+  font-size: 11px;
+  color: var(--text2, #6B8FAD);
+}
+.mrow-units {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 8px;
+}
+.munit-box {
+  background: white;
+  border-radius: 8px;
+  padding: 8px 8px 6px;
+  border: 1.5px solid var(--border, #D8E4EF);
+  transition: border-color 0.15s, background 0.15s;
+}
+.munit-box.has-value {
+  border-color: var(--accent, #E8A020);
+  background: #FFFBF0;
+}
+.munit-box:focus-within {
+  border-color: var(--accent, #E8A020);
+  box-shadow: 0 0 0 2px rgba(232,160,32,0.18);
+}
+.munit-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text2, #6B8FAD);
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+.munit-sub {
+  font-weight: 400;
+  font-size: 9px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.munit-input {
+  width: 100%;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: 'DM Sans', sans-serif;
+  color: var(--navy, #0D2137);
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 0;
+  -moz-appearance: textfield;
+}
+.munit-input::-webkit-inner-spin-button,
+.munit-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.munit-input::placeholder { color: #C5D4E0; font-weight: 400; font-size: 13px; }
+/* Pricing equivalents row */
+.mrow-pricing {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, #D8E4EF);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.mrow-pricing-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text2, #6B8FAD);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  width: 100%;
+  margin-bottom: 2px;
+}
+.mrow-price-chip {
+  background: #E8F4FF;
+  color: var(--navy, #0D2137);
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 20px;
+  padding: 3px 10px;
+  border: 1px solid #BDD8EF;
+}
+/* Saved quote measurement chips */
+.qc-measurements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0 4px;
+}
+.qcm-chip {
+  background: var(--surface2, #F4F7FA);
+  border: 1px solid var(--border, #D8E4EF);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--navy, #0D2137);
+  padding: 3px 8px;
+}
+.qcm-chip strong {
+  color: var(--accent, #E8A020);
+}
+@media (max-width: 380px) {
+  .mrow-units { grid-template-columns: 1fr 1fr; }
+}
+</style>
 </head>
 <body>
 
@@ -118,23 +248,37 @@
     <!-- ═══ QUOTE TAB ═══ -->
     <div id="tab-quote">
 
-      <!-- Measurement row — prominent at top -->
+      <!-- Measurement panel — all 4 units always visible and editable -->
       <div id="measurement-row">
-        <div class="mrow-area">
-          <div class="mrow-label">Measured Area</div>
-          <div class="mrow-value"><span id="area-display">0</span> <span id="unit-display">sq ft</span></div>
+        <div class="mrow-header">
+          <span class="mrow-title" id="mrow-title">📐 Measurements</span>
+          <span class="mrow-hint" id="mrow-hint">Draw on map or enter any value</span>
         </div>
-        <div class="mrow-actions">
-          <select id="measure-type" title="Unit">
-            <option value="sqft">Sq Ft</option>
-            <option value="linft">Lin Ft</option>
-            <option value="sqyd">Sq Yd</option>
-            <option value="acre">Acres</option>
-          </select>
-          <span class="mrow-or">or enter:</span>
-          <input type="number" id="manual-area" placeholder="manual" min="0" step="1">
+        <div class="mrow-units">
+          <div class="munit-box" id="munit-box-sqft">
+            <div class="munit-label">Sq Ft</div>
+            <input type="number" class="munit-input" id="munit-sqft" placeholder="0" min="0" step="1" oninput="onMeasurementInput('sqft', this.value)">
+          </div>
+          <div class="munit-box" id="munit-box-linft">
+            <div class="munit-label">Lin Ft <span class="munit-sub">perim</span></div>
+            <input type="number" class="munit-input" id="munit-linft" placeholder="0" min="0" step="0.1" oninput="onMeasurementInput('linft', this.value)">
+          </div>
+          <div class="munit-box" id="munit-box-sqyd">
+            <div class="munit-label">Sq Yd</div>
+            <input type="number" class="munit-input" id="munit-sqyd" placeholder="0" min="0" step="0.1" oninput="onMeasurementInput('sqyd', this.value)">
+          </div>
+          <div class="munit-box" id="munit-box-acre">
+            <div class="munit-label">Acres</div>
+            <input type="number" class="munit-input" id="munit-acre" placeholder="0" min="0" step="0.0001" oninput="onMeasurementInput('acre', this.value)">
+          </div>
+        </div>
+        <div class="mrow-pricing" id="mrow-pricing" style="display:none">
+          <!-- filled by JS when a price is set -->
         </div>
       </div>
+      <!-- Hidden legacy inputs for backward compat -->
+      <select id="measure-type" style="display:none"><option value="sqft">Sq Ft</option><option value="linft">Lin Ft</option><option value="sqyd">Sq Yd</option><option value="acre">Acres</option></select>
+      <input type="number" id="manual-area" style="display:none">
 
       <!-- Client info -->
       <div class="form-row">

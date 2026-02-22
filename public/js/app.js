@@ -203,9 +203,8 @@ async function bootApp() {
   on('btn-done-drawing',   () => finishDrawing());
   on('btn-cancel-drawing', () => cancelDrawing());
 
-  // Quote form — auto-recalc
-  ['measure-type','markup'].forEach(id => on(id, () => updateCalc(), 'change'));
-  on('manual-area', () => { drawnRawMeters = 0; drawnPerimeterMeters = 0; updateCalc(); }, 'input');
+  // Quote form — auto-recalc (measure-type hidden, manual-area hidden, both kept for compat)
+  on('markup', () => updateCalc(), 'change');
 
   // Line items
   on('btn-add-item', () => addLineItem());
@@ -367,13 +366,15 @@ function renderLineItems() {
 }
 
 function useMapForItem(id) {
-  const measurement = getDisplayMeasurement();
   const item = lineItems.find(i => i.id === id);
   if (!item) return;
-  item.area = measurement;
-  item.unit = document.getElementById('measure-type')?.value || 'sqft';
+  const unit = item.unit || 'sqft';
+  const val = getMeasurementByUnit(unit);
+  if (!val) { showToast('No measurement yet — draw on map first'); return; }
+  item.area = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
   renderLineItems();
   updateCalc();
+  showToast(`${fmt(val)} ${unitLabel(unit)} applied ✓`);
 }
 
 function onLineItemChange() {
@@ -386,7 +387,7 @@ function onLineItemChange() {
     const subEl = el.querySelector('.li-subtotal-val');
     if (subEl) subEl.textContent = '$' + fmtMoney(sub);
   });
-  updateCalc();
+  updateCalc();  // this will refresh pricing equivalents too
 }
 
 function getLineItemsSubtotal() {
@@ -596,9 +597,6 @@ function finishDrawing() {
   updateCalc();
   updateBadge();
 
-  // Update price unit label
-  setText('price-unit-label', unitLabel(document.getElementById('measure-type').value));
-
   // Scroll panel to top
   const scroll = document.getElementById('panel-scroll');
   if (scroll) scroll.scrollTop = 0;
@@ -625,7 +623,16 @@ function clearDrawing() {
   if (draw) draw.deleteAll();
   clearPreview();
   setEl('measure-badge', 'display', 'none');
-  document.getElementById('manual-area').value = '';
+  // Clear all 4 measurement inputs
+  ['sqft','linft','sqyd','acre'].forEach(u => {
+    const el = document.getElementById('munit-' + u);
+    if (el) el.value = '';
+    const box = document.getElementById('munit-box-' + u);
+    if (box) box.classList.remove('has-value');
+  });
+  document.getElementById('manual-area') && (document.getElementById('manual-area').value = '');
+  const prow = document.getElementById('mrow-pricing');
+  if (prow) prow.style.display = 'none';
   updateMeasureOptions();
   updateCalc();
 }
@@ -798,47 +805,173 @@ function geolocateUser() {
 //  MEASUREMENT & CALC
 // ═══════════════════════════════════════
 function updateMeasureOptions() {
+  // Update title based on draw type
+  const title = document.getElementById('mrow-title');
+  const hint  = document.getElementById('mrow-hint');
+  if (title) title.textContent = drawnRawType === 'line' ? '📏 Measurements (Line)' : '📐 Measurements';
+  if (hint)  hint.textContent  = drawnRawMeters > 0 ? 'Edit any value to adjust all others' : 'Draw on map or enter any value';
+  // Keep hidden legacy select in sync
   const sel = document.getElementById('measure-type');
-  const label = document.querySelector('.mrow-label');
-  if (!sel) return;
+  if (sel) sel.value = 'sqft';
+}
 
+// Returns all 4 measurement values from current raw meters
+function getAllMeasurements() {
+  if (drawnRawMeters > 0) {
+    if (drawnRawType === 'line') {
+      const linft = drawnRawMeters * 3.28084;
+      return { sqft: linft, linft: linft, sqyd: drawnRawMeters * 1.09361, acre: null };
+    } else {
+      return {
+        sqft:  drawnRawMeters * 10.7639,
+        linft: drawnPerimeterMeters > 0 ? drawnPerimeterMeters * 3.28084 : null,
+        sqyd:  drawnRawMeters * 1.19599,
+        acre:  drawnRawMeters / 4046.86
+      };
+    }
+  }
+  // Read from sqft box if manually entered (no draw)
+  const sqftVal = parseFloat(document.getElementById('munit-sqft')?.value);
+  if (sqftVal > 0) {
+    return {
+      sqft:  sqftVal,
+      linft: null,  // no perimeter without a polygon
+      sqyd:  sqftVal / 9,
+      acre:  sqftVal / 43560
+    };
+  }
+  return { sqft: 0, linft: 0, sqyd: 0, acre: 0 };
+}
+
+// Update all 4 input boxes from raw meters (called after draw or after editing one box)
+function updateAllMeasurementInputs() {
+  const m = getAllMeasurements();
+  const fmt4 = (v, decimals) => v != null && v > 0 ? parseFloat(v.toFixed(decimals)) : '';
+
+  const sqftEl  = document.getElementById('munit-sqft');
+  const linftEl = document.getElementById('munit-linft');
+  const sqydEl  = document.getElementById('munit-sqyd');
+  const acreEl  = document.getElementById('munit-acre');
+
+  // Only update boxes that are NOT currently focused (don't overwrite what user is typing)
+  const active = document.activeElement?.id;
+  if (active !== 'munit-sqft'  && sqftEl)  sqftEl.value  = fmt4(m.sqft, 1);
+  if (active !== 'munit-linft' && linftEl) linftEl.value = m.linft != null ? fmt4(m.linft, 1) : '';
+  if (active !== 'munit-sqyd'  && sqydEl)  sqydEl.value  = fmt4(m.sqyd, 2);
+  if (active !== 'munit-acre'  && acreEl)  acreEl.value  = fmt4(m.acre, 4);
+
+  // Highlight boxes that have values
+  ['sqft','linft','sqyd','acre'].forEach(u => {
+    const box = document.getElementById('munit-box-' + u);
+    const val = m[u];
+    if (box) box.classList.toggle('has-value', val != null && val > 0);
+  });
+
+  // Update legacy hidden inputs for backward compat
+  const manual = document.getElementById('manual-area');
+  if (manual) manual.value = m.sqft > 0 ? parseFloat(m.sqft.toFixed(1)) : '';
+
+  // Update pricing equivalents row
+  updatePricingEquivalents(m);
+}
+
+// When price is set on a line item, show what it costs per other unit
+function updatePricingEquivalents(m) {
+  const row = document.getElementById('mrow-pricing');
+  if (!row) return;
+  syncLineItemsFromDOM();
+  const firstItem = lineItems.find(i => i.price > 0 && i.area > 0);
+  if (!firstItem || !m || m.sqft <= 0) { row.style.display = 'none'; return; }
+
+  // Convert price to per-sqft basis, then to all units
+  const areaInUnit = getMeasurementForUnit(m, firstItem.unit);
+  if (!areaInUnit) { row.style.display = 'none'; return; }
+  const pricePerSqft = firstItem.unit === 'sqft'  ? firstItem.price
+    : firstItem.unit === 'sqyd'  ? firstItem.price / 9
+    : firstItem.unit === 'acre'  ? firstItem.price / 43560
+    : firstItem.unit === 'linft' ? firstItem.price  // lin ft can't convert to area
+    : firstItem.price;
+
+  const items = [
+    { unit: 'sqft',  label: 'Sq Ft',  val: pricePerSqft },
+    { unit: 'sqyd',  label: 'Sq Yd',  val: pricePerSqft * 9 },
+    { unit: 'acre',  label: 'Acre',   val: pricePerSqft * 43560 },
+  ];
+
+  row.innerHTML = `<div class="mrow-pricing-label">Price equivalents (${firstItem.unit === 'linft' ? 'lin ft' : 'area'} basis):</div>` +
+    items.map(it => `<span class="mrow-price-chip">$${parseFloat(it.val.toFixed(4))} / ${it.label}</span>`).join('');
+  row.style.display = 'block';
+}
+
+function getMeasurementForUnit(m, unit) {
+  if (!m) return 0;
+  return m[unit] || 0;
+}
+
+// Called when user types in any measurement box — recalculate raw meters and update all others
+function onMeasurementInput(unit, value) {
+  const v = parseFloat(value);
+  if (isNaN(v) || v <= 0) {
+    // Clear everything if all boxes are empty
+    const anyFilled = ['sqft','linft','sqyd','acre'].some(u => {
+      if (u === unit) return false;
+      const el = document.getElementById('munit-' + u);
+      return parseFloat(el?.value) > 0;
+    });
+    if (!anyFilled) { drawnRawMeters = 0; drawnPerimeterMeters = 0; }
+    updateCalc();
+    return;
+  }
+
+  // Recalculate drawnRawMeters based on which unit was edited
   if (drawnRawType === 'line') {
-    // Line: only linear units make sense
-    sel.innerHTML = '<option value="linft">Lin Ft</option><option value="sqyd">Yards</option>';
-    sel.value = 'linft';
-    if (label) label.textContent = 'Measured Length';
+    if      (unit === 'linft') drawnRawMeters = v / 3.28084;
+    else if (unit === 'sqyd')  drawnRawMeters = v / 1.09361;
+    else                        drawnRawMeters = v / 3.28084;
   } else {
-    // Polygon or default: all units
-    sel.innerHTML = '<option value="sqft">Sq Ft</option><option value="linft">Lin Ft</option><option value="sqyd">Sq Yd</option><option value="acre">Acres</option>';
-    if (label) label.textContent = 'Measured Area';
+    if      (unit === 'sqft')  drawnRawMeters = v / 10.7639;
+    else if (unit === 'linft') drawnPerimeterMeters = v / 3.28084;  // adjust perimeter only
+    else if (unit === 'sqyd')  drawnRawMeters = v / 1.19599;
+    else if (unit === 'acre')  drawnRawMeters = v * 4046.86;
+  }
+
+  updateCalc();
+}
+
+// Set raw meters from a known area + unit (used when loading a quote)
+function setRawMetersFromAreaAndUnit(area, unit) {
+  if (!area || area <= 0) { drawnRawMeters = 0; drawnPerimeterMeters = 0; return; }
+  const v = parseFloat(area);
+  drawnRawType = (unit === 'linft') ? 'line' : 'area';
+  switch(unit) {
+    case 'sqft':  drawnRawMeters = v / 10.7639; break;
+    case 'sqyd':  drawnRawMeters = v / 1.19599; break;
+    case 'acre':  drawnRawMeters = v * 4046.86; break;
+    case 'linft': drawnRawMeters = v / 3.28084; break;
+    default:      drawnRawMeters = v / 10.7639;
   }
 }
 
 function getDisplayMeasurement() {
-  const manual = parseFloat(document.getElementById('manual-area')?.value);
-  if (!isNaN(manual) && manual > 0) return manual;
-  if (!drawnRawMeters) return 0;
-  const type = document.getElementById('measure-type')?.value || 'sqft';
-
-  if (drawnRawType === 'line') {
-    // drawnRawMeters = length in meters
-    switch (type) {
-      case 'linft': return drawnRawMeters * 3.28084;
-      case 'sqft':  return drawnRawMeters * 3.28084;   // line has no area — show length in ft
-      case 'sqyd':  return drawnRawMeters * 1.09361;   // meters → yards
-      case 'acre':  return drawnRawMeters * 3.28084;   // no area — show length in ft
-      default:      return drawnRawMeters * 3.28084;
-    }
+  // Returns sq ft value as the canonical measurement
+  if (drawnRawMeters > 0) {
+    if (drawnRawType === 'line') return drawnRawMeters * 3.28084;
+    return drawnRawMeters * 10.7639;
   }
+  return parseFloat(document.getElementById('munit-sqft')?.value) || 0;
+}
 
-  // drawnRawType === 'area' → drawnRawMeters = area in sq meters
-  switch (type) {
-    case 'sqft':  return drawnRawMeters * 10.7639;
-    case 'linft': return drawnPerimeterMeters * 3.28084;  // perimeter in feet
-    case 'sqyd':  return drawnRawMeters * 1.19599;
-    case 'acre':  return drawnRawMeters / 4046.86;
-    default:      return drawnRawMeters * 10.7639;
+// Get measurement value in a specific unit
+function getMeasurementByUnit(unit) {
+  const el = document.getElementById('munit-' + unit);
+  const typed = parseFloat(el?.value);
+  if (!isNaN(typed) && typed > 0) return typed;
+  // Derive from raw meters
+  if (drawnRawMeters > 0) {
+    const m = getAllMeasurements();
+    return m[unit] || 0;
   }
+  return 0;
 }
 
 function unitLabel(type) {
@@ -855,11 +988,9 @@ function getPrice() {
 }
 
 function updateCalc() {
-  const area = getDisplayMeasurement();
-  const type = document.getElementById('measure-type')?.value || 'sqft';
-
-  setText('area-display', fmt(area));
-  setText('unit-display', unitLabel(type));
+  // Update all 4 measurement inputs
+  updateAllMeasurementInputs();
+  updateMeasureOptions();
 
   // Calculate grand total from line items
   syncLineItemsFromDOM();
@@ -876,14 +1007,16 @@ function updateCalc() {
   setText('total-display', '$' + fmtMoney(total));
   setText('breakdown-display', breakdownText);
 
-  if (drawnFeature || (parseFloat(document.getElementById('manual-area')?.value) > 0)) updateBadge();
+  if (drawnFeature || drawnRawMeters > 0 || (parseFloat(document.getElementById('munit-sqft')?.value) > 0)) updateBadge();
 }
 
 function updateBadge() {
-  const val = getDisplayMeasurement();
-  const type = document.getElementById('measure-type')?.value || 'sqft';
+  const m = getAllMeasurements();
+  // Show sqft on badge (primary)
+  const val = m.sqft || 0;
+  const unit = drawnRawType === 'line' ? 'lin ft' : 'sq ft';
   setText('badge-val', fmt(val));
-  setText('badge-unit', unitLabel(type));
+  setText('badge-unit', unit);
   setEl('measure-badge', 'display', 'flex');
 }
 
@@ -1118,18 +1251,49 @@ function renderSavedList(quotes) {
   window._savedQuotes = {};
   quotes.forEach(q => { window._savedQuotes[q.id] = q; });
   container.innerHTML = quotes.map(q => {
+    // Build 4-unit display from saved area+unit
+    const savedArea = parseFloat(q.area) || 0;
+    const savedUnit = q.unit || 'sqft';
+    let measurements = { sqft: 0, linft: null, sqyd: 0, acre: 0 };
+    if (savedArea > 0) {
+      // Convert to raw meters then to all units
+      let rawM = 0;
+      switch(savedUnit) {
+        case 'sqft':  rawM = savedArea / 10.7639; break;
+        case 'sqyd':  rawM = savedArea / 1.19599; break;
+        case 'acre':  rawM = savedArea * 4046.86; break;
+        case 'linft': rawM = savedArea / 3.28084; break;
+        default:      rawM = savedArea / 10.7639;
+      }
+      if (savedUnit === 'linft') {
+        measurements = { sqft: rawM * 3.28084, linft: rawM * 3.28084, sqyd: rawM * 1.09361, acre: null };
+      } else {
+        measurements = { sqft: rawM * 10.7639, linft: null, sqyd: rawM * 1.19599, acre: rawM / 4046.86 };
+      }
+    }
+
+    const fmtM = (v, d) => v != null && v > 0 ? parseFloat(v.toFixed(d)).toLocaleString() : '—';
+    const measureBadges = `
+      <div class="qc-measurements">
+        <span class="qcm-chip"><strong>${fmtM(measurements.sqft, 1)}</strong> sq ft</span>
+        ${measurements.linft != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.linft, 1)}</strong> lin ft</span>` : ''}
+        <span class="qcm-chip"><strong>${fmtM(measurements.sqyd, 2)}</strong> sq yd</span>
+        ${measurements.acre != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.acre, 4)}</strong> acres</span>` : ''}
+      </div>`;
+
     let itemsSummary = '';
     try {
       const items = JSON.parse(q.line_items || '[]');
       if (items.length > 1) {
         itemsSummary = items.map(i => (i.label || i.type).replace(/-/g,' ')).join(' + ');
       } else if (items.length === 1) {
-        itemsSummary = `${(items[0].label || items[0].type).replace(/-/g,' ')} · ${fmt(items[0].area)} ${unitLabel(items[0].unit)}`;
+        itemsSummary = `${(items[0].label || items[0].type).replace(/-/g,' ')}`;
       }
     } catch {}
     if (!itemsSummary) {
-      itemsSummary = `${(q.project_type||'').replace(/-/g,' ')} · ${fmt(q.area)} ${unitLabel(q.unit)}`;
+      itemsSummary = `${(q.project_type||'').replace(/-/g,' ')}`;
     }
+
     return `
     <div class="quote-card">
       <div class="qc-header">
@@ -1141,6 +1305,7 @@ function renderSavedList(quotes) {
         <div class="qc-total">$${fmtMoney(q.total)}</div>
       </div>
       ${q.address ? `<div class="qc-meta">📍 ${esc(q.address.split(',').slice(0,2).join(','))}</div>` : ''}
+      ${savedArea > 0 ? measureBadges : ''}
       <div class="qc-actions">
         <button class="mini-btn edit" data-id="${q.id}">✏️ Edit</button>
         <button class="mini-btn load" data-id="${q.id}">Load</button>
@@ -1182,9 +1347,14 @@ async function loadQuote(id) {
       });
     }
 
-    document.getElementById('manual-area').value = q.area || '';
+    // Restore measurement: set raw meters from saved area+unit, then display all 4
+    const savedArea = parseFloat(q.area) || 0;
+    const savedUnit = q.unit || 'sqft';
     drawnRawMeters = 0;
     drawnPerimeterMeters = 0;
+    if (savedArea > 0) {
+      setRawMetersFromAreaAndUnit(savedArea, savedUnit);
+    }
     if (q.ai_narrative) {
       document.getElementById('narrative-text').textContent = q.ai_narrative;
       document.getElementById('narrative-section').style.display = 'block';
@@ -1205,9 +1375,6 @@ async function loadQuote(id) {
       if (addrInput) addrInput.value = q.address;
     }
     updateMeasureOptions();
-    const selU = document.getElementById('measure-type');
-    const savedU = q.unit || 'sqft';
-    if (selU && [...selU.options].some(o => o.value === savedU)) selU.value = savedU;
     updateCalc();
     showTab('quote');
     showToast('Quote loaded ✓');
@@ -1410,8 +1577,15 @@ function showTab(tab) {
 function newQuote() {
   document.getElementById('client-name').value = '';
   document.getElementById('notes').value = '';
-  document.getElementById('manual-area').value = '';
   document.getElementById('markup').value = 0;
+  // Clear all measurement boxes
+  ['sqft','linft','sqyd','acre'].forEach(u => {
+    const el = document.getElementById('munit-' + u);
+    if (el) el.value = '';
+    const box = document.getElementById('munit-box-' + u);
+    if (box) box.classList.remove('has-value');
+  });
+  document.getElementById('manual-area') && (document.getElementById('manual-area').value = '');
   const addrInput = document.getElementById('quote-address');
   if (addrInput) addrInput.value = '';
   document.getElementById('narrative-section').style.display = 'none';
