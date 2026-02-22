@@ -150,6 +150,36 @@
 @media (max-width: 380px) {
   .mrow-units { grid-template-columns: 1fr 1fr; }
 }
+/* ── QUOTE ADDRESS AUTOCOMPLETE ── */
+.quote-addr-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: white;
+  border: 1.5px solid var(--accent, #E8A020);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.quote-addr-list:empty { display: none; }
+.quote-addr-list .autocomplete-item {
+  padding: 11px 14px;
+  font-size: 13px;
+  color: var(--navy, #0D2137);
+  border-bottom: 1px solid #EEF3F8;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.quote-addr-list .autocomplete-item:last-child { border-bottom: none; }
+.quote-addr-list .autocomplete-item:hover,
+.quote-addr-list .autocomplete-item:active {
+  background: #FFF8EC;
+  color: var(--accent, #E8A020);
+}
 </style>
 </head>
 <body>
@@ -290,9 +320,10 @@
       <div class="form-row">
         <div class="field" style="flex:1">
           <label>Job Address</label>
-          <div class="addr-field-row">
-            <input type="text" id="quote-address" placeholder="Enter or use map search 📍">
+          <div class="addr-field-row" style="position:relative">
+            <input type="text" id="quote-address" placeholder="Enter or use map search 📍" autocomplete="off">
             <button class="btn-addr-use" id="btn-use-map-addr" title="Use map address">📍</button>
+            <div id="quote-addr-autocomplete" class="autocomplete-list quote-addr-list"></div>
           </div>
         </div>
       </div>

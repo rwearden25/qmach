@@ -213,9 +213,34 @@ async function bootApp() {
   // Address — use map address button
   on('btn-use-map-addr', () => {
     const addrInput = document.getElementById('quote-address');
-    if (addrInput && lastAddress) { addrInput.value = lastAddress; showToast('Address set 📍'); }
+    if (addrInput && lastAddress) {
+      addrInput.value = lastAddress;
+      clearQuoteAddrAutocomplete();
+      showToast('Address set 📍');
+    }
     else if (!lastAddress) showToast('Search an address on the map first');
   });
+
+  // Quote address — live autocomplete
+  let quoteAddrTimer = null;
+  const quoteAddr = document.getElementById('quote-address');
+  if (quoteAddr) {
+    quoteAddr.addEventListener('input', () => {
+      clearTimeout(quoteAddrTimer);
+      const q = quoteAddr.value.trim();
+      if (q.length < 3) { clearQuoteAddrAutocomplete(); return; }
+      quoteAddrTimer = setTimeout(() => fetchQuoteAddrSuggestions(q), 300);
+    });
+    quoteAddr.addEventListener('keydown', e => {
+      if (e.key === 'Escape') clearQuoteAddrAutocomplete();
+    });
+    // Close on outside click
+    document.addEventListener('click', e => {
+      if (!quoteAddr.contains(e.target) && !document.getElementById('quote-addr-autocomplete')?.contains(e.target)) {
+        clearQuoteAddrAutocomplete();
+      }
+    });
+  }
 
   // Quote actions
   on('btn-save',            () => saveQuote());
@@ -784,6 +809,41 @@ async function geocodeAddress() {
 function clearAutocomplete() {
   const el = document.getElementById('autocomplete-list');
   if (el) el.innerHTML = '';
+}
+
+function clearQuoteAddrAutocomplete() {
+  const el = document.getElementById('quote-addr-autocomplete');
+  if (el) el.innerHTML = '';
+}
+
+async function fetchQuoteAddrSuggestions(q) {
+  if (!mapboxToken) return;
+  try {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=5&country=US&types=address,place,poi`;
+    const data = await fetch(url).then(r => r.json());
+    const list = document.getElementById('quote-addr-autocomplete');
+    if (!list) return;
+    list.innerHTML = '';
+    (data.features || []).forEach(f => {
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      item.textContent = f.place_name;
+      item.addEventListener('click', () => {
+        const input = document.getElementById('quote-address');
+        if (input) input.value = f.place_name;
+        // Also update map + lastAddress so 📐 and share/save have the right address
+        lastAddress = f.place_name;
+        lastLat = f.center[1];
+        lastLng = f.center[0];
+        setText('address-display', f.place_name.split(',').slice(0,2).join(','));
+        clearQuoteAddrAutocomplete();
+        // Fly map to the selected address
+        if (map) map.flyTo({ center: f.center, zoom: 19, speed: 1.5 });
+        showToast('Address set 📍');
+      });
+      list.appendChild(item);
+    });
+  } catch(e) {}
 }
 
 function flyTo(lng, lat, name) {
