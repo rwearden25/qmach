@@ -31,7 +31,9 @@ html, body {
 body {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  height: 100vh;          /* static — doesn't respond to keyboard */
+  height: -webkit-fill-available;  /* iOS Safari fallback */
+  max-height: 100vh;
 }
 
 /* ═══ LOGIN GATE ═══ */
@@ -367,8 +369,8 @@ header {
   max-height: 64px !important;
 }
 #bottom-panel.snap-full {
-  height: calc(100dvh - 48px) !important;
-  max-height: calc(100dvh - 48px) !important;
+  height: calc(100vh - 48px) !important;
+  max-height: calc(100vh - 48px) !important;
 }
 .panel-drag {
   height: 32px;
@@ -1215,21 +1217,21 @@ textarea { height: 60px; resize: vertical; }
   #map-container {
     flex: 1;
     min-width: 0;
-    height: calc(100dvh - 48px);
+    height: calc(100vh - 48px);
   }
   #bottom-panel {
     width: 420px;
     max-width: 420px;
-    height: calc(100dvh - 48px) !important;
-    max-height: calc(100dvh - 48px) !important;
+    height: calc(100vh - 48px) !important;
+    max-height: calc(100vh - 48px) !important;
     border-top: none;
     border-left: 3px solid var(--navy-mid);
     order: -1;
   }
   #bottom-panel.snap-collapsed,
   #bottom-panel.snap-full {
-    height: calc(100dvh - 48px) !important;
-    max-height: calc(100dvh - 48px) !important;
+    height: calc(100vh - 48px) !important;
+    max-height: calc(100vh - 48px) !important;
   }
   .panel-drag { display: none; }
   .panel-scroll { padding: 0 16px 28px; }
@@ -1261,13 +1263,15 @@ textarea { height: 60px; resize: vertical; }
     overflow: hidden;
   }
 
-  /* Toolbar — horizontal row at bottom-left instead of tall column */
+  /* Toolbar — fixed to screen so it doesn't jump with panel resizes */
   #map-toolbar {
+    position: fixed;
     top: auto;
-    bottom: calc(42vh + 12px);
+    bottom: calc(42vh + 8px);
     left: 8px;
     flex-direction: row;
     gap: 6px;
+    z-index: 450;
   }
   .map-tool-btn {
     min-width: 44px;
@@ -1287,8 +1291,18 @@ textarea { height: 60px; resize: vertical; }
   #geocoder-inner {
     border-radius: 12px;
   }
-  #addr-input { font-size: 15px; padding: 10px 12px; }
+  /* 16px minimum prevents iOS auto-zoom when focused */
+  #addr-input { font-size: 16px; padding: 10px 12px; }
   #search-btn { padding: 10px 14px; font-size: 14px; }
+
+  /* Autocomplete — stays in place, no layout shift */
+  #autocomplete-list {
+    position: absolute;
+    width: 100%;
+    max-height: 180px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 
   /* Tabs — equal width, bigger tap area */
   .tab-row { gap: 4px; }
@@ -1304,7 +1318,7 @@ textarea { height: 60px; resize: vertical; }
   .mrow-value { font-size: 22px; }
   #measure-type { font-size: 15px; padding: 8px; }
 
-  /* Form fields — large enough to tap, prevent iOS zoom */
+  /* 16px on ALL inputs — prevents iOS viewport zoom on focus */
   input, select, textarea { font-size: 16px !important; }
   .field input, .field select, .field textarea { 
     padding: 11px 12px; 
@@ -1314,13 +1328,13 @@ textarea { height: 60px; resize: vertical; }
 
   /* Line item fields */
   .li-fields { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .li-field input, .li-field select { padding: 9px; font-size: 15px; }
-  .li-header select { padding: 9px; font-size: 15px; }
+  .li-field input, .li-field select { padding: 9px; font-size: 16px !important; }
+  .li-header select { padding: 9px; font-size: 16px !important; }
 
-  /* Action buttons — full width pairs */
+  /* Action buttons */
   .action-btn { padding: 13px 6px; font-size: 13px; border-radius: 12px; }
 
-  /* Total card — bigger number */
+  /* Total card */
   .total-amount { font-size: 32px; }
   .btn-print-big { padding: 12px 16px; font-size: 14px; }
 
@@ -1336,13 +1350,21 @@ textarea { height: 60px; resize: vertical; }
   /* Markup select full width */
   #markup { width: 100%; }
 
-  /* Drawing overlay — position above toolbar */
+  /* Drawing overlay — fixed to screen, above toolbar */
   #drawing-overlay {
+    position: fixed;
     bottom: calc(42vh + 60px);
+    left: 0;
+    right: 0;
+    z-index: 510;
   }
 
-  /* Measure badge — move above toolbar */
+  /* Measure badge — fixed to screen above toolbar */
   #measure-badge {
+    position: fixed;
     bottom: calc(42vh + 60px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 410;
   }
 }
