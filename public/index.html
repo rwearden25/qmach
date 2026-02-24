@@ -17,7 +17,7 @@
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
 <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<!-- turf.js removed — replaced by custom geometry math in app.js -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
@@ -250,7 +250,10 @@
     </div>
     <div id="point-counter">0 points</div>
     <button id="btn-done-drawing">✓ Done — Calculate Area</button>
-    <button id="btn-cancel-drawing">✕ Cancel</button>
+    <div id="drawing-secondary-actions">
+      <button id="btn-undo-point">↩ Undo</button>
+      <button id="btn-cancel-drawing">✕ Cancel</button>
+    </div>
   </div>
 
   <!-- Measurement result badge -->

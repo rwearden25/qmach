@@ -202,6 +202,7 @@ async function bootApp() {
   // Drawing overlay
   on('btn-done-drawing',   () => finishDrawing());
   on('btn-cancel-drawing', () => cancelDrawing());
+  on('btn-undo-point',     () => undoLastPoint());
 
   // Quote form — auto-recalc (measure-type hidden, manual-area hidden, both kept for compat)
   on('markup', () => updateCalc(), 'change');
@@ -402,9 +403,11 @@ function useMapForItem(id) {
   showToast(`${fmt(val)} ${unitLabel(unit)} applied ✓`);
 }
 
+let _lineItemCalcTimer = null;
+
 function onLineItemChange() {
   syncLineItemsFromDOM();
-  // Update subtotals in-place (faster than full re-render)
+  // Update subtotals in-place immediately (cheap DOM read/write)
   lineItems.forEach(item => {
     const el = document.getElementById(`li-${item.id}`);
     if (!el) return;
@@ -412,7 +415,9 @@ function onLineItemChange() {
     const subEl = el.querySelector('.li-subtotal-val');
     if (subEl) subEl.textContent = '$' + fmtMoney(sub);
   });
-  updateCalc();  // this will refresh pricing equivalents too
+  // Debounce the heavier calc pipeline (measurement conversions, pricing equivalents)
+  clearTimeout(_lineItemCalcTimer);
+  _lineItemCalcTimer = setTimeout(() => updateCalc(), 150);
 }
 
 function getLineItemsSubtotal() {
@@ -490,15 +495,35 @@ function initMap() {
 
     // ── Direct canvas listener bypasses MapboxDraw event interception
     // map.on('click') does NOT fire when MapboxDraw is attached.
-    // We use pointerup on the raw canvas + map.unproject() instead.
+    // We use pointerdown + pointerup with distance threshold to
+    // distinguish taps from map pans (critical for mobile).
     const canvas = map.getCanvas();
+    let _ptrDown = null;  // { x, y, time }
+    const TAP_MAX_DIST = 12;   // px — if finger moved more, it's a pan
+    const TAP_MAX_TIME = 500;  // ms — if held longer, it's a long-press
+
+    canvas.addEventListener('pointerdown', e => {
+      if (!isDrawing) return;
+      if (e.button !== undefined && e.button !== 0) return;
+      _ptrDown = { x: e.clientX, y: e.clientY, time: Date.now() };
+    });
 
     canvas.addEventListener('pointerup', e => {
-      if (!isDrawing) return;
+      if (!isDrawing || !_ptrDown) return;
       // Only handle left-click / single touch (button 0)
       if (e.button !== undefined && e.button !== 0) return;
       // Ignore if the tap was on a UI element (button, select, input)
       if (e.target && e.target !== canvas) return;
+
+      // ── Pan vs tap detection
+      const dx = e.clientX - _ptrDown.x;
+      const dy = e.clientY - _ptrDown.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const elapsed = Date.now() - _ptrDown.time;
+      _ptrDown = null;
+
+      if (dist > TAP_MAX_DIST) return;  // finger moved — was a pan
+      if (elapsed > TAP_MAX_TIME) return; // long press — ignore
 
       // Get pixel position relative to canvas
       const rect = canvas.getBoundingClientRect();
@@ -638,6 +663,15 @@ function cancelDrawing() {
   activateTool('tool-draw');
 }
 
+function undoLastPoint() {
+  if (!isDrawing || trackedPoints.length === 0) return;
+  trackedPoints.pop();
+  console.log('Undo — points remaining:', trackedPoints.length);
+  updatePointCounter();
+  updateDrawPreview();
+  showToast('Point removed ↩');
+}
+
 function clearDrawing() {
   if (isDrawing) cancelDrawing();
   drawnFeature = null;
@@ -712,8 +746,13 @@ function activateTool(id) {
 // ─── Point counter during drawing
 function updatePointCounter() {
   const el = document.getElementById('point-counter');
+  const undoBtn = document.getElementById('btn-undo-point');
   if (!el) return;
   const n = trackedPoints.length;
+
+  // Enable/disable undo button
+  if (undoBtn) undoBtn.disabled = n === 0;
+
   if (n === 0) {
     el.textContent = 'Tap on the map to add points';
   } else if (n === 1) {
@@ -1232,6 +1271,9 @@ function removeMsg(id) { document.getElementById(id)?.remove(); }
 async function saveQuote() {
   const client = document.getElementById('client-name')?.value.trim();
   if (!client) { showToast('Enter a client name first'); return; }
+  const saveBtn = document.getElementById('btn-save');
+  if (saveBtn?.disabled) return;  // already saving
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Saving...'; }
   syncLineItemsFromDOM();
   const markup = parseFloat(document.getElementById('markup')?.value) || 0;
   const subtotal = getLineItemsSubtotal();
@@ -1274,10 +1316,12 @@ async function saveQuote() {
     showToast(editingQuoteId ? 'Quote updated! ✓' : 'Quote saved! 💾');
     // Reset editing state
     editingQuoteId = null;
-    const saveBtn = document.getElementById('btn-save');
     if (saveBtn) { saveBtn.textContent = '💾 Save'; saveBtn.classList.remove('editing'); }
     loadSavedCount();
   } catch { showToast('Save failed — check connection'); }
+  finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
 }
 
 async function loadSavedCount() {

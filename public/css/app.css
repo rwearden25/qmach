@@ -305,6 +305,28 @@ header {
   border-radius: 10px;
 }
 #btn-cancel-drawing:hover { color: white; }
+/* Secondary drawing actions (undo + cancel) */
+#drawing-secondary-actions {
+  pointer-events: all;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+#btn-undo-point {
+  pointer-events: all;
+  background: rgba(232,160,32,.85);
+  color: var(--navy, #0D2137);
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 16px;
+  border-radius: 10px;
+  font-family: 'DM Sans', sans-serif;
+  box-shadow: 0 2px 8px rgba(0,0,0,.25);
+}
+#btn-undo-point:hover { background: var(--accent, #E8A020); }
+#btn-undo-point:disabled { opacity: .35; cursor: not-allowed; }
 
 /* ═══ MEASURE BADGE ═══ */
 #measure-badge {
