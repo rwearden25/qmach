@@ -31,8 +31,8 @@ html, body {
 body {
   display: flex;
   flex-direction: column;
-  height: 100vh;          /* static — doesn't respond to keyboard */
-  height: -webkit-fill-available;  /* iOS Safari fallback */
+  height: 100vh;
+  height: -webkit-fill-available;
   max-height: 100vh;
 }
 
@@ -1249,122 +1249,161 @@ textarea { height: 60px; resize: vertical; }
 /* ═══ MOBILE OPTIMIZATIONS ═══ */
 @media (max-width: 767px) {
 
-  /* Panel — rounded top, sheet feel */
+  /* ── PANEL ── */
   #bottom-panel {
     border-top: none;
     border-radius: 20px 20px 0 0;
     box-shadow: 0 -6px 24px rgba(0,0,0,.25);
+    height: 44vh;
+    max-height: 44vh;
   }
   .panel-drag {
-    height: 40px;
+    height: 36px;
     border-radius: 20px 20px 0 0;
   }
   #bottom-panel.snap-collapsed .panel-scroll {
     overflow: hidden;
   }
 
-  /* Toolbar — fixed to screen so it doesn't jump with panel resizes */
-  #map-toolbar {
-    position: fixed;
-    top: auto;
-    bottom: calc(42vh + 8px);
-    left: 8px;
-    flex-direction: row;
-    gap: 6px;
-    z-index: 450;
-  }
-  .map-tool-btn {
-    min-width: 44px;
-    padding: 7px 8px;
-    flex-direction: row;
-    gap: 4px;
-  }
-  .tool-label { font-size: 8px; }
-  .tool-icon { font-size: 16px; }
-
-  /* Search bar — full width, better fit */
+  /* ── SEARCH BAR ──
+     Full width, left-aligned. No transform so it doesn't
+     fight with the right-side toolbar. */
   #geocoder-wrapper {
-    width: calc(100% - 16px);
+    top: 10px;
     left: 8px;
+    right: 8px;
+    width: auto;
     transform: none;
   }
   #geocoder-inner {
     border-radius: 12px;
+    box-shadow: 0 2px 16px rgba(0,0,0,.35);
   }
-  /* 16px minimum prevents iOS auto-zoom when focused */
-  #addr-input { font-size: 16px; padding: 10px 12px; }
-  #search-btn { padding: 10px 14px; font-size: 14px; }
+  /* 16px prevents iOS auto-zoom on focus */
+  #addr-input { font-size: 16px; padding: 11px 14px; }
+  #search-btn { padding: 11px 16px; font-size: 14px; font-weight: 700; }
 
-  /* Autocomplete — stays in place, no layout shift */
+  /* Autocomplete stays anchored below search, doesn't cause layout shift */
   #autocomplete-list {
     position: absolute;
-    width: 100%;
-    max-height: 180px;
+    top: 100%;
+    left: 0; right: 0;
+    max-height: 200px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    border-radius: 0 0 12px 12px;
   }
 
-  /* Tabs — equal width, bigger tap area */
+  /* ── TOOLBAR ──
+     FIX: Move to RIGHT side as a compact vertical strip.
+     This completely eliminates the left-side collision with the search bar.
+     Icon-only (no labels) to save space. Field workers learn the icons fast. */
+  #map-toolbar {
+    position: absolute;
+    top: 10px;
+    left: auto;
+    right: 8px;
+    bottom: auto;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 401;
+  }
+  .map-tool-btn {
+    min-width: 0;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+  /* Hide text labels on mobile — icons only */
+  .tool-label { display: none; }
+  .tool-icon  { font-size: 19px; line-height: 1; }
+
+  /* ── DRAWING OVERLAY ──
+     Sits at the bottom of the map area, above the panel. */
+  #drawing-overlay {
+    position: absolute;
+    bottom: 8px;
+    left: 0; right: 0;
+    z-index: 500;
+    padding: 0 12px;
+  }
+  #btn-done-drawing {
+    padding: 14px 32px;
+    font-size: 16px;
+    border-radius: 24px;
+  }
+
+  /* ── MEASURE BADGE ──
+     Bottom-center of map, above panel. */
+  #measure-badge {
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 13px;
+    padding: 7px 14px;
+  }
+
+  /* ── TABS ── */
   .tab-row { gap: 4px; }
-  .tab-btn { 
-    padding: 11px 6px; 
-    font-size: 12px; 
+  .tab-btn {
+    padding: 10px 4px;
+    font-size: 11px;
     flex: 1;
     border-radius: 10px;
+    /* Prevent emoji tab labels from wrapping */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* Measurement row — tighter on mobile */
-  #measurement-row { gap: 8px; padding: 12px; }
-  .mrow-value { font-size: 22px; }
-  #measure-type { font-size: 15px; padding: 8px; }
+  /* ── MEASUREMENT BOXES ── */
+  #measurement-row { gap: 8px; padding: 10px 12px; }
+  .munit-input { font-size: 16px !important; }
 
-  /* 16px on ALL inputs — prevents iOS viewport zoom on focus */
-  input, select, textarea { font-size: 16px !important; }
-  .field input, .field select, .field textarea { 
-    padding: 11px 12px; 
+  /* ── ALL FORM INPUTS: 16px minimum prevents iOS auto-zoom ── */
+  input[type="text"],
+  input[type="number"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+  .field input, .field select, .field textarea {
+    padding: 11px 12px;
     border-radius: 10px;
   }
   label { font-size: 11px; margin-bottom: 4px; }
 
-  /* Line item fields */
+  /* ── LINE ITEMS ── */
   .li-fields { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .li-field input, .li-field select { padding: 9px; font-size: 16px !important; }
-  .li-header select { padding: 9px; font-size: 16px !important; }
+  .li-field input,
+  .li-field select { padding: 9px 8px; }
+  .li-header select { padding: 9px 8px; }
 
-  /* Action buttons */
+  /* ── TOTAL CARD ── */
+  .total-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .total-amount { font-size: 36px; }
+  .btn-print-big { width: 100%; text-align: center; padding: 13px; }
+
+  /* ── ACTION ROWS ── */
   .action-btn { padding: 13px 6px; font-size: 13px; border-radius: 12px; }
-
-  /* Total card */
-  .total-amount { font-size: 32px; }
-  .btn-print-big { padding: 12px 16px; font-size: 14px; }
-
-  /* AI suggest button */
   .btn-ai-suggest { padding: 13px; font-size: 14px; border-radius: 12px; }
+  .btn-new-quote  { padding: 13px; font-size: 14px; margin-top: 8px; }
 
-  /* New quote button */
-  .btn-new-quote { padding: 13px; font-size: 14px; margin-top: 8px; }
+  /* ── PANEL SCROLL ── */
+  .panel-scroll { padding: 0 12px 40px; }
 
-  /* Panel scroll padding */
-  .panel-scroll { padding: 0 12px 32px; }
-
-  /* Markup select full width */
+  /* ── MISC ── */
   #markup { width: 100%; }
-
-  /* Drawing overlay — fixed to screen, above toolbar */
-  #drawing-overlay {
-    position: fixed;
-    bottom: calc(42vh + 60px);
-    left: 0;
-    right: 0;
-    z-index: 510;
-  }
-
-  /* Measure badge — fixed to screen above toolbar */
-  #measure-badge {
-    position: fixed;
-    bottom: calc(42vh + 60px);
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 410;
-  }
+  .mrow-hint { display: none; } /* save space on tiny screens */
 }
