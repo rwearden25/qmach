@@ -480,42 +480,33 @@
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
-
 // ── KEYBOARD JUMP FIX ──
-// When the virtual keyboard opens on iOS/Android it resizes the viewport,
-// causing dvh-based layouts to recalculate and jump.
-// We lock the body height to the initial window height when any input is focused.
+// iOS/Android resize the viewport when the keyboard opens, causing dvh/vh
+// layouts to recalculate and everything to jump. We lock the body height
+// to the initial window height so the map and panel stay perfectly still.
 (function() {
-  var lockedHeight = null;
-
-  function lockHeight() {
-    if (lockedHeight === null) {
-      lockedHeight = window.innerHeight;
-      document.body.style.height = lockedHeight + 'px';
-      document.documentElement.style.height = lockedHeight + 'px';
+  var locked = null;
+  function lock() {
+    if (locked === null) {
+      locked = window.innerHeight;
+      document.documentElement.style.height = locked + 'px';
+      document.body.style.height = locked + 'px';
     }
   }
-
-  function unlockHeight() {
-    lockedHeight = null;
-    document.body.style.height = '';
+  function unlock() {
+    locked = null;
     document.documentElement.style.height = '';
+    document.body.style.height = '';
   }
-
   document.addEventListener('focusin', function(e) {
-    if (e.target && e.target.matches('input, textarea, select')) {
-      // Small delay so keyboard animation doesn't fight our lock
-      setTimeout(lockHeight, 50);
+    if (e.target && e.target.matches('input,textarea,select')) {
+      setTimeout(lock, 60);
     }
   });
-
   document.addEventListener('focusout', function() {
-    // Delay unlock so tapping between inputs doesn't cause a flash
     setTimeout(function() {
-      if (!document.querySelector('input:focus, textarea:focus, select:focus')) {
-        unlockHeight();
-      }
-    }, 100);
+      if (!document.querySelector('input:focus,textarea:focus,select:focus')) unlock();
+    }, 120);
   });
 })();
 </script>
