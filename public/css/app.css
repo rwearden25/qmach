@@ -33,7 +33,6 @@ body {
   flex-direction: column;
   height: 100vh;
   height: -webkit-fill-available;
-  max-height: 100vh;
 }
 
 /* ═══ LOGIN GATE ═══ */
@@ -1246,16 +1245,37 @@ textarea { height: 60px; resize: vertical; }
   .drag-chevron { display: none; }
 }
 
-/* ═══ MOBILE OPTIMIZATIONS ═══ */
+/* ═══════════════════════════════════════
+   MOBILE  ≤ 767px
+   
+   LAYOUT DESIGN:
+   ┌─────────────────────┐
+   │       HEADER        │  48px fixed
+   ├────────────────┬────┤
+   │                │ 🗑 │  toolbar: right edge,
+   │   MAP          │ ✏️ │  vertical strip 42px wide
+   │                │ 📏 │
+   │  [search bar]  │ 🗺 │  search bar: full width
+   │                │ 👁 │  minus toolbar width
+   ├────────────────┴────┤
+   │  ▲ drag handle      │  bottom panel 44vh
+   │  [tabs]             │
+   │  [form]             │
+   └─────────────────────┘
+═══════════════════════════════════════ */
 @media (max-width: 767px) {
 
   /* ── PANEL ── */
   #bottom-panel {
     border-top: none;
     border-radius: 20px 20px 0 0;
-    box-shadow: 0 -6px 24px rgba(0,0,0,.25);
+    box-shadow: 0 -6px 24px rgba(0,0,0,.3);
     height: 44vh;
     max-height: 44vh;
+  }
+  #bottom-panel.snap-full {
+    height: calc(100vh - 48px) !important;
+    max-height: calc(100vh - 48px) !important;
   }
   .panel-drag {
     height: 36px;
@@ -1265,145 +1285,117 @@ textarea { height: 60px; resize: vertical; }
     overflow: hidden;
   }
 
-  /* ── SEARCH BAR ──
-     Full width, left-aligned. No transform so it doesn't
-     fight with the right-side toolbar. */
-  #geocoder-wrapper {
-    top: 10px;
-    left: 8px;
-    right: 8px;
-    width: auto;
-    transform: none;
-  }
-  #geocoder-inner {
-    border-radius: 12px;
-    box-shadow: 0 2px 16px rgba(0,0,0,.35);
-  }
-  /* 16px prevents iOS auto-zoom on focus */
-  #addr-input { font-size: 16px; padding: 11px 14px; }
-  #search-btn { padding: 11px 16px; font-size: 14px; font-weight: 700; }
-
-  /* Autocomplete stays anchored below search, doesn't cause layout shift */
-  #autocomplete-list {
-    position: absolute;
-    top: 100%;
-    left: 0; right: 0;
-    max-height: 200px;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    border-radius: 0 0 12px 12px;
-  }
-
   /* ── TOOLBAR ──
-     FIX: Move to RIGHT side as a compact vertical strip.
-     This completely eliminates the left-side collision with the search bar.
-     Icon-only (no labels) to save space. Field workers learn the icons fast. */
+     RIGHT side vertical strip. Stays completely separate from the
+     search bar which lives on the left/center. No overlap possible. */
   #map-toolbar {
     position: absolute;
     top: 10px;
-    left: auto;
+    left: auto !important;   /* override desktop left:10px */
     right: 8px;
-    bottom: auto;
+    bottom: auto !important;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
     z-index: 401;
   }
   .map-tool-btn {
+    width: 44px;
+    height: 44px;
     min-width: 0;
-    width: 42px;
-    height: 42px;
     padding: 0;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 0;
     border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    box-shadow: 0 2px 10px rgba(0,0,0,.5);
   }
-  /* Hide text labels on mobile — icons only */
+  /* Icon only — labels hidden to save space */
   .tool-label { display: none; }
-  .tool-icon  { font-size: 19px; line-height: 1; }
+  .tool-icon  { font-size: 20px; line-height: 1; }
+
+  /* ── SEARCH BAR ──
+     Full width minus toolbar (44px + 8px margin + 8px right gap = 60px) */
+  #geocoder-wrapper {
+    top: 10px;
+    left: 8px;
+    right: 60px;     /* clears the right-side toolbar */
+    width: auto;
+    transform: none;
+  }
+  #geocoder-inner { border-radius: 10px; }
+  #addr-input  { font-size: 16px; padding: 11px 12px; }   /* 16px stops iOS zoom */
+  #search-btn  { padding: 11px 14px; font-size: 13px; font-weight: 700; }
+
+  #autocomplete-list {
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 
   /* ── DRAWING OVERLAY ──
-     Sits at the bottom of the map area, above the panel. */
+     Floats at bottom of map area above the panel */
   #drawing-overlay {
-    position: absolute;
-    bottom: 8px;
-    left: 0; right: 0;
-    z-index: 500;
-    padding: 0 12px;
+    bottom: 0;
+    padding: 0 12px 10px;
   }
-  #btn-done-drawing {
-    padding: 14px 32px;
-    font-size: 16px;
-    border-radius: 24px;
-  }
+  #btn-done-drawing { padding: 14px 28px; font-size: 16px; }
 
   /* ── MEASURE BADGE ──
-     Bottom-center of map, above panel. */
+     Bottom center of the map */
   #measure-badge {
-    bottom: 12px;
+    bottom: 10px;
     left: 50%;
     transform: translateX(-50%);
-    font-size: 13px;
-    padding: 7px 14px;
   }
 
   /* ── TABS ── */
-  .tab-row { gap: 4px; }
+  .tab-row { gap: 4px; padding: 4px 0 8px; }
   .tab-btn {
-    padding: 10px 4px;
-    font-size: 11px;
     flex: 1;
-    border-radius: 10px;
-    /* Prevent emoji tab labels from wrapping */
+    padding: 10px 2px;
+    font-size: 11px;
+    border-radius: 8px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   /* ── MEASUREMENT BOXES ── */
-  #measurement-row { gap: 8px; padding: 10px 12px; }
+  #measurement-row { gap: 6px; padding: 10px 10px; }
+  .mrow-hint { display: none; }   /* not enough room */
   .munit-input { font-size: 16px !important; }
 
-  /* ── ALL FORM INPUTS: 16px minimum prevents iOS auto-zoom ── */
+  /* ── ALL INPUTS: 16px minimum stops iOS auto-zoom ── */
   input[type="text"],
   input[type="number"],
   input[type="password"],
   select,
-  textarea {
-    font-size: 16px !important;
-  }
-  .field input, .field select, .field textarea {
-    padding: 11px 12px;
-    border-radius: 10px;
-  }
+  textarea { font-size: 16px !important; }
+
+  .field input,
+  .field select,
+  .field textarea { padding: 11px 12px; border-radius: 10px; }
   label { font-size: 11px; margin-bottom: 4px; }
 
-  /* ── LINE ITEMS ── */
+  /* ── LINE ITEMS: 2-col grid on mobile ── */
   .li-fields { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .li-field input,
-  .li-field select { padding: 9px 8px; }
+  .li-field input, .li-field select { padding: 9px 8px; }
   .li-header select { padding: 9px 8px; }
 
-  /* ── TOTAL CARD ── */
-  .total-card {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
+  /* ── TOTAL CARD: stack vertically so Print button isn't squeezed ── */
+  .total-card { flex-direction: column; align-items: flex-start; gap: 10px; }
   .total-amount { font-size: 36px; }
   .btn-print-big { width: 100%; text-align: center; padding: 13px; }
 
-  /* ── ACTION ROWS ── */
-  .action-btn { padding: 13px 6px; font-size: 13px; border-radius: 12px; }
-  .btn-ai-suggest { padding: 13px; font-size: 14px; border-radius: 12px; }
-  .btn-new-quote  { padding: 13px; font-size: 14px; margin-top: 8px; }
-
-  /* ── PANEL SCROLL ── */
-  .panel-scroll { padding: 0 12px 40px; }
+  /* ── BUTTONS ── */
+  .action-btn    { padding: 13px 6px; font-size: 13px; border-radius: 12px; }
+  .btn-ai-suggest{ padding: 13px; font-size: 14px; border-radius: 12px; }
+  .btn-new-quote { padding: 13px; font-size: 14px; margin-top: 8px; }
 
   /* ── MISC ── */
+  .panel-scroll { padding: 0 12px 40px; }
   #markup { width: 100%; }
-  .mrow-hint { display: none; } /* save space on tiny screens */
 }

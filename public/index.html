@@ -480,34 +480,42 @@
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
-// ── KEYBOARD JUMP FIX ──
-// iOS/Android resize the viewport when the keyboard opens, causing dvh/vh
-// layouts to recalculate and everything to jump. We lock the body height
-// to the initial window height so the map and panel stay perfectly still.
+
+// ─────────────────────────────────────────────────────────
+// KEYBOARD JUMP PREVENTION
+// iOS and Android resize the viewport when the keyboard opens.
+// This causes dvh/vh layouts to reflow, making the map and 
+// panel jump. We lock the document height to the initial
+// window.innerHeight the moment any input gains focus.
+// ─────────────────────────────────────────────────────────
 (function() {
-  var locked = null;
-  function lock() {
-    if (locked === null) {
-      locked = window.innerHeight;
-      document.documentElement.style.height = locked + 'px';
-      document.body.style.height = locked + 'px';
-    }
+  var lockedH = null;
+
+  function lockHeight() {
+    if (lockedH !== null) return;
+    lockedH = window.innerHeight;
+    document.documentElement.style.setProperty('height', lockedH + 'px', 'important');
+    document.body.style.setProperty('height', lockedH + 'px', 'important');
   }
-  function unlock() {
-    locked = null;
-    document.documentElement.style.height = '';
-    document.body.style.height = '';
+
+  function unlockHeight() {
+    // Only unlock if no input is still focused
+    if (document.activeElement && document.activeElement.matches('input,textarea,select')) return;
+    lockedH = null;
+    document.documentElement.style.removeProperty('height');
+    document.body.style.removeProperty('height');
   }
+
   document.addEventListener('focusin', function(e) {
-    if (e.target && e.target.matches('input,textarea,select')) {
-      setTimeout(lock, 60);
+    if (e.target.matches('input,textarea,select')) {
+      // Short delay so browser doesn't fight us during keyboard animation
+      setTimeout(lockHeight, 50);
     }
-  });
+  }, true);
+
   document.addEventListener('focusout', function() {
-    setTimeout(function() {
-      if (!document.querySelector('input:focus,textarea:focus,select:focus')) unlock();
-    }, 120);
-  });
+    setTimeout(unlockHeight, 150);
+  }, true);
 })();
 </script>
 </body>
