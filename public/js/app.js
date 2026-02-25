@@ -44,7 +44,7 @@ function lineStringMeters(coords) {
 //  STATE
 // ═══════════════════════════════════════
 let map = null;
-let draw = null;
+let draw = null;  // Legacy compat — now just a simple object, NOT MapboxDraw
 let mapboxToken = '';
 let drawnFeature = null;
 let drawnRawMeters = 0;
@@ -543,9 +543,13 @@ function initMap() {
     container: 'map',
     style: 'mapbox://styles/mapbox/satellite-streets-v12',
     center: [-96.7970, 32.7767],
-    zoom: 17,
+    zoom: 16,
+    maxZoom: 19,
     attributionControl: true,
-    logoPosition: 'bottom-left'
+    logoPosition: 'bottom-left',
+    maxTileCacheSize: 50,          // limit GPU memory on mobile
+    fadeDuration: 0,               // skip tile fade animation (saves GPU)
+    trackResize: true
   });
 
   map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right');
@@ -554,26 +558,35 @@ function initMap() {
     trackUserLocation: false
   }), 'bottom-right');
 
-  // MapboxDraw — only used for DISPLAYING the shape, not for input
-  draw = new MapboxDraw({
-    displayControlsDefault: false,
-    controls: {},
-    styles: [
-      { id: 'fill', type: 'fill',
-        filter: ['all', ['==', '$type', 'Polygon']],
-        paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.2 } },
-      { id: 'stroke', type: 'line',
-        filter: ['all', ['==', '$type', 'Polygon']],
-        paint: { 'line-color': '#E8A020', 'line-width': 3 } },
-      { id: 'line', type: 'line',
-        filter: ['all', ['==', '$type', 'LineString']],
-        paint: { 'line-color': '#E8A020', 'line-width': 4, 'line-dasharray': [2,1] } },
-      { id: 'vertex', type: 'circle',
-        filter: ['all', ['==', 'meta', 'vertex'], ['==', '$type', 'Point']],
-        paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } }
-    ]
-  });
-  map.addControl(draw);
+  // ── Shape display — replaces MapboxDraw (saves ~200KB JS)
+  // Uses a simple GeoJSON source + layers instead of the full Draw library
+  draw = {
+    _data: { type: 'FeatureCollection', features: [] },
+    _update() {
+      if (map && map.getSource('drawn-shape')) {
+        map.getSource('drawn-shape').setData(this._data);
+        // Also update vertex points
+        const verts = [];
+        this._data.features.forEach(f => {
+          const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0]
+            : f.geometry.type === 'LineString' ? f.geometry.coordinates : [];
+          coords.forEach(c => {
+            verts.push({ type: 'Feature', geometry: { type: 'Point', coordinates: c }, properties: {} });
+          });
+        });
+        if (map.getSource('drawn-verts')) {
+          map.getSource('drawn-verts').setData({ type: 'FeatureCollection', features: verts });
+        }
+      }
+    },
+    deleteAll() { this._data = { type: 'FeatureCollection', features: [] }; this._update(); },
+    add(feature) {
+      const f = feature.type === 'Feature' ? feature : { type: 'Feature', geometry: feature, properties: {} };
+      this._data.features.push(f);
+      this._update();
+    },
+    getAll() { return JSON.parse(JSON.stringify(this._data)); }
+  };
 
   map.on('load', () => {
     // Add our own live-preview layer for in-progress drawing
@@ -599,6 +612,35 @@ function initMap() {
       type: 'circle',
       source: 'draw-preview',
       filter: ['==', '$type', 'Point'],
+      paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 }
+    });
+
+    // ── Finalized shape layers (replaces MapboxDraw rendering)
+    map.addSource('drawn-shape', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+    map.addSource('drawn-verts', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+    map.addLayer({
+      id: 'drawn-shape-fill', type: 'fill', source: 'drawn-shape',
+      filter: ['==', '$type', 'Polygon'],
+      paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.2 }
+    });
+    map.addLayer({
+      id: 'drawn-shape-stroke', type: 'line', source: 'drawn-shape',
+      filter: ['==', '$type', 'Polygon'],
+      paint: { 'line-color': '#E8A020', 'line-width': 3 }
+    });
+    map.addLayer({
+      id: 'drawn-shape-line', type: 'line', source: 'drawn-shape',
+      filter: ['==', '$type', 'LineString'],
+      paint: { 'line-color': '#E8A020', 'line-width': 4, 'line-dasharray': [2, 1] }
+    });
+    map.addLayer({
+      id: 'drawn-verts-circle', type: 'circle', source: 'drawn-verts',
       paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 }
     });
 
@@ -662,11 +704,15 @@ function initMap() {
   });
   canvas.addEventListener('webglcontextrestored', () => {
     console.log('[Map] WebGL context restored — reloading style');
-    // Force full style reload to re-fetch tiles
     const currentStyle = mapStyleHasLabels
       ? 'mapbox://styles/mapbox/satellite-streets-v12'
       : 'mapbox://styles/mapbox/satellite-v9';
     map.setStyle(currentStyle);
+    // Re-add custom layers after style finishes loading
+    map.once('style.load', () => {
+      addCustomMapLayers();
+      if (draw) draw._update();  // restore any drawn shape
+    });
   });
 
   // ── Visibility change — recover when returning to tab/app
@@ -687,6 +733,18 @@ function initMap() {
   window.addEventListener('resize', () => {
     if (map) setTimeout(() => map.resize(), 100);
   });
+
+  // ── Map error handler — catch tile load failures gracefully
+  map.on('error', (e) => {
+    console.warn('[Map] Error:', e.error?.message || e.message || 'unknown');
+    // Don't crash — just log it
+  });
+
+  // ── Memory pressure: reduce tile cache when browser signals low memory
+  if (navigator.deviceMemory && navigator.deviceMemory <= 4) {
+    console.log('[Map] Low memory device detected — limiting tile cache');
+    // Already set maxTileCacheSize: 50, but also reduce draw complexity
+  }
 }
 
 // ─── Draw start / finish / cancel
@@ -946,21 +1004,40 @@ function toggleLabels() {
   const style = mapStyleHasLabels
     ? 'mapbox://styles/mapbox/satellite-streets-v12'
     : 'mapbox://styles/mapbox/satellite-v9';
-  const saved = draw ? draw.getAll() : null;
+  const savedShape = draw ? draw.getAll() : null;
   map.setStyle(style);
   map.once('style.load', () => {
-    // Re-add preview source/layers after style reload
+    // Re-add all custom sources/layers after style reload
+    addCustomMapLayers();
+    // Restore saved shape
+    if (draw && savedShape?.features.length) {
+      draw._data = savedShape;
+      draw._update();
+    }
+    showToast(mapStyleHasLabels ? 'Labels on' : 'Labels off');
+  });
+}
+
+// Helper: add all custom GeoJSON sources and layers to the map
+// Called on initial load and after any style change
+function addCustomMapLayers() {
+  if (!map) return;
+  // Draw preview (in-progress)
+  if (!map.getSource('draw-preview')) {
     map.addSource('draw-preview', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({ id: 'draw-preview-fill', type: 'fill', source: 'draw-preview', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.18 } });
     map.addLayer({ id: 'draw-preview-line', type: 'line', source: 'draw-preview', paint: { 'line-color': '#E8A020', 'line-width': 2.5, 'line-dasharray': [3,2] } });
     map.addLayer({ id: 'draw-preview-points', type: 'circle', source: 'draw-preview', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-    if (draw) {
-      try { map.removeControl(draw); } catch(e) {}
-      map.addControl(draw);
-      if (saved?.features.length) draw.add(saved);
-    }
-    showToast(mapStyleHasLabels ? 'Labels on' : 'Labels off');
-  });
+  }
+  // Drawn shape (finalized)
+  if (!map.getSource('drawn-shape')) {
+    map.addSource('drawn-shape', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addSource('drawn-verts', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'drawn-shape-fill', type: 'fill', source: 'drawn-shape', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.2 } });
+    map.addLayer({ id: 'drawn-shape-stroke', type: 'line', source: 'drawn-shape', filter: ['==', '$type', 'Polygon'], paint: { 'line-color': '#E8A020', 'line-width': 3 } });
+    map.addLayer({ id: 'drawn-shape-line', type: 'line', source: 'drawn-shape', filter: ['==', '$type', 'LineString'], paint: { 'line-color': '#E8A020', 'line-width': 4, 'line-dasharray': [2,1] } });
+    map.addLayer({ id: 'drawn-verts-circle', type: 'circle', source: 'drawn-verts', paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+  }
 }
 
 // ═══════════════════════════════════════
@@ -1031,7 +1108,7 @@ async function fetchQuoteAddrSuggestions(q) {
         setText('address-display', f.place_name.split(',').slice(0,2).join(','));
         clearQuoteAddrAutocomplete();
         // Fly map to the selected address
-        if (map) map.flyTo({ center: f.center, zoom: 19, speed: 1.5 });
+        if (map) map.flyTo({ center: f.center, zoom: 18, speed: 1.5 });
         showToast('Address set 📍');
       });
       list.appendChild(item);
@@ -1044,7 +1121,7 @@ function flyTo(lng, lat, name) {
   setText('address-display', name.split(',').slice(0,2).join(','));
   const addrInput = document.getElementById('quote-address');
   if (addrInput && !addrInput.value) addrInput.value = name;
-  if (map) map.flyTo({ center: [lng, lat], zoom: 19, speed: 1.5 });
+  if (map) map.flyTo({ center: [lng, lat], zoom: 18, speed: 1.5 });
 }
 
 function geolocateUser() {
@@ -1981,21 +2058,40 @@ function fmtMoney(n) { return parseFloat(n||0).toLocaleString(undefined,{minimum
 function esc(s)      { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 // ═══════════════════════════════════════
-//  PANEL DRAG
+//  PANEL DRAG (iOS-safe)
+//  Uses visualViewport API for correct height on iOS Safari
+//  Syncs map-container bottom position with panel height
 // ═══════════════════════════════════════
+function getViewportHeight() {
+  // visualViewport gives the REAL visible area on iOS (excludes Safari chrome)
+  return window.visualViewport?.height || window.innerHeight;
+}
+
+function syncMapToPanel() {
+  // Update map container to fill space above panel
+  const panel = document.getElementById('bottom-panel');
+  const mapC = document.getElementById('map-container');
+  if (panel && mapC) {
+    mapC.style.bottom = panel.offsetHeight + 'px';
+  }
+  if (map) map.resize();
+}
+
 function initPanelDrag() {
   const handle = document.getElementById('panel-drag');
   const panel  = document.getElementById('bottom-panel');
   const chevron = document.getElementById('drag-chevron');
   if (!handle || !panel) return;
 
-  // Snap heights (calculated on use to handle rotation)
+  const HEADER = 48;  // header height — must match CSS header { height: 48px }
+  const MAP_MIN = 160; // keep map visible for WebGL
+
   const getSnaps = () => {
-    const vh = window.innerHeight;
+    const vh = getViewportHeight();
     return {
-      collapsed: 64,
-      half: Math.round(vh * 0.52),
-      full: vh - 48 - 120  // leave 120px for map so WebGL context survives
+      collapsed: 56,
+      half: Math.round(vh * 0.48),
+      full: Math.max(vh * 0.48, vh - HEADER - MAP_MIN)
     };
   };
 
@@ -2004,33 +2100,31 @@ function initPanelDrag() {
 
   const updateChevron = () => {
     if (!chevron) return;
-    if (currentSnap === 'collapsed') chevron.textContent = '▲';
-    else if (currentSnap === 'full') chevron.textContent = '▼';
-    else chevron.textContent = '▲ ▼';
+    chevron.textContent = currentSnap === 'collapsed' ? '▲'
+      : currentSnap === 'full' ? '▼' : '—';
   };
-  updateChevron();
 
   const snapTo = (snapName, animate) => {
     const snaps = getSnaps();
     const h = snaps[snapName] || snaps.half;
     currentSnap = snapName;
     panel.classList.remove('dragging', 'snap-collapsed', 'snap-full');
-    if (animate !== false) {
-      // Use CSS transition
-      panel.style.height = h + 'px';
-      panel.style.maxHeight = h + 'px';
-    }
+    panel.style.height = h + 'px';
     if (snapName === 'collapsed') panel.classList.add('snap-collapsed');
     if (snapName === 'full') panel.classList.add('snap-full');
     updateChevron();
-    // Resize map to fill available space
-    if (map) { map.resize(); setTimeout(() => map.resize(), 350); }
+    // Sync map after CSS transition
+    syncMapToPanel();
+    setTimeout(syncMapToPanel, 350);
   };
+
+  // Set initial state
+  snapTo('half', false);
+  updateChevron();
 
   const onStart = y => {
     isDragging = true;
-    startY = y;
-    lastY = y;
+    startY = y; lastY = y;
     startH = panel.offsetHeight;
     startTime = Date.now();
     panel.classList.add('dragging');
@@ -2043,8 +2137,7 @@ function initPanelDrag() {
     const snaps = getSnaps();
     const newH = Math.max(snaps.collapsed, Math.min(snaps.full, startH + (startY - y)));
     panel.style.height = newH + 'px';
-    panel.style.maxHeight = newH + 'px';
-    if (map) map.resize();
+    syncMapToPanel();
   };
 
   const onEnd = () => {
@@ -2054,22 +2147,16 @@ function initPanelDrag() {
     const snaps = getSnaps();
     const h = panel.offsetHeight;
     const dt = Date.now() - startTime;
-    const dy = startY - lastY; // positive = swiped up
-    const velocity = dt > 0 ? dy / dt : 0; // px/ms
+    const dy = startY - lastY;
+    const velocity = dt > 0 ? dy / dt : 0;
 
-    // Fast swipe detection (> 0.4 px/ms)
     if (Math.abs(velocity) > 0.4) {
-      if (velocity > 0) {
-        // Swiped up — go to next higher snap
-        snapTo(currentSnap === 'collapsed' ? 'half' : 'full', true);
-      } else {
-        // Swiped down — go to next lower snap
-        snapTo(currentSnap === 'full' ? 'half' : 'collapsed', true);
-      }
+      snapTo(velocity > 0
+        ? (currentSnap === 'collapsed' ? 'half' : 'full')
+        : (currentSnap === 'full' ? 'half' : 'collapsed'), true);
       return;
     }
 
-    // Slow drag — snap to nearest
     const dists = [
       { name: 'collapsed', d: Math.abs(h - snaps.collapsed) },
       { name: 'half',      d: Math.abs(h - snaps.half) },
@@ -2089,67 +2176,32 @@ function initPanelDrag() {
   }, { passive: true });
   document.addEventListener('touchend', onEnd);
 
-  // Mouse events (desktop)
+  // Mouse (desktop)
   handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
   document.addEventListener('mousemove', e => { if (isDragging) onMove(e.clientY); });
   document.addEventListener('mouseup', onEnd);
 
-  // Double-tap to toggle between collapsed and full
-  let lastTap = 0;
+  // Single tap on handle toggles between collapsed and half
   handle.addEventListener('click', () => {
-    const now = Date.now();
-    if (now - lastTap < 350) {
-      // Double tap
-      snapTo(currentSnap === 'full' ? 'collapsed' : 'full', true);
-    }
-    lastTap = now;
+    snapTo(currentSnap === 'collapsed' ? 'half' : 'collapsed', true);
+  });
+
+  // Re-sync on orientation change or viewport resize (iOS keyboard)
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      if (!isDragging) snapTo(currentSnap, true);
+    });
+  }
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => snapTo(currentSnap, true), 300);
   });
 }
 
 // ═══════════════════════════════════════
 //  PULL TO REFRESH
 // ═══════════════════════════════════════
-(function initPullToRefresh() {
-  const indicator = document.getElementById('ptr-indicator');
-  if (!indicator) return;
-  let ptrStartY = 0;
-  let ptrActive = false;
-  let ptrTriggered = false;
-  const THRESHOLD = 80;
-
-  document.addEventListener('touchstart', e => {
-    // Only activate if at top of page and touch is on map area
-    const t = e.target;
-    const isMap = t.closest('#map-container') || t.closest('header');
-    if (!isMap) return;
-    if (window.scrollY > 0) return;
-    ptrStartY = e.touches[0].clientY;
-    ptrActive = true;
-    ptrTriggered = false;
-  }, { passive: true });
-
-  document.addEventListener('touchmove', e => {
-    if (!ptrActive) return;
-    const dy = e.touches[0].clientY - ptrStartY;
-    if (dy > 20 && dy < THRESHOLD * 1.5) {
-      indicator.classList.add('visible');
-      indicator.querySelector('span').textContent = dy > THRESHOLD ? 'Release to refresh' : 'Pull down to refresh';
-    }
-    if (dy > THRESHOLD) ptrTriggered = true;
-  }, { passive: true });
-
-  document.addEventListener('touchend', () => {
-    if (!ptrActive) return;
-    ptrActive = false;
-    if (ptrTriggered) {
-      indicator.querySelector('span').textContent = 'Refreshing...';
-      indicator.classList.add('refreshing');
-      setTimeout(() => window.location.reload(), 400);
-    } else {
-      indicator.classList.remove('visible');
-    }
-  });
-})();
+// Pull-to-refresh REMOVED — it conflicts with map panning on mobile
+// and was causing accidental page reloads when swiping the map.
 
 // ═══════════════════════════════════════
 //  PWA INSTALL PROMPT

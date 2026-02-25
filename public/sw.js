@@ -1,35 +1,47 @@
-const CACHE_NAME = 'qmach-v1';
-const SHELL = [
-  '/',
-  '/css/app.css',
-  '/js/app.js',
-  '/manifest.json'
-];
+// QUOTE machine Service Worker v3
+// Network-first for app files, cache for offline fallback only
+const CACHE_NAME = 'qmach-v3';
 
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(SHELL)));
+// On install: skip waiting to activate immediately
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
+// On activate: delete ALL old caches
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => {
+        console.log('[SW] Deleting old cache:', k);
+        return caches.delete(k);
+      }))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+// Fetch: network-first for everything
+// Only cache successful responses as offline fallback
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  // Always go to network for API calls
+
+  // Never cache API calls
   if (url.pathname.startsWith('/api/')) return;
-  // Network first, fallback to cache
+
+  // Never cache mapbox tiles (too large, causes memory issues)
+  if (url.hostname.includes('mapbox.com') || url.hostname.includes('tiles.mapbox')) return;
+
+  // Network first, cache fallback
   e.respondWith(
     fetch(e.request).then(resp => {
-      const clone = resp.clone();
-      caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+      // Only cache successful GET requests for our own origin
+      if (resp.ok && e.request.method === 'GET' && url.origin === location.origin) {
+        const clone = resp.clone();
+        caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+      }
       return resp;
-    }).catch(() => caches.match(e.request))
+    }).catch(() => {
+      // Offline: try cache
+      return caches.match(e.request);
+    })
   );
 });

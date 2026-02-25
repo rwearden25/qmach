@@ -32,12 +32,13 @@ html, body {
   color: var(--text);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
 }
 body {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  height: -webkit-fill-available;
+  /* NEVER use 100vh on iOS — it includes hidden Safari chrome */
+  /* height: 100% inherits from html which gets the real viewport */
 }
 
 /* ═══ LOGIN ═══ */
@@ -83,11 +84,11 @@ body {
 
 /* ═══ HEADER ═══ */
 header {
+  position: absolute; top: 0; left: 0; right: 0;
   background: var(--navy); color: white;
-  height: 48px;
+  height: 48px; z-index: 100;
   display: flex; align-items: center;
-  padding: 0 12px; gap: 8px;
-  flex-shrink: 0; z-index: 100;
+  padding: 0 10px; gap: 6px;
 }
 .logo {
   font-family: 'Bebas Neue', sans-serif;
@@ -148,8 +149,11 @@ header {
 
 /* ═══ MAP ═══ */
 #map-container {
-  position: relative; flex: 1;
-  min-height: 140px; /* prevent WebGL context kill */
+  position: absolute;
+  top: 48px; left: 0; right: 0;
+  /* Bottom set dynamically by JS when panel resizes */
+  bottom: 44%;
+  min-height: 160px;
 }
 #map { width: 100%; height: 100%; }
 
@@ -275,19 +279,26 @@ header {
 
 /* ═══ BOTTOM PANEL ═══ */
 #bottom-panel {
-  background: var(--surface); flex-shrink: 0;
-  height: 44vh; max-height: 44vh;
-  border-radius: 20px 20px 0 0;
-  box-shadow: 0 -4px 24px rgba(0,0,0,.2);
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 20px rgba(0,0,0,.25);
   display: flex; flex-direction: column;
   overflow: hidden;
-  transition: height .3s ease, max-height .3s ease;
+  /* Default height — JS overrides via inline style */
+  height: 44%;
+  transition: height .3s ease;
   will-change: height;
-  position: relative; z-index: 10;
+  z-index: 10;
+  /* iPhone safe area */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 #bottom-panel.dragging { transition: none; }
-#bottom-panel.snap-collapsed { height: 64px !important; max-height: 64px !important; }
-#bottom-panel.snap-full { height: calc(100vh - 168px) !important; max-height: calc(100vh - 168px) !important; }
+#bottom-panel.snap-collapsed { height: 56px !important; }
+#bottom-panel.snap-full {
+  /* JS sets this dynamically using visualViewport */
+}
 
 /* Drag handle */
 .panel-drag {
@@ -308,8 +319,9 @@ header {
 /* Panel scroll */
 .panel-scroll {
   overflow-y: auto; overflow-x: hidden;
-  flex: 1; padding: 0 14px 32px;
+  flex: 1; padding: 0 12px 32px;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; /* prevent iOS pull-down from triggering Safari refresh */
 }
 #bottom-panel.snap-collapsed .panel-scroll { overflow: hidden; }
 
@@ -657,15 +669,18 @@ input::placeholder, textarea::placeholder { color: var(--text-light); }
 /* ═══ MODALS ═══ */
 .modal-overlay {
   display: none; position: fixed; inset: 0;
-  background: rgba(0,0,0,.6); z-index: 1000;
-  align-items: center; justify-content: center; padding: 16px;
+  background: rgba(0,0,0,.5); z-index: 1000;
+  align-items: flex-end; justify-content: center; padding: 0;
 }
 .modal-overlay.open { display: flex; }
 .modal {
-  background: var(--white); border-radius: 20px;
-  padding: 24px; width: 100%; max-width: 420px;
+  background: var(--white); border-radius: 20px 20px 0 0;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  width: 100%; max-width: 500px;
   box-shadow: var(--shadow-lg);
+  animation: sheetUp .25s ease;
 }
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 .modal h3 { font-size: 18px; font-weight: 700; margin-bottom: 16px; color: var(--navy); }
 .modal-actions { display: flex; gap: 8px; }
 
@@ -733,7 +748,7 @@ input::placeholder, textarea::placeholder { color: var(--text-light); }
 
 /* ═══ TOAST ═══ */
 #toast {
-  position: fixed; bottom: 24px; left: 50%;
+  position: fixed; bottom: calc(60px + env(safe-area-inset-bottom, 0px)); left: 50%;
   transform: translateX(-50%) translateY(20px);
   background: var(--navy); color: white;
   padding: 10px 24px; border-radius: 24px;
@@ -829,23 +844,25 @@ input::placeholder, textarea::placeholder { color: var(--text-light); }
 
 /* ═══ DESKTOP ≥ 1024px ═══ */
 @media (min-width: 1024px) {
-  body { flex-direction: row; }
-  header { position: fixed; top: 0; left: 0; right: 0; z-index: 100; }
-  #map-container, #bottom-panel { margin-top: 48px; }
-  #map-container { flex: 1; min-width: 0; height: calc(100vh - 48px); }
+  header { position: fixed; top: 0; left: 0; right: 0; height: 48px; z-index: 100; }
+  #map-container {
+    position: absolute; top: 48px; left: 420px; right: 0; bottom: 0;
+    min-height: auto;
+  }
   #bottom-panel {
-    width: 420px; max-width: 420px;
-    height: calc(100vh - 48px) !important; max-height: calc(100vh - 48px) !important;
-    border-radius: 0; border-left: 3px solid var(--navy);
-    box-shadow: none; order: -1;
+    position: fixed; top: 48px; left: 0; bottom: 0;
+    width: 420px; height: auto !important;
+    border-radius: 0; box-shadow: none;
+    border-right: 2px solid var(--navy);
+    padding-bottom: 0;
   }
   #bottom-panel.snap-collapsed, #bottom-panel.snap-full {
-    height: calc(100vh - 48px) !important; max-height: calc(100vh - 48px) !important;
+    height: auto !important;
   }
   .panel-drag { display: none; }
   .drag-chevron { display: none; }
 
-  #geocoder-wrapper { left: 10px; right: 62px; }
+  #geocoder-wrapper { left: 10px; right: 56px; }
 
   .tool-tip { display: block; }
   .hdr-menu-btn { display: none; }

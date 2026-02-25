@@ -15,9 +15,6 @@
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
-<link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" rel="stylesheet">
-<script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
@@ -303,8 +300,7 @@
   </div>
 </div>
 
-<!-- ═══ PULL TO REFRESH ═══ -->
-<div id="ptr-indicator"><div class="ptr-spinner">↻</div><span>Release to refresh</span></div>
+<!-- Pull-to-refresh removed — conflicted with map panning -->
 
 <!-- ═══ INSTALL BANNER ═══ -->
 <div id="install-banner" class="install-banner" style="display:none">
@@ -322,8 +318,20 @@
 
 <script src="/js/app.js"></script>
 <script>
+// Force clear old service worker caches that may serve stale files
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  // Clear ALL old caches first
+  if (window.caches) {
+    caches.keys().then(function(names) {
+      names.forEach(function(name) {
+        if (name !== 'qmach-v3') {
+          console.log('[SW] Clearing old cache:', name);
+          caches.delete(name);
+        }
+      });
+    });
+  }
+  navigator.serviceWorker.register('/sw.js').catch(function() {});
 }
 
 // ── Header menu toggle
@@ -352,27 +360,23 @@ if ('serviceWorker' in navigator) {
   });
 });
 
-// ── Keyboard jump prevention
+// ── Keyboard handling for iOS
+// When the keyboard opens, iOS Safari resizes the visual viewport.
+// We lock the layout to prevent jumping.
 (function() {
-  var lockedH = null;
-  function lockHeight() {
-    if (lockedH !== null) return;
-    lockedH = window.innerHeight;
-    document.documentElement.style.setProperty('height', lockedH + 'px', 'important');
-    document.body.style.setProperty('height', lockedH + 'px', 'important');
-  }
-  function unlockHeight() {
-    if (document.activeElement && document.activeElement.matches('input,textarea,select')) return;
-    lockedH = null;
-    document.documentElement.style.removeProperty('height');
-    document.body.style.removeProperty('height');
-  }
-  document.addEventListener('focusin', function(e) {
-    if (e.target.matches('input,textarea,select')) setTimeout(lockHeight, 50);
-  }, true);
-  document.addEventListener('focusout', function() {
-    setTimeout(unlockHeight, 150);
-  }, true);
+  if (!window.visualViewport) return; // desktop doesn't need this
+  
+  var panel = document.getElementById('bottom-panel');
+  var initialHeight = 0;
+  
+  window.visualViewport.addEventListener('resize', function() {
+    // When keyboard opens, visualViewport.height shrinks
+    // Don't fight it — let the browser handle the resize
+    // Just make sure the map resizes
+    if (typeof map !== 'undefined' && map && map.resize) {
+      setTimeout(function() { map.resize(); }, 100);
+    }
+  });
 })();
 
 // ── Long-press tooltip for mobile tool buttons
