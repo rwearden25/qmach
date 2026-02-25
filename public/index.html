@@ -17,234 +17,14 @@
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
 <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
-<!-- turf.js removed — replaced by custom geometry math in app.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
-<style>
-/* ── NEW 4-UNIT MEASUREMENT PANEL ── */
-#measurement-row {
-  background: var(--surface2, #F4F7FA);
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  border: 2px solid transparent;
-  transition: border-color 0.2s;
-}
-#measurement-row:focus-within {
-  border-color: var(--accent, #E8A020);
-}
-.mrow-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-.mrow-title {
-  font-weight: 700;
-  font-size: 13px;
-  color: var(--navy, #0D2137);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.mrow-hint {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--accent, #E8A020);
-}
-.mrow-units {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 8px;
-}
-.munit-box {
-  background: white;
-  border-radius: 8px;
-  padding: 8px 8px 6px;
-  border: 1.5px solid var(--border, #D8E4EF);
-  transition: border-color 0.15s, background 0.15s;
-}
-.munit-box.has-value {
-  border-color: var(--accent, #E8A020);
-  background: #FFFBF0;
-}
-.munit-box:focus-within {
-  border-color: var(--accent, #E8A020);
-  box-shadow: 0 0 0 2px rgba(232,160,32,0.18);
-}
-.munit-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text2, #6B8FAD);
-  margin-bottom: 4px;
-  white-space: nowrap;
-}
-.munit-sub {
-  font-weight: 400;
-  font-size: 9px;
-  text-transform: none;
-  letter-spacing: 0;
-}
-.munit-input {
-  width: 100%;
-  font-size: 15px;
-  font-weight: 700;
-  font-family: 'DM Sans', sans-serif;
-  color: var(--navy, #0D2137);
-  border: none;
-  background: transparent;
-  outline: none;
-  padding: 0;
-  -moz-appearance: textfield;
-}
-.munit-input::-webkit-inner-spin-button,
-.munit-input::-webkit-outer-spin-button { -webkit-appearance: none; }
-.munit-input::placeholder { color: #C5D4E0; font-weight: 400; font-size: 13px; }
-/* "↓ Use" button — only visible when box has a value */
-.munit-tap-btn {
-  display: none;
-  width: 100%;
-  margin-top: 5px;
-  padding: 6px 4px;
-  background: var(--accent, #E8A020);
-  color: var(--navy, #0D2137);
-  border: none;
-  border-radius: 5px;
-  font-size: 11px;
-  font-weight: 700;
-  font-family: 'DM Sans', sans-serif;
-  cursor: pointer;
-  -webkit-tap-highlight-color: rgba(232,160,32,0.3);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-}
-.munit-tap-btn:active {
-  background: var(--accent-dk, #C4831A);
-  transform: scale(0.97);
-}
-.munit-box.has-value .munit-tap-btn {
-  display: block;
-}
-/* Selected state — the unit currently applied to line item */
-.munit-box.selected {
-  border-color: var(--accent, #E8A020) !important;
-  background: #FFF8EC !important;
-  box-shadow: 0 0 0 2px rgba(232,160,32,0.25);
-}
-.munit-box.selected .munit-tap-btn {
-  background: var(--navy, #0D2137);
-  color: var(--accent, #E8A020);
-}
-.munit-box.selected .munit-tap-btn::after {
-  content: ' ✓';
-}
-.munit-box.selected .munit-label {
-  color: var(--accent, #E8A020);
-}
-/* Pricing equivalents row */
-.mrow-pricing {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border, #D8E4EF);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.mrow-pricing-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text2, #6B8FAD);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  width: 100%;
-  margin-bottom: 2px;
-}
-.mrow-price-chip {
-  background: #E8F4FF;
-  color: var(--navy, #0D2137);
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 20px;
-  padding: 3px 10px;
-  border: 1px solid #BDD8EF;
-}
-/* Saved quote measurement chips */
-.qc-measurements {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin: 6px 0 4px;
-}
-.qcm-chip {
-  background: var(--surface2, #F4F7FA);
-  border: 1px solid var(--border, #D8E4EF);
-  border-radius: 6px;
-  font-size: 11px;
-  color: var(--navy, #0D2137);
-  padding: 3px 8px;
-}
-.qcm-chip strong {
-  color: var(--accent, #E8A020);
-}
-@media (max-width: 380px) {
-  .mrow-units { grid-template-columns: 1fr 1fr; }
-}
-/* ── USER BADGE ── */
-.user-badge {
-  background: var(--accent, #E8A020);
-  color: var(--navy, #0D2137);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 20px;
-  white-space: nowrap;
-  letter-spacing: 0.3px;
-}
-.icon-btn-logout {
-  background: rgba(255,255,255,.08) !important;
-  font-size: 13px !important;
-  padding: 6px 8px !important;
-  opacity: 0.7;
-}
-.icon-btn-logout:hover { opacity: 1; background: rgba(220,38,38,.3) !important; }
-/* ── QUOTE ADDRESS AUTOCOMPLETE ── */
-.quote-addr-list {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 9999;
-  background: white;
-  border: 1.5px solid var(--accent, #E8A020);
-  border-top: none;
-  border-radius: 0 0 10px 10px;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-  max-height: 220px;
-  overflow-y: auto;
-}
-.quote-addr-list:empty { display: none; }
-.quote-addr-list .autocomplete-item {
-  padding: 11px 14px;
-  font-size: 13px;
-  color: var(--navy, #0D2137);
-  border-bottom: 1px solid #EEF3F8;
-  cursor: pointer;
-  line-height: 1.3;
-}
-.quote-addr-list .autocomplete-item:last-child { border-bottom: none; }
-.quote-addr-list .autocomplete-item:hover,
-.quote-addr-list .autocomplete-item:active {
-  background: #FFF8EC;
-  color: var(--accent, #E8A020);
-}
-</style>
 </head>
 <body>
 
-<!-- LOGIN GATE -->
+<!-- ═══ LOGIN GATE ═══ -->
 <div id="login-gate">
   <div class="login-card">
     <div class="login-logo">QUOTE<span>machine</span></div>
@@ -255,297 +35,281 @@
   </div>
 </div>
 
-<!-- HEADER -->
+<!-- ═══ HEADER ═══ -->
 <header>
-  <div class="logo">QUOTE<span>machine</span></div>
+  <div class="logo">Q<span>M</span></div>
   <div class="header-center" id="address-display"></div>
-  <div class="header-actions">
+  <div class="header-right">
     <span class="user-badge" id="user-badge" style="display:none"></span>
-    <button class="icon-btn" id="btn-saved-header" title="Saved Quotes">📋 <span id="saved-count">0</span></button>
-    <button class="icon-btn" id="ai-chat-btn" title="AI Assistant">🤖</button>
-    <button class="icon-btn icon-btn-logout" id="btn-logout" title="Sign Out">↩</button>
+    <button class="hdr-btn" id="btn-saved-header" aria-label="Saved quotes"><span class="hdr-count" id="saved-count">0</span> Saved</button>
+    <button class="hdr-btn hdr-menu-btn" id="hdr-menu-toggle" aria-label="Menu">☰</button>
   </div>
 </header>
 
-<!-- MAP -->
+<!-- ═══ HEADER DROPDOWN MENU (secondary actions) ═══ -->
+<div id="hdr-menu" class="hdr-menu">
+  <button class="hdr-menu-item" id="ai-chat-btn">🤖 AI Assistant</button>
+  <button class="hdr-menu-item" id="tab-btn-stats">📊 Stats Dashboard</button>
+  <button class="hdr-menu-item" id="export-btn">📥 Export All Quotes</button>
+  <button class="hdr-menu-item" id="btn-logout">↩ Sign Out</button>
+</div>
+
+<!-- ═══ MAP ═══ -->
 <div id="map-container">
   <div id="map"></div>
 
   <!-- Search -->
   <div id="geocoder-wrapper">
     <div id="geocoder-inner">
-      <input type="text" id="addr-input" placeholder="🔍  Search job address..." autocomplete="off">
-      <button id="search-btn">Go</button>
+      <input type="text" id="addr-input" placeholder="Search job address..." autocomplete="off">
+      <button id="search-btn" aria-label="Search address">Go</button>
     </div>
     <div id="autocomplete-list"></div>
   </div>
 
-  <!-- Draw toolbar — left side -->
+  <!-- Map tools — floating right edge -->
   <div id="map-toolbar">
-    <button class="map-tool-btn active" id="tool-draw" title="Draw Area">
+    <button class="map-tool-btn active" id="tool-draw" aria-label="Draw area on map">
       <span class="tool-icon">✏️</span>
-      <span class="tool-label">Draw</span>
+      <span class="tool-tip">Draw Area</span>
     </button>
-    <button class="map-tool-btn" id="tool-line" title="Measure Distance">
+    <button class="map-tool-btn" id="tool-line" aria-label="Measure a line">
       <span class="tool-icon">📏</span>
-      <span class="tool-label">Line</span>
+      <span class="tool-tip">Line</span>
     </button>
-    <button class="map-tool-btn" id="tool-clear" title="Clear Drawing">
+    <button class="map-tool-btn" id="tool-clear" aria-label="Clear drawing">
       <span class="tool-icon">🗑</span>
-      <span class="tool-label">Clear</span>
+      <span class="tool-tip">Clear</span>
     </button>
-    <button class="map-tool-btn" id="tool-satellite" title="Toggle Labels">
+    <button class="map-tool-btn" id="tool-satellite" aria-label="Toggle map labels">
       <span class="tool-icon">🗺</span>
-      <span class="tool-label">Labels</span>
+      <span class="tool-tip">Labels</span>
     </button>
-    <button class="map-tool-btn" id="tool-streetview" title="Street View">
+    <button class="map-tool-btn" id="tool-streetview" aria-label="Open street view">
       <span class="tool-icon">👁</span>
-      <span class="tool-label">360°</span>
+      <span class="tool-tip">Street</span>
     </button>
   </div>
 
-  <!-- Drawing mode overlay — shown while actively drawing -->
-  <!-- Drawing mode bar — shown while drawing, clicks pass through to map -->
+  <!-- Drawing mode overlay -->
   <div id="drawing-overlay" style="display:none">
-    <div id="drawing-instructions">
-      <strong>Tap corners</strong> of the work area
-    </div>
+    <div id="drawing-instructions"><strong>Tap corners</strong> of the work area</div>
     <div id="point-counter">0 points</div>
-    <button id="btn-done-drawing">✓ Done — Calculate Area</button>
-    <div id="drawing-secondary-actions">
-      <button id="btn-undo-point">↩ Undo</button>
+    <button id="btn-done-drawing">✓ Done — Calculate</button>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button id="btn-undo-point" style="pointer-events:all;background:rgba(13,33,55,.7);color:rgba(255,255,255,.7);border:none;font-size:13px;cursor:pointer;padding:6px 14px;border-radius:12px;font-family:inherit" disabled>↩ Undo</button>
       <button id="btn-cancel-drawing">✕ Cancel</button>
     </div>
   </div>
 
-  <!-- Measurement result badge -->
+  <!-- Measurement badge -->
   <div id="measure-badge" style="display:none">
     <div class="badge-main">
       <span class="badge-val" id="badge-val">0</span>
       <span class="badge-unit" id="badge-unit">sq ft</span>
     </div>
-    <button id="badge-clear-btn" class="badge-clear" title="Redraw">Redraw</button>
+    <button id="badge-clear-btn" class="badge-clear">Redraw</button>
   </div>
 </div>
 
-<!-- QUOTE FORM PANEL -->
+<!-- ═══ BOTTOM PANEL ═══ -->
 <div id="bottom-panel">
-  <div class="panel-drag" id="panel-drag"><div class="drag-chevron" id="drag-chevron">▲</div><div class="drag-bar"></div></div>
+  <div class="panel-drag" id="panel-drag">
+    <div class="drag-chevron" id="drag-chevron">▲</div>
+    <div class="drag-bar"></div>
+  </div>
   <div class="panel-scroll" id="panel-scroll">
 
-    <!-- View switcher -->
+    <!-- Two clean tabs -->
     <div class="tab-row">
-      <button class="tab-btn active" id="tab-btn-quote">📐 New Quote</button>
-      <button class="tab-btn" id="tab-btn-saved">📋 Saved (<span id="saved-count-tab">0</span>)</button>
-      <button class="tab-btn" id="tab-btn-stats">📊 Stats</button>
+      <button class="tab-btn active" id="tab-btn-quote">New Quote</button>
+      <button class="tab-btn" id="tab-btn-saved">Saved <span id="saved-count-tab">0</span></button>
     </div>
 
     <!-- ═══ QUOTE TAB ═══ -->
     <div id="tab-quote">
 
-      <!-- Measurement panel — all 4 units always visible and editable -->
-      <div id="measurement-row">
-        <div class="mrow-header">
-          <span class="mrow-title" id="mrow-title">📐 Measurements</span>
-          <span class="mrow-hint" id="mrow-hint">Draw on map or enter any value</span>
+      <!-- STEP 1: Measurements — compact read grid -->
+      <div id="measurement-row" class="card">
+        <div class="card-header">
+          <span class="card-title" id="mrow-title">Measurements</span>
+          <span class="card-hint" id="mrow-hint">Draw on map or type below</span>
         </div>
         <div class="mrow-units">
           <div class="munit-box" id="munit-box-sqft">
-            <div class="munit-label">Sq Ft</div>
-            <input type="number" class="munit-input" id="munit-sqft" placeholder="0" min="0" step="1" oninput="onMeasurementInput('sqft', this.value)">
-            <button type="button" class="munit-tap-btn" data-unit="sqft">↓ Use Sq Ft</button>
+            <label class="munit-label" for="munit-sqft">Sq Ft</label>
+            <input type="number" class="munit-input" id="munit-sqft" placeholder="—" min="0" step="1">
           </div>
           <div class="munit-box" id="munit-box-linft">
-            <div class="munit-label">Lin Ft</div>
-            <input type="number" class="munit-input" id="munit-linft" placeholder="0" min="0" step="0.1" oninput="onMeasurementInput('linft', this.value)">
-            <button type="button" class="munit-tap-btn" data-unit="linft">↓ Use Lin Ft</button>
+            <label class="munit-label" for="munit-linft">Lin Ft</label>
+            <input type="number" class="munit-input" id="munit-linft" placeholder="—" min="0" step="0.1">
           </div>
           <div class="munit-box" id="munit-box-sqyd">
-            <div class="munit-label">Sq Yd</div>
-            <input type="number" class="munit-input" id="munit-sqyd" placeholder="0" min="0" step="0.1" oninput="onMeasurementInput('sqyd', this.value)">
-            <button type="button" class="munit-tap-btn" data-unit="sqyd">↓ Use Sq Yd</button>
+            <label class="munit-label" for="munit-sqyd">Sq Yd</label>
+            <input type="number" class="munit-input" id="munit-sqyd" placeholder="—" min="0" step="0.1">
           </div>
           <div class="munit-box" id="munit-box-acre">
-            <div class="munit-label">Acres</div>
-            <input type="number" class="munit-input" id="munit-acre" placeholder="0" min="0" step="0.0001" oninput="onMeasurementInput('acre', this.value)">
-            <button type="button" class="munit-tap-btn" data-unit="acre">↓ Use Acres</button>
+            <label class="munit-label" for="munit-acre">Acres</label>
+            <input type="number" class="munit-input" id="munit-acre" placeholder="—" min="0" step="0.0001">
           </div>
         </div>
-        <div class="mrow-pricing" id="mrow-pricing" style="display:none">
-          <!-- filled by JS when a price is set -->
-        </div>
+        <div class="mrow-pricing" id="mrow-pricing" style="display:none"></div>
       </div>
-      <!-- Hidden legacy inputs for backward compat -->
-      <select id="measure-type" style="display:none"><option value="sqft">Sq Ft</option><option value="linft">Lin Ft</option><option value="sqyd">Sq Yd</option><option value="acre">Acres</option></select>
+      <!-- Hidden legacy inputs -->
+      <select id="measure-type" style="display:none"><option value="sqft">Sq Ft</option></select>
       <input type="number" id="manual-area" style="display:none">
 
-      <!-- Client info -->
-      <div class="form-row">
-        <div class="field" style="flex:1">
-          <label>Client Name</label>
-          <input type="text" id="client-name" placeholder="Name or company">
+      <!-- STEP 2: Client & Address -->
+      <div class="card">
+        <div class="form-field">
+          <label for="client-name">Client Name</label>
+          <input type="text" id="client-name" placeholder="Who is this quote for?">
         </div>
-      </div>
-      <div class="form-row">
-        <div class="field" style="flex:1">
-          <label>Job Address</label>
-          <div class="addr-field-row" style="position:relative">
-            <input type="text" id="quote-address" placeholder="Enter or use map search 📍" autocomplete="off">
-            <button class="btn-addr-use" id="btn-use-map-addr" title="Use map address">📍</button>
-            <div id="quote-addr-autocomplete" class="autocomplete-list quote-addr-list"></div>
+        <div class="form-field">
+          <label for="quote-address">Job Address</label>
+          <div class="input-with-btn">
+            <input type="text" id="quote-address" placeholder="Type or use map search" autocomplete="off">
+            <button class="input-action-btn" id="btn-use-map-addr" aria-label="Use address from map">📍</button>
           </div>
+          <div id="quote-addr-autocomplete" class="autocomplete-list quote-addr-list"></div>
         </div>
       </div>
 
-      <!-- ═══ LINE ITEMS ═══ -->
-      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
-        <span>Line Items</span>
-        <button class="btn-add-item" id="btn-add-item">+ Add Item</button>
-      </div>
-      <div id="line-items-container">
-        <!-- line items render here -->
-      </div>
-
-      <!-- Markup -->
-      <div class="form-row" style="margin-top:10px">
-        <div class="field">
-          <label>Markup %</label>
-          <select id="markup">
-            <option value="0">0%</option>
-            <option value="1">1%</option>
-            <option value="2">2%</option>
-            <option value="3">3%</option>
-            <option value="4">4%</option>
-            <option value="5">5%</option>
-            <option value="6">6%</option>
-            <option value="7">7%</option>
-            <option value="8">8%</option>
-            <option value="9">9%</option>
-            <option value="10">10%</option>
-          </select>
+      <!-- STEP 3: Line Items (starts with 1, clean) -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Job Details</span>
+          <button class="link-btn" id="btn-add-item">+ Add Item</button>
         </div>
+        <div id="line-items-container"></div>
       </div>
 
-      <!-- AI suggest price -->
-      <button class="btn-ai-suggest" id="ai-suggest-btn">✨ AI Suggest Price</button>
-
-      <!-- TOTAL -->
+      <!-- STEP 4: Total + Actions -->
       <div class="total-card">
-        <div>
+        <div class="total-top">
           <div class="total-label">Estimated Total</div>
           <div class="total-amount" id="total-display">$0.00</div>
-          <div class="total-breakdown" id="breakdown-display">—</div>
+          <div class="total-sub" id="breakdown-display">—</div>
         </div>
-        <button class="btn-print-big" id="btn-print">🖨️ Print Quote</button>
-      </div>
-
-      <!-- Notes -->
-      <div class="field" style="margin-top:12px">
-        <label>Notes (optional)</label>
-        <textarea id="notes" placeholder="Conditions, special instructions, scope details..."></textarea>
-      </div>
-
-      <!-- AI Narrative section -->
-      <div id="narrative-section" style="display:none">
-        <div class="narrative-header">
-          AI Scope of Work
-          <button class="btn-text" id="btn-narrative-regen">↺ Regenerate</button>
+        <div class="total-actions">
+          <button class="btn-primary" id="btn-save">Save Quote</button>
+          <button class="btn-secondary" id="btn-share">Send to Client</button>
         </div>
-        <div id="narrative-text" class="narrative-box"></div>
       </div>
 
-      <!-- Action row -->
-      <div class="action-row">
-        <button class="action-btn save" id="btn-save">💾 Save</button>
-        <button class="action-btn narrative" id="btn-narrative">✍️ Narrative</button>
-        <button class="action-btn share" id="btn-share">📤 Share</button>
-      </div>
-      <div class="action-row" style="margin-top:0">
-        <button class="action-btn save" id="btn-pdf" style="background:var(--accent);color:var(--navy)">📄 PDF</button>
-        <button class="action-btn save" id="btn-pdf-plain" style="background:var(--surface2);color:var(--navy)">📄 PDF (plain)</button>
-      </div>
-      <button class="btn-new-quote" id="btn-new">＋ Start New Quote</button>
+      <!-- MORE OPTIONS (collapsed by default) -->
+      <details class="more-options">
+        <summary>More Options</summary>
+        <div class="more-content">
+          <div class="form-field">
+            <label for="markup">Markup %</label>
+            <select id="markup">
+              <option value="0">0% — No markup</option>
+              <option value="1">1%</option><option value="2">2%</option>
+              <option value="3">3%</option><option value="4">4%</option>
+              <option value="5">5%</option><option value="6">6%</option>
+              <option value="7">7%</option><option value="8">8%</option>
+              <option value="9">9%</option><option value="10">10%</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="notes">Notes</label>
+            <textarea id="notes" placeholder="Special instructions, scope details..."></textarea>
+          </div>
+          <button class="btn-outline" id="ai-suggest-btn">✨ AI Suggest Price</button>
+          <button class="btn-outline" id="btn-narrative">✍️ Generate Scope of Work</button>
+          <button class="btn-outline" id="btn-print">🖨️ Print / PDF</button>
+          <div class="pdf-row">
+            <button class="btn-outline small" id="btn-pdf">PDF (Branded)</button>
+            <button class="btn-outline small" id="btn-pdf-plain">PDF (Plain)</button>
+          </div>
+          <div id="narrative-section" style="display:none">
+            <div class="card-header" style="margin-top:10px">
+              <span class="card-title">AI Scope of Work</span>
+              <button class="link-btn" id="btn-narrative-regen">↺ Redo</button>
+            </div>
+            <div id="narrative-text" class="narrative-box"></div>
+          </div>
+        </div>
+      </details>
 
-    </div><!-- end tab-quote -->
+      <button class="btn-new-quote" id="btn-new">+ Start New Quote</button>
+
+    </div><!-- /tab-quote -->
 
     <!-- ═══ SAVED TAB ═══ -->
     <div id="tab-saved" style="display:none">
-      <div class="search-bar">
-        <input type="text" id="search-input" placeholder="🔍  Search by client, job type...">
-        <button id="export-btn" class="btn-text-sm">Export</button>
+      <div class="form-field">
+        <input type="text" id="search-input" placeholder="Search by client, job type...">
       </div>
       <div id="saved-list"><div class="empty-state">No saved quotes yet.</div></div>
     </div>
 
-    <!-- ═══ STATS TAB ═══ -->
+    <!-- ═══ STATS TAB (hidden on mobile, accessed via menu) ═══ -->
     <div id="tab-stats" style="display:none">
       <div id="stats-content"><div class="empty-state">Loading...</div></div>
     </div>
 
   </div>
-  <!-- ── STICKY TOTAL — always visible at bottom of panel ── -->
-  <div class="sticky-total" id="sticky-total">
-    <div class="sticky-total-left">
-      <span class="sticky-total-label">Total</span>
-    </div>
-    <span class="sticky-total-val" id="sticky-total-val">$0.00</span>
-  </div>
 </div>
 
-<!-- AI CHAT PANEL -->
+<!-- ═══ STICKY TOTAL BAR (shows when scrolled past total) ═══ -->
+<div id="sticky-total" class="sticky-total" style="display:none">
+  <div class="sticky-amount" id="sticky-total-val">$0.00</div>
+  <button class="sticky-save" id="sticky-save-btn">Save</button>
+</div>
+
+<!-- ═══ AI CHAT PANEL ═══ -->
 <div id="ai-panel" class="side-panel">
   <div class="side-panel-header">
-    <span>🤖 AI Assistant</span>
+    <span>AI Assistant</span>
     <button id="ai-panel-close">✕</button>
   </div>
   <div id="chat-messages" class="chat-messages"></div>
   <div class="chat-input-row">
-    <input type="text" id="chat-input" placeholder="Ask about pricing, measurements...">
+    <input type="text" id="chat-input" placeholder="Ask about pricing...">
     <button id="chat-send-btn">➤</button>
   </div>
 </div>
 <div id="ai-overlay"></div>
 
-<!-- SHARE MODAL -->
+<!-- ═══ SHARE MODAL ═══ -->
 <div class="modal-overlay" id="share-modal">
   <div class="modal">
-    <h3>Share Quote</h3>
-    <div class="field" style="margin-bottom:12px">
-      <textarea id="share-text" style="height:140px;font-size:13px;"></textarea>
+    <h3>Send Quote</h3>
+    <div class="form-field">
+      <textarea id="share-text" rows="6"></textarea>
     </div>
-    <div class="modal-btns">
-      <button class="m-btn cancel" id="share-cancel">Cancel</button>
-      <button class="m-btn copy" id="share-copy">📋 Copy</button>
+    <div class="modal-actions">
+      <button class="btn-outline" id="share-cancel">Cancel</button>
+      <button class="btn-primary" id="share-copy">📋 Copy</button>
     </div>
-    <div class="modal-btns" style="margin-top:8px">
-      <button class="m-btn sms" id="share-sms">💬 Text</button>
-      <button class="m-btn email" id="share-email">✉️ Email</button>
+    <div class="modal-actions" style="margin-top:8px">
+      <button class="btn-primary" id="share-sms" style="background:#27AE60">💬 Text</button>
+      <button class="btn-primary" id="share-email" style="background:#6B9AC4">✉️ Email</button>
     </div>
   </div>
 </div>
 
-<!-- AI PRICE MODAL -->
+<!-- ═══ AI PRICE MODAL ═══ -->
 <div class="modal-overlay" id="ai-price-modal">
   <div class="modal">
-    <h3>✨ AI Price Suggestion</h3>
-    <div id="ai-price-content" class="ai-price-content"></div>
-    <div class="modal-btns" style="margin-top:14px">
-      <button class="m-btn cancel" id="ai-price-dismiss">Dismiss</button>
-      <button class="m-btn copy" id="ai-price-apply">✓ Apply Recommended</button>
+    <h3>AI Price Suggestion</h3>
+    <div id="ai-price-content"></div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="btn-outline" id="ai-price-dismiss">Dismiss</button>
+      <button class="btn-primary" id="ai-price-apply">Apply Recommended</button>
     </div>
   </div>
 </div>
 
-<!-- PULL TO REFRESH -->
-<div id="ptr-indicator">
-  <div class="ptr-spinner">↻</div>
-  <span>Release to refresh</span>
-</div>
+<!-- ═══ PULL TO REFRESH ═══ -->
+<div id="ptr-indicator"><div class="ptr-spinner">↻</div><span>Release to refresh</span></div>
 
-<!-- INSTALL BANNER -->
+<!-- ═══ INSTALL BANNER ═══ -->
 <div id="install-banner" class="install-banner" style="display:none">
   <div class="install-inner">
-    <span>📲 Install <strong>QUOTE machine</strong> for quick access</span>
+    <span>Install <strong>QUOTE machine</strong></span>
     <div class="install-btns">
       <button id="install-btn">Install</button>
       <button id="install-dismiss" class="dismiss">Later</button>
@@ -553,7 +317,7 @@
   </div>
 </div>
 
-<!-- TOAST -->
+<!-- ═══ TOAST ═══ -->
 <div id="toast"></div>
 
 <script src="/js/app.js"></script>
@@ -562,41 +326,78 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
-// ─────────────────────────────────────────────────────────
-// KEYBOARD JUMP PREVENTION
-// iOS and Android resize the viewport when the keyboard opens.
-// This causes dvh/vh layouts to reflow, making the map and 
-// panel jump. We lock the document height to the initial
-// window.innerHeight the moment any input gains focus.
-// ─────────────────────────────────────────────────────────
+// ── Header menu toggle
+(function() {
+  const btn = document.getElementById('hdr-menu-toggle');
+  const menu = document.getElementById('hdr-menu');
+  if (!btn || !menu) return;
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    menu.classList.toggle('open');
+  });
+  document.addEventListener('click', function() {
+    menu.classList.remove('open');
+  });
+  // Close menu when any item is clicked
+  menu.querySelectorAll('.hdr-menu-item').forEach(function(item) {
+    item.addEventListener('click', function() { menu.classList.remove('open'); });
+  });
+})();
+
+// ── Measurement input wiring (replaces inline oninput)
+['sqft','linft','sqyd','acre'].forEach(function(unit) {
+  var el = document.getElementById('munit-' + unit);
+  if (el) el.addEventListener('input', function() {
+    if (typeof onMeasurementInput === 'function') onMeasurementInput(unit, this.value);
+  });
+});
+
+// ── Keyboard jump prevention
 (function() {
   var lockedH = null;
-
   function lockHeight() {
     if (lockedH !== null) return;
     lockedH = window.innerHeight;
     document.documentElement.style.setProperty('height', lockedH + 'px', 'important');
     document.body.style.setProperty('height', lockedH + 'px', 'important');
   }
-
   function unlockHeight() {
-    // Only unlock if no input is still focused
     if (document.activeElement && document.activeElement.matches('input,textarea,select')) return;
     lockedH = null;
     document.documentElement.style.removeProperty('height');
     document.body.style.removeProperty('height');
   }
-
   document.addEventListener('focusin', function(e) {
-    if (e.target.matches('input,textarea,select')) {
-      // Short delay so browser doesn't fight us during keyboard animation
-      setTimeout(lockHeight, 50);
-    }
+    if (e.target.matches('input,textarea,select')) setTimeout(lockHeight, 50);
   }, true);
-
   document.addEventListener('focusout', function() {
     setTimeout(unlockHeight, 150);
   }, true);
+})();
+
+// ── Long-press tooltip for mobile tool buttons
+(function() {
+  var tipEl = null;
+  var timer = null;
+  document.querySelectorAll('[aria-label]').forEach(function(btn) {
+    btn.addEventListener('touchstart', function(e) {
+      var label = btn.getAttribute('aria-label');
+      if (!label) return;
+      timer = setTimeout(function() {
+        if (tipEl) tipEl.remove();
+        tipEl = document.createElement('div');
+        tipEl.className = 'touch-tooltip';
+        tipEl.textContent = label;
+        var rect = btn.getBoundingClientRect();
+        tipEl.style.top = (rect.top - 36) + 'px';
+        tipEl.style.left = (rect.left + rect.width/2) + 'px';
+        document.body.appendChild(tipEl);
+        setTimeout(function() { if (tipEl) tipEl.remove(); }, 2000);
+      }, 500);
+    }, {passive: true});
+    btn.addEventListener('touchend', function() { clearTimeout(timer); });
+    btn.addEventListener('touchcancel', function() { clearTimeout(timer); });
+  });
 })();
 </script>
 </body>
