@@ -346,6 +346,30 @@ function syncLineItemsFromDOM() {
   });
 }
 
+// ── Price dropdown options ($0.01 → $30.00) ──
+function buildPriceOptions(selectedPrice) {
+  const prices = [];
+  for (let i = 1; i <= 10; i++)  prices.push(i * 0.01);        // $0.01–$0.10
+  for (let i = 3; i <= 19; i++)  prices.push(i * 0.05);        // $0.15–$0.95
+  for (let i = 4; i <= 19; i++)  prices.push(i * 0.25);        // $1.00–$4.75
+  for (let i = 10; i <= 19; i++) prices.push(i * 0.50);        // $5.00–$9.50
+  for (let i = 10; i <= 30; i++) prices.push(i * 1.00);        // $10–$30
+
+  const rounded = selectedPrice ? parseFloat(parseFloat(selectedPrice).toFixed(2)) : 0;
+  // If user has a custom price that's not in our list, inject it
+  let hasMatch = rounded === 0 || prices.some(p => parseFloat(p.toFixed(2)) === rounded);
+  let opts = '<option value="0">— Select —</option>';
+  for (const p of prices) {
+    const pv = parseFloat(p.toFixed(2));
+    const sel = pv === rounded ? ' selected' : '';
+    opts += `<option value="${pv}"${sel}>$${pv.toFixed(2)}</option>`;
+  }
+  if (rounded > 0 && !hasMatch) {
+    opts += `<option value="${rounded}" selected>$${rounded.toFixed(2)} (custom)</option>`;
+  }
+  return opts;
+}
+
 function renderLineItems() {
   const container = document.getElementById('line-items-container');
   if (!container) return;
@@ -361,6 +385,7 @@ function renderLineItems() {
     const qtyOptions = [1,2,3,4,5].map(q =>
       `<option value="${q}" ${q === item.qty ? 'selected' : ''}>${q}×</option>`
     ).join('');
+    const priceOptions = buildPriceOptions(item.price);
     const sub = item.area * item.price * item.qty;
 
     return `
@@ -380,8 +405,8 @@ function renderLineItems() {
           <select class="li-unit" onchange="onLineItemChange()">${unitOptions}</select>
         </div>
         <div class="li-field">
-          <label>$/unit</label>
-          <input type="number" class="li-price" value="${item.price || ''}" placeholder="0.00" min="0" step="0.01" oninput="onLineItemChange()">
+          <label>$/Unit</label>
+          <select class="li-price" onchange="onLineItemChange()">${priceOptions}</select>
         </div>
       </div>
       <div class="li-fields" style="grid-template-columns: 1fr 2fr; margin-top:4px">
@@ -399,6 +424,7 @@ function renderLineItems() {
 }
 
 function useMapForItem(id) {
+  syncLineItemsFromDOM();  // preserve user's current inputs
   const item = lineItems.find(i => i.id === id);
   if (!item) return;
   const unit = item.unit || 'sqft';
@@ -1132,6 +1158,8 @@ function unitLabel(type) {
 function selectMeasurementForItem(unit) {
   const val = getMeasurementByUnit(unit);
   if (!val || val <= 0) { showToast('Enter a measurement value first'); return; }
+  // ── CRITICAL: sync user's current inputs before rebuilding DOM ──
+  syncLineItemsFromDOM();
   if (lineItems.length === 0) addLineItem();
   const item = lineItems[0];
   item.area = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
@@ -1147,6 +1175,7 @@ function selectMeasurementForItem(unit) {
 // ── Auto-populate first line item from current measurement ──
 function autoPopulateLineItem() {
   if (lineItems.length === 0) return;
+  syncLineItemsFromDOM();  // preserve user's current inputs
   const unit = drawnRawType === 'line' ? 'linft' : 'sqft';
   const m = getAllMeasurements();
   const val = m[unit];
@@ -1236,6 +1265,7 @@ function showAiPriceModal(d) {
 
 function applyAiPrice() {
   if (!aiPriceData || lineItems.length === 0) return;
+  syncLineItemsFromDOM();  // preserve user's current inputs
   const rec = parseFloat(aiPriceData.recommended_per_unit);
   lineItems[0].price = rec;
   renderLineItems();
@@ -1764,6 +1794,9 @@ function showTab(tab) {
     const id = btn.id?.replace('tab-btn-','');
     btn.classList.toggle('active', id === tab);
   });
+  // Only show sticky total on quote tab
+  const stickyTotal = document.getElementById('sticky-total');
+  if (stickyTotal) stickyTotal.style.display = tab === 'quote' ? 'flex' : 'none';
   const scroll = document.getElementById('panel-scroll');
   if (scroll) scroll.scrollTop = 0;
   if (tab === 'saved') loadSaved();
