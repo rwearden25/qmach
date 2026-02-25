@@ -1472,10 +1472,11 @@ async function sendChat() {
   finally { if (sendBtn) sendBtn.disabled = false; }
 }
 
+let _chatMsgCounter = 0;
 function addChatMsg(role, text, isTyping = false) {
   const c = document.getElementById('chat-messages');
   if (!c) return '';
-  const id = 'msg-' + Date.now();
+  const id = 'msg-' + Date.now() + '-' + (++_chatMsgCounter);
   const div = document.createElement('div');
   div.id = id;
   div.className = `chat-msg ${role}${isTyping ? ' typing' : ''}`;
@@ -1624,7 +1625,7 @@ function renderSavedList(quotes) {
       <div class="qc-header">
         <div>
           <div class="qc-client">${esc(q.client_name)}</div>
-          <div class="qc-meta">${itemsSummary}</div>
+          <div class="qc-meta">${esc(itemsSummary)}</div>
           <div class="qc-meta">${new Date(q.created_at).toLocaleDateString()}</div>
         </div>
         <div class="qc-total">$${fmtMoney(q.total)}</div>
@@ -1737,13 +1738,23 @@ async function deleteQuote(id) {
 
 async function exportAll() {
   try {
-    const data = await authFetch('/api/quotes?limit=500').then(r => r.json());
-    const text = (data.quotes||[]).map(q => buildShareText(q)).join('\n\n══════════════\n\n');
+    // Paginate to fetch all quotes
+    let allQuotes = [];
+    let offset = 0;
+    const batchSize = 200;
+    while (true) {
+      const data = await authFetch(`/api/quotes?limit=${batchSize}&offset=${offset}`).then(r => r.json());
+      const batch = data.quotes || [];
+      allQuotes = allQuotes.concat(batch);
+      if (batch.length < batchSize || allQuotes.length >= data.total) break;
+      offset += batchSize;
+    }
+    const text = allQuotes.map(q => buildShareText(q)).join('\n\n══════════════\n\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
     a.download = 'quotes-' + Date.now() + '.txt';
     a.click();
-    showToast('Exported!');
+    showToast(`Exported ${allQuotes.length} quotes!`);
   } catch { showToast('Export failed'); }
 }
 
@@ -1876,7 +1887,7 @@ async function loadStats() {
     const mu = v => '$' + parseFloat(v||0).toLocaleString(undefined,{maximumFractionDigits:0});
     const rows = (s.by_type||[]).map(t => `
       <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #E8EEF4">
-        <div style="font-size:13px;font-weight:600;text-transform:capitalize">${(t.project_type||'').replace(/-/g,' ')}</div>
+        <div style="font-size:13px;font-weight:600;text-transform:capitalize">${esc((t.project_type||'').replace(/-/g,' '))}</div>
         <div style="text-align:right">
           <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:#E8A020">${mu(t.revenue)}</div>
           <div style="font-size:10px;color:#6B8FAD">${t.count} quote${t.count!=1?'s':''}</div>
@@ -1967,7 +1978,7 @@ function setText(id, val)        { const el = document.getElementById(id); if (e
 function setEl(id, prop, val)    { const el = document.getElementById(id); if (el) el.style[prop] = val; }
 function fmt(n)      { return parseFloat(n||0).toLocaleString(undefined,{maximumFractionDigits:1}); }
 function fmtMoney(n) { return parseFloat(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function esc(s)      { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s)      { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 // ═══════════════════════════════════════
 //  PANEL DRAG

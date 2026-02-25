@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -50,6 +51,7 @@ if (USERS.length === 0 && process.env.QMACH_PASSWORD) {
 
 const sessions = new Map(); // token → { userId, userName, created, expires }
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_SESSIONS = 1000; // prevent session DoS
 
 // Clean expired sessions every 30 min
 setInterval(() => {
@@ -74,7 +76,10 @@ app.use(helmet({
     }
   }
 }));
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || true,
+  credentials: true
+}));
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -111,9 +116,15 @@ try {
   console.error('[DB] Migration error:', err.message);
 }
 
-// ── Helper: find user by password
+// ── Helper: find user by password (timing-safe)
 function findUserByPassword(password) {
-  return USERS.find(u => u.password === password) || null;
+  if (!password) return null;
+  return USERS.find(u => {
+    if (password.length !== u.password.length) return false;
+    try {
+      return crypto.timingSafeEqual(Buffer.from(password), Buffer.from(u.password));
+    } catch { return false; }
+  }) || null;
 }
 
 // ── Helper: get session from request
@@ -141,6 +152,14 @@ app.post('/api/auth', (req, res) => {
   // Find matching user
   const user = findUserByPassword(password);
   if (user) {
+    // Evict oldest session if at capacity
+    if (sessions.size >= MAX_SESSIONS) {
+      let oldest = null;
+      for (const [tok, sess] of sessions) {
+        if (!oldest || sess.created < oldest.created) oldest = { tok, ...sess };
+      }
+      if (oldest) sessions.delete(oldest.tok);
+    }
     const token = uuidv4();
     sessions.set(token, {
       userId: user.id,
