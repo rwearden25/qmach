@@ -1272,7 +1272,32 @@ function onMeasurementInput(unit, value) {
     else if (unit === 'acre')  drawnRawMeters = v * 4046.86;
   }
 
+  // ── Auto-fill first line item so total updates immediately ──
+  autoFillFirstLineItemArea();
   updateCalc();
+}
+
+// ── Push current measurement into first line item's area field
+// Called when user types in measurement boxes — no copy/paste needed
+function autoFillFirstLineItemArea() {
+  if (lineItems.length === 0) return;
+  const firstItem = lineItems[0];
+  const firstEl = document.getElementById(`li-${firstItem.id}`);
+  if (!firstEl) return;
+
+  // Use whatever unit the line item is currently set to
+  const unitSel = firstEl.querySelector('.li-unit');
+  const unit = unitSel?.value || firstItem.unit || 'sqft';
+  const val = getMeasurementByUnit(unit);
+  if (!val || val <= 0) return;
+
+  // Update DOM input directly
+  const areaInput = firstEl.querySelector('.li-area');
+  const rounded = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
+  if (areaInput) areaInput.value = rounded;
+
+  // Sync state so total recalculates
+  syncLineItemsFromDOM();
 }
 
 // Set raw meters from a known area + unit (used when loading a quote)
