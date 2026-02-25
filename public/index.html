@@ -49,7 +49,8 @@
 }
 .mrow-hint {
   font-size: 11px;
-  color: var(--text2, #6B8FAD);
+  font-weight: 700;
+  color: var(--accent, #E8A020);
 }
 .mrow-units {
   display: grid;
@@ -66,6 +67,12 @@
 .munit-box.has-value {
   border-color: var(--accent, #E8A020);
   background: #FFFBF0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(232,160,32,0.2);
+}
+.munit-box.has-value:active {
+  transform: scale(0.97);
+  background: #FFF0D0;
 }
 .munit-box:focus-within {
   border-color: var(--accent, #E8A020);
@@ -101,31 +108,43 @@
 .munit-input::-webkit-inner-spin-button,
 .munit-input::-webkit-outer-spin-button { -webkit-appearance: none; }
 .munit-input::placeholder { color: #C5D4E0; font-weight: 400; font-size: 13px; }
-/* "↓ use" indicator — only visible when box has a value */
-.munit-use {
+/* "↓ Use" button — only visible when box has a value */
+.munit-tap-btn {
   display: none;
-  color: var(--accent, #E8A020);
-  font-size: 8px;
+  width: 100%;
+  margin-top: 5px;
+  padding: 6px 4px;
+  background: var(--accent, #E8A020);
+  color: var(--navy, #0D2137);
+  border: none;
+  border-radius: 5px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0;
-  text-transform: none;
-  vertical-align: middle;
-}
-.munit-box.has-value .munit-use {
-  display: inline;
-}
-.munit-box.has-value .munit-label {
+  font-family: 'DM Sans', sans-serif;
   cursor: pointer;
-  -webkit-tap-highlight-color: rgba(232,160,32,0.2);
+  -webkit-tap-highlight-color: rgba(232,160,32,0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
-.munit-box.has-value .munit-label:active {
-  color: var(--accent, #E8A020);
+.munit-tap-btn:active {
+  background: var(--accent-dk, #C4831A);
+  transform: scale(0.97);
+}
+.munit-box.has-value .munit-tap-btn {
+  display: block;
 }
 /* Selected state — the unit currently applied to line item */
 .munit-box.selected {
   border-color: var(--accent, #E8A020) !important;
   background: #FFF8EC !important;
   box-shadow: 0 0 0 2px rgba(232,160,32,0.25);
+}
+.munit-box.selected .munit-tap-btn {
+  background: var(--navy, #0D2137);
+  color: var(--accent, #E8A020);
+}
+.munit-box.selected .munit-tap-btn::after {
+  content: ' ✓';
 }
 .munit-box.selected .munit-label {
   color: var(--accent, #E8A020);
@@ -318,20 +337,24 @@
         </div>
         <div class="mrow-units">
           <div class="munit-box" id="munit-box-sqft">
-            <div class="munit-label" onclick="selectMeasurementForItem('sqft')">Sq Ft <span class="munit-use">↓ use</span></div>
+            <div class="munit-label">Sq Ft</div>
             <input type="number" class="munit-input" id="munit-sqft" placeholder="0" min="0" step="1" oninput="onMeasurementInput('sqft', this.value)">
+            <button type="button" class="munit-tap-btn" data-unit="sqft">↓ Use Sq Ft</button>
           </div>
           <div class="munit-box" id="munit-box-linft">
-            <div class="munit-label" onclick="selectMeasurementForItem('linft')">Lin Ft <span class="munit-use">↓ use</span></div>
+            <div class="munit-label">Lin Ft</div>
             <input type="number" class="munit-input" id="munit-linft" placeholder="0" min="0" step="0.1" oninput="onMeasurementInput('linft', this.value)">
+            <button type="button" class="munit-tap-btn" data-unit="linft">↓ Use Lin Ft</button>
           </div>
           <div class="munit-box" id="munit-box-sqyd">
-            <div class="munit-label" onclick="selectMeasurementForItem('sqyd')">Sq Yd <span class="munit-use">↓ use</span></div>
+            <div class="munit-label">Sq Yd</div>
             <input type="number" class="munit-input" id="munit-sqyd" placeholder="0" min="0" step="0.1" oninput="onMeasurementInput('sqyd', this.value)">
+            <button type="button" class="munit-tap-btn" data-unit="sqyd">↓ Use Sq Yd</button>
           </div>
           <div class="munit-box" id="munit-box-acre">
-            <div class="munit-label" onclick="selectMeasurementForItem('acre')">Acres <span class="munit-use">↓ use</span></div>
+            <div class="munit-label">Acres</div>
             <input type="number" class="munit-input" id="munit-acre" placeholder="0" min="0" step="0.0001" oninput="onMeasurementInput('acre', this.value)">
+            <button type="button" class="munit-tap-btn" data-unit="acre">↓ Use Acres</button>
           </div>
         </div>
         <div class="mrow-pricing" id="mrow-pricing" style="display:none">

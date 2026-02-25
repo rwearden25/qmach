@@ -211,6 +211,25 @@ async function bootApp() {
   on('btn-add-item', () => addLineItem());
   addLineItem(); // start with one
 
+  // ── Measurement tap — ENTIRE box is tappable (not just the small button) ──
+  const mrowUnits = document.querySelector('.mrow-units');
+  if (mrowUnits) {
+    mrowUnits.addEventListener('click', function(e) {
+      // Ignore clicks on the input itself (user wants to type)
+      if (e.target.closest('.munit-input')) return;
+      // Find the closest munit-box
+      const box = e.target.closest('.munit-box');
+      if (!box) return;
+      // Only work if box has a value
+      if (!box.classList.contains('has-value')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // Extract unit from box id: "munit-box-sqft" → "sqft"
+      const unit = box.id.replace('munit-box-', '');
+      if (unit) selectMeasurementForItem(unit);
+    });
+  }
+
   // Address — use map address button
   on('btn-use-map-addr', () => {
     const addrInput = document.getElementById('quote-address');
@@ -424,15 +443,21 @@ function renderLineItems() {
 }
 
 function useMapForItem(id) {
-  syncLineItemsFromDOM();  // preserve user's current inputs
   const item = lineItems.find(i => i.id === id);
   if (!item) return;
-  const unit = item.unit || 'sqft';
+  const itemEl = document.getElementById(`li-${id}`);
+  if (!itemEl) return;
+  const unit = item.unit || (itemEl.querySelector('.li-unit')?.value) || 'sqft';
   const val = getMeasurementByUnit(unit);
   if (!val) { showToast('No measurement yet — draw on map first'); return; }
-  item.area = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
-  renderLineItems();
-  updateCalc();
+
+  // ── Update DOM input directly — NO full rebuild ──
+  const areaInput = itemEl.querySelector('.li-area');
+  const rounded = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
+  if (areaInput) areaInput.value = rounded;
+
+  // Sync state + update subtotals + total
+  onLineItemChange();
   showToast(`${fmt(val)} ${unitLabel(unit)} applied ✓`);
 }
 
@@ -440,15 +465,7 @@ let _lineItemCalcTimer = null;
 
 function onLineItemChange() {
   syncLineItemsFromDOM();
-  // Update subtotals in-place immediately (cheap DOM read/write)
-  lineItems.forEach(item => {
-    const el = document.getElementById(`li-${item.id}`);
-    if (!el) return;
-    const sub = item.area * item.price * item.qty;
-    const subEl = el.querySelector('.li-subtotal-val');
-    if (subEl) subEl.textContent = '$' + fmtMoney(sub);
-  });
-  // ── GRAND TOTAL updates IMMEDIATELY — no debounce ──
+  // ── GRAND TOTAL + SUBTOTALS update IMMEDIATELY — no debounce ──
   updateTotalDisplay();
   // Debounce only the heavy measurement conversion pipeline
   clearTimeout(_lineItemCalcTimer);
@@ -461,6 +478,15 @@ function onLineItemChange() {
 
 // ── Lightweight total display — called on every keystroke ──
 function updateTotalDisplay() {
+  // ── Always refresh individual subtotals first ──
+  lineItems.forEach(item => {
+    const el = document.getElementById(`li-${item.id}`);
+    if (!el) return;
+    const sub = item.area * item.price * item.qty;
+    const subEl = el.querySelector('.li-subtotal-val');
+    if (subEl) subEl.textContent = '$' + fmtMoney(sub);
+  });
+
   const subtotal = getLineItemsSubtotal();
   const markup = parseFloat(document.getElementById('markup')?.value) || 0;
   const total = subtotal * (1 + markup / 100);
@@ -973,7 +999,7 @@ function updateMeasureOptions() {
   const title = document.getElementById('mrow-title');
   const hint  = document.getElementById('mrow-hint');
   if (title) title.textContent = drawnRawType === 'line' ? '📏 Measurements (Line)' : '📐 Measurements';
-  if (hint)  hint.textContent  = drawnRawMeters > 0 ? 'Tap a label to apply to quote' : 'Draw on map or type a value';
+  if (hint)  hint.textContent  = drawnRawMeters > 0 ? 'TAP A BOX TO APPLY TO QUOTE' : 'Draw on map or type a value';
   // Keep hidden legacy select in sync
   const sel = document.getElementById('measure-type');
   if (sel) sel.value = 'sqft';
@@ -1158,34 +1184,52 @@ function unitLabel(type) {
 function selectMeasurementForItem(unit) {
   const val = getMeasurementByUnit(unit);
   if (!val || val <= 0) { showToast('Enter a measurement value first'); return; }
-  // ── CRITICAL: sync user's current inputs before rebuilding DOM ──
-  syncLineItemsFromDOM();
-  if (lineItems.length === 0) addLineItem();
+  if (lineItems.length === 0) { addLineItem(); }
   const item = lineItems[0];
-  item.area = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
-  item.unit = unit;
+  const itemEl = document.getElementById(`li-${item.id}`);
+  if (!itemEl) return;
+
+  // ── Update the DOM inputs directly — NO full rebuild ──
+  const areaInput = itemEl.querySelector('.li-area');
+  const unitSelect = itemEl.querySelector('.li-unit');
+  const rounded = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
+  if (areaInput) areaInput.value = rounded;
+  if (unitSelect) unitSelect.value = unit;
+
   // Visual: highlight selected box
   document.querySelectorAll('.munit-box').forEach(b => b.classList.remove('selected'));
   document.getElementById('munit-box-' + unit)?.classList.add('selected');
-  renderLineItems();
-  updateCalc();
+
+  // Trigger calc — reads from live DOM, updates subtotal + total
+  onLineItemChange();
   showToast(`${fmt(val)} ${unitLabel(unit)} applied ✓`);
 }
 
 // ── Auto-populate first line item from current measurement ──
 function autoPopulateLineItem() {
   if (lineItems.length === 0) return;
-  syncLineItemsFromDOM();  // preserve user's current inputs
+  const item = lineItems[0];
+  const itemEl = document.getElementById(`li-${item.id}`);
+  if (!itemEl) return;
+
   const unit = drawnRawType === 'line' ? 'linft' : 'sqft';
   const m = getAllMeasurements();
   const val = m[unit];
   if (!val || val <= 0) return;
-  lineItems[0].area = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
-  lineItems[0].unit = unit;
+
+  // ── Update DOM inputs directly — NO full rebuild ──
+  const areaInput = itemEl.querySelector('.li-area');
+  const unitSelect = itemEl.querySelector('.li-unit');
+  const rounded = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
+  if (areaInput) areaInput.value = rounded;
+  if (unitSelect) unitSelect.value = unit;
+
   // Highlight the auto-selected box
   document.querySelectorAll('.munit-box').forEach(b => b.classList.remove('selected'));
   document.getElementById('munit-box-' + unit)?.classList.add('selected');
-  renderLineItems();
+
+  // Sync state + update subtotals + total
+  onLineItemChange();
 }
 
 function getPrice() {
@@ -1268,8 +1312,12 @@ function applyAiPrice() {
   syncLineItemsFromDOM();  // preserve user's current inputs
   const rec = parseFloat(aiPriceData.recommended_per_unit);
   lineItems[0].price = rec;
-  renderLineItems();
-  updateCalc();
+  renderLineItems();  // must rebuild to inject custom price option
+  // Force the select value (innerHTML can lag on mobile WebKit)
+  const itemEl = document.getElementById(`li-${lineItems[0].id}`);
+  const priceSelect = itemEl?.querySelector('.li-price');
+  if (priceSelect) priceSelect.value = String(parseFloat(rec.toFixed(2)));
+  onLineItemChange();  // update subtotals + total from live DOM
   closeModal('ai-price-modal');
   showToast('AI price applied ✨');
 }
