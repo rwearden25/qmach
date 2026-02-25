@@ -651,6 +651,42 @@ function initMap() {
 
     activateTool('tool-draw');
   });
+
+  // ── WebGL context loss recovery
+  // Mobile browsers kill the GPU context when memory is tight or app is backgrounded.
+  // Without this handler the map shows a blank blue screen.
+  const canvas = map.getCanvas();
+  canvas.addEventListener('webglcontextlost', (e) => {
+    console.warn('[Map] WebGL context lost');
+    e.preventDefault(); // allows context to be restored
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    console.log('[Map] WebGL context restored — reloading style');
+    // Force full style reload to re-fetch tiles
+    const currentStyle = mapStyleHasLabels
+      ? 'mapbox://styles/mapbox/satellite-streets-v12'
+      : 'mapbox://styles/mapbox/satellite-v9';
+    map.setStyle(currentStyle);
+  });
+
+  // ── Visibility change — recover when returning to tab/app
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && map) {
+      // Short delay lets the browser finish recompositing
+      setTimeout(() => {
+        map.resize();
+        // If tiles aren't rendering, force a small pan to trigger reload
+        const c = map.getCenter();
+        map.panBy([1, 0], { duration: 0 });
+        setTimeout(() => map.panBy([-1, 0], { duration: 0 }), 50);
+      }, 200);
+    }
+  });
+
+  // ── Window resize / orientation change
+  window.addEventListener('resize', () => {
+    if (map) setTimeout(() => map.resize(), 100);
+  });
 }
 
 // ─── Draw start / finish / cancel
@@ -1948,7 +1984,7 @@ function initPanelDrag() {
     return {
       collapsed: 64,
       half: Math.round(vh * 0.52),
-      full: vh - 48  // minus header
+      full: vh - 48 - 120  // leave 120px for map so WebGL context survives
     };
   };
 
