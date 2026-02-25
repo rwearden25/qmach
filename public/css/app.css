@@ -464,51 +464,8 @@ header {
 .tab-btn.active { background: var(--navy-mid); color: white; }
 
 /* ═══ MEASUREMENT ROW ═══ */
-#measurement-row {
-  background: var(--navy-mid);
-  border-radius: 10px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.mrow-label {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--sky-light);
-  margin-bottom: 2px;
-}
-.mrow-value {
-  font-family: 'Bebas Neue', sans-serif;
-  font-size: 28px;
-  color: var(--accent);
-  line-height: 1;
-}
-.mrow-value span { font-size: 16px; color: var(--sky-light); font-family: 'DM Sans', sans-serif; font-weight: 600; }
-.mrow-area { flex: 1; }
-.mrow-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.mrow-or { font-size: 11px; color: var(--sky-light); }
-.mrow-actions select,
-.mrow-actions input {
-  background: rgba(255,255,255,.12);
-  border: 1px solid rgba(255,255,255,.2);
-  color: white;
-  border-radius: 6px;
-  padding: 5px 8px;
-  font-size: 13px;
-  font-family: 'DM Sans', sans-serif;
-}
-.mrow-actions input { width: 80px; }
-.mrow-actions select option { background: var(--navy-mid); }
+/* Layout is display:block — header and grid stack vertically.
+   Visual styles (bg, border, padding) are in index.html inline <style>. */
 
 /* ═══ FORM ═══ */
 .form-row {

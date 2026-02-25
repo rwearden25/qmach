@@ -232,6 +232,13 @@ async function bootApp() {
       if (q.length < 3) { clearQuoteAddrAutocomplete(); return; }
       quoteAddrTimer = setTimeout(() => fetchQuoteAddrSuggestions(q), 300);
     });
+    // Scroll field into view on focus so autocomplete dropdown isn't clipped
+    quoteAddr.addEventListener('focus', () => {
+      setTimeout(() => {
+        const row = quoteAddr.closest('.form-row') || quoteAddr;
+        row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200);
+    });
     quoteAddr.addEventListener('keydown', e => {
       if (e.key === 'Escape') clearQuoteAddrAutocomplete();
     });
@@ -316,8 +323,8 @@ function addLineItem(data) {
 
 function removeLineItem(id) {
   lineItems = lineItems.filter(i => i.id !== id);
-  renderLineItems();
-  updateCalc();
+  if (lineItems.length === 0) addLineItem();  // never leave form empty
+  else { renderLineItems(); updateCalc(); }
 }
 
 function getLineItemFromDOM(id) {
@@ -603,9 +610,9 @@ function finishDrawing() {
       properties: {}
     };
     try {
-      const ring = feature.geometry.coordinates[0];
-      const sq = polygonAreaMeters(ring);
-      const perim = lineStringMeters(ring);
+      const coords = feature.geometry.coordinates[0];
+      const sq = polygonAreaMeters(coords);
+      const perim = lineStringMeters(coords);
       console.log('Area result:', sq, 'sq meters, perimeter:', perim, 'meters');
       if (!sq || sq <= 0) throw new Error('Zero area');
       drawnRawMeters = sq;
@@ -651,7 +658,13 @@ function finishDrawing() {
   const scroll = document.getElementById('panel-scroll');
   if (scroll) scroll.scrollTop = 0;
 
-  showToast('Area measured! Set your price below ↓');
+  if (usePolygon) {
+    showToast('Area measured! Set your price below ↓');
+  } else if (drawMode === 'polygon' && ptCount === 2) {
+    showToast('2 points → measured as line. Use 3+ for area.');
+  } else {
+    showToast('Length measured! Set your price below ↓');
+  }
 }
 
 function cancelDrawing() {
@@ -919,7 +932,7 @@ function getAllMeasurements() {
   if (drawnRawMeters > 0) {
     if (drawnRawType === 'line') {
       const linft = drawnRawMeters * 3.28084;
-      return { sqft: linft, linft: linft, sqyd: drawnRawMeters * 1.09361, acre: null };
+      return { sqft: null, linft: linft, sqyd: drawnRawMeters * 1.09361, acre: null };
     } else {
       return {
         sqft:  drawnRawMeters * 10.7639,
@@ -929,15 +942,22 @@ function getAllMeasurements() {
       };
     }
   }
-  // Read from sqft box if manually entered (no draw)
+  // No drawing — check each box for manual entry and convert from whichever has a value
   const sqftVal = parseFloat(document.getElementById('munit-sqft')?.value);
   if (sqftVal > 0) {
-    return {
-      sqft:  sqftVal,
-      linft: null,  // no perimeter without a polygon
-      sqyd:  sqftVal / 9,
-      acre:  sqftVal / 43560
-    };
+    return { sqft: sqftVal, linft: null, sqyd: sqftVal / 9, acre: sqftVal / 43560 };
+  }
+  const sqydVal = parseFloat(document.getElementById('munit-sqyd')?.value);
+  if (sqydVal > 0) {
+    return { sqft: sqydVal * 9, linft: null, sqyd: sqydVal, acre: (sqydVal * 9) / 43560 };
+  }
+  const acreVal = parseFloat(document.getElementById('munit-acre')?.value);
+  if (acreVal > 0) {
+    return { sqft: acreVal * 43560, linft: null, sqyd: (acreVal * 43560) / 9, acre: acreVal };
+  }
+  const linftVal = parseFloat(document.getElementById('munit-linft')?.value);
+  if (linftVal > 0) {
+    return { sqft: null, linft: linftVal, sqyd: null, acre: null };
   }
   return { sqft: 0, linft: 0, sqyd: 0, acre: 0 };
 }
@@ -980,31 +1000,31 @@ function updatePricingEquivalents(m) {
   if (!row) return;
   syncLineItemsFromDOM();
   const firstItem = lineItems.find(i => i.price > 0 && i.area > 0);
-  if (!firstItem || !m || m.sqft <= 0) { row.style.display = 'none'; return; }
+  if (!firstItem || !m) { row.style.display = 'none'; return; }
+  // Need either sqft or linft to have a value
+  const hasMeasurement = (m.sqft != null && m.sqft > 0) || (m.linft != null && m.linft > 0);
+  if (!hasMeasurement) { row.style.display = 'none'; return; }
 
-  // Convert price to per-sqft basis, then to all units
-  const areaInUnit = getMeasurementForUnit(m, firstItem.unit);
-  if (!areaInUnit) { row.style.display = 'none'; return; }
-  const pricePerSqft = firstItem.unit === 'sqft'  ? firstItem.price
-    : firstItem.unit === 'sqyd'  ? firstItem.price / 9
-    : firstItem.unit === 'acre'  ? firstItem.price / 43560
-    : firstItem.unit === 'linft' ? firstItem.price  // lin ft can't convert to area
-    : firstItem.price;
+  // Show relevant price equivalents based on measurement type
+  let chips;
+  if (firstItem.unit === 'linft') {
+    chips = `<span class="mrow-price-chip">$${parseFloat(firstItem.price.toFixed(2))} / Lin Ft</span>`;
+  } else {
+    const pricePerSqft = firstItem.unit === 'sqft'  ? firstItem.price
+      : firstItem.unit === 'sqyd'  ? firstItem.price / 9
+      : firstItem.unit === 'acre'  ? firstItem.price / 43560
+      : firstItem.price;
 
-  const items = [
-    { unit: 'sqft',  label: 'Sq Ft',  val: pricePerSqft },
-    { unit: 'sqyd',  label: 'Sq Yd',  val: pricePerSqft * 9 },
-    { unit: 'acre',  label: 'Acre',   val: pricePerSqft * 43560 },
-  ];
+    const items = [
+      { label: 'Sq Ft',  val: pricePerSqft },
+      { label: 'Sq Yd',  val: pricePerSqft * 9 },
+      { label: 'Acre',   val: pricePerSqft * 43560 },
+    ];
+    chips = items.map(it => `<span class="mrow-price-chip">$${parseFloat(it.val.toFixed(4))} / ${it.label}</span>`).join('');
+  }
 
-  row.innerHTML = `<div class="mrow-pricing-label">Price equivalents (${firstItem.unit === 'linft' ? 'lin ft' : 'area'} basis):</div>` +
-    items.map(it => `<span class="mrow-price-chip">$${parseFloat(it.val.toFixed(4))} / ${it.label}</span>`).join('');
+  row.innerHTML = `<div class="mrow-pricing-label">Price equivalents:</div>` + chips;
   row.style.display = 'block';
-}
-
-function getMeasurementForUnit(m, unit) {
-  if (!m) return 0;
-  return m[unit] || 0;
 }
 
 // Called when user types in any measurement box — recalculate raw meters and update all others
@@ -1052,12 +1072,17 @@ function setRawMetersFromAreaAndUnit(area, unit) {
 }
 
 function getDisplayMeasurement() {
-  // Returns sq ft value as the canonical measurement
+  // Returns primary measurement value (sqft for area, linft for line)
   if (drawnRawMeters > 0) {
     if (drawnRawType === 'line') return drawnRawMeters * 3.28084;
     return drawnRawMeters * 10.7639;
   }
-  return parseFloat(document.getElementById('munit-sqft')?.value) || 0;
+  // Check sqft first, then linft for manual entry
+  const sqft = parseFloat(document.getElementById('munit-sqft')?.value);
+  if (sqft > 0) return sqft;
+  const linft = parseFloat(document.getElementById('munit-linft')?.value);
+  if (linft > 0) return linft;
+  return 0;
 }
 
 // Get measurement value in a specific unit
@@ -1074,9 +1099,6 @@ function getMeasurementByUnit(unit) {
 }
 
 function unitLabel(type) {
-  if (drawnRawType === 'line') {
-    return { linft: 'lin ft', sqyd: 'yd' }[type] || 'lin ft';
-  }
   return { sqft: 'sq ft', linft: 'lin ft', sqyd: 'sq yd', acre: 'acres' }[type] || 'sq ft';
 }
 
@@ -1106,14 +1128,15 @@ function updateCalc() {
   setText('total-display', '$' + fmtMoney(total));
   setText('breakdown-display', breakdownText);
 
-  if (drawnFeature || drawnRawMeters > 0 || (parseFloat(document.getElementById('munit-sqft')?.value) > 0)) updateBadge();
+  if (drawnFeature || drawnRawMeters > 0 || getDisplayMeasurement() > 0) updateBadge();
 }
 
 function updateBadge() {
   const m = getAllMeasurements();
-  // Show sqft on badge (primary)
-  const val = m.sqft || 0;
-  const unit = drawnRawType === 'line' ? 'lin ft' : 'sq ft';
+  const isLine = drawnRawType === 'line';
+  const val = isLine ? (m.linft || 0) : (m.sqft || 0);
+  const unit = isLine ? 'lin ft' : 'sq ft';
+  if (val <= 0) { setEl('measure-badge', 'display', 'none'); return; }
   setText('badge-val', fmt(val));
   setText('badge-unit', unit);
   setEl('measure-badge', 'display', 'flex');
@@ -1161,7 +1184,7 @@ function showAiPriceModal(d) {
       <div><div class="tier-label">🔴 Premium</div><div class="tier-sub">High-end market</div></div>
       <div class="tier-right"><div class="tier-val">${f2(d.high_per_unit)}<span>/unit</span></div><div class="tier-total">Total ≈ ${f2(d.high_total)}</div></div>
     </div>
-    ${d.reasoning ? `<div class="ai-reasoning">💡 ${d.reasoning}</div>` : ''}`;
+    ${d.reasoning ? `<div class="ai-reasoning">💡 ${esc(d.reasoning)}</div>` : ''}`;
   openModal('ai-price-modal');
 }
 
@@ -1178,6 +1201,10 @@ function applyAiPrice() {
 async function generateNarrative() {
   const client = document.getElementById('client-name')?.value.trim();
   if (!client) { showToast('Enter a client name first'); return; }
+  const narrBtn = document.getElementById('btn-narrative');
+  const regenBtn = document.getElementById('btn-narrative-regen');
+  if (narrBtn) { narrBtn.disabled = true; narrBtn.textContent = '⏳ Writing...'; }
+  if (regenBtn) regenBtn.disabled = true;
   const section = document.getElementById('narrative-section');
   const box = document.getElementById('narrative-text');
   section.style.display = 'block';
@@ -1208,6 +1235,10 @@ async function generateNarrative() {
     box.textContent = data.narrative || 'No narrative returned.';
     showToast('Narrative ready ✍️');
   } catch { box.textContent = 'Could not generate — check connection.'; }
+  finally {
+    if (narrBtn) { narrBtn.disabled = false; narrBtn.textContent = '✍️ Narrative'; }
+    if (regenBtn) regenBtn.disabled = false;
+  }
 }
 
 // AI Chat
@@ -1224,8 +1255,10 @@ function closeAiPanel() {
 
 async function sendChat() {
   const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send-btn');
   const msg = input?.value.trim();
   if (!msg) return;
+  if (sendBtn) sendBtn.disabled = true;
   input.value = '';
   addChatMsg('user', msg);
   chatHistory.push({ role: 'user', content: msg });
@@ -1236,9 +1269,9 @@ async function sendChat() {
       body: JSON.stringify({
         messages: chatHistory.slice(-10),
         context: {
-          project_type: document.getElementById('project-type')?.value,
+          project_type: lineItems[0]?.type || 'custom',
           area: getDisplayMeasurement().toFixed(1),
-          unit: unitLabel(document.getElementById('measure-type')?.value),
+          unit: unitLabel(lineItems[0]?.unit || 'sqft'),
           price: getPrice().toFixed(2), address: lastAddress
         }
       })
@@ -1249,6 +1282,7 @@ async function sendChat() {
     addChatMsg('ai', reply);
     chatHistory.push({ role: 'assistant', content: reply });
   } catch { removeMsg(tid); addChatMsg('ai', 'Connection error.'); }
+  finally { if (sendBtn) sendBtn.disabled = false; }
 }
 
 function addChatMsg(role, text, isTyping = false) {
@@ -1278,7 +1312,7 @@ async function saveQuote() {
   const markup = parseFloat(document.getElementById('markup')?.value) || 0;
   const subtotal = getLineItemsSubtotal();
   const total = subtotal * (1 + markup / 100);
-  const unit = document.getElementById('measure-type')?.value || 'sqft';
+  const unit = lineItems[0]?.unit || 'sqft';
   const narrative = document.getElementById('narrative-text')?.textContent || '';
   const primaryType = lineItems[0]?.type || 'custom';
   const primaryArea = lineItems[0]?.area || 0;
@@ -1370,7 +1404,7 @@ function renderSavedList(quotes) {
         default:      rawM = savedArea / 10.7639;
       }
       if (savedUnit === 'linft') {
-        measurements = { sqft: rawM * 3.28084, linft: rawM * 3.28084, sqyd: rawM * 1.09361, acre: null };
+        measurements = { sqft: null, linft: rawM * 3.28084, sqyd: null, acre: null };
       } else {
         measurements = { sqft: rawM * 10.7639, linft: null, sqyd: rawM * 1.19599, acre: rawM / 4046.86 };
       }
@@ -1379,9 +1413,9 @@ function renderSavedList(quotes) {
     const fmtM = (v, d) => v != null && v > 0 ? parseFloat(v.toFixed(d)).toLocaleString() : '—';
     const measureBadges = `
       <div class="qc-measurements">
-        <span class="qcm-chip"><strong>${fmtM(measurements.sqft, 1)}</strong> sq ft</span>
+        ${measurements.sqft != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.sqft, 1)}</strong> sq ft</span>` : ''}
         ${measurements.linft != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.linft, 1)}</strong> lin ft</span>` : ''}
-        <span class="qcm-chip"><strong>${fmtM(measurements.sqyd, 2)}</strong> sq yd</span>
+        ${measurements.sqyd != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.sqyd, 2)}</strong> sq yd</span>` : ''}
         ${measurements.acre != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.acre, 4)}</strong> acres</span>` : ''}
       </div>`;
 
@@ -1462,6 +1496,9 @@ async function loadQuote(id) {
     if (q.ai_narrative) {
       document.getElementById('narrative-text').textContent = q.ai_narrative;
       document.getElementById('narrative-section').style.display = 'block';
+    } else {
+      document.getElementById('narrative-text').textContent = '';
+      document.getElementById('narrative-section').style.display = 'none';
     }
     if (q.polygon_geojson && draw && map?.loaded()) {
       const geo = typeof q.polygon_geojson === 'string' ? JSON.parse(q.polygon_geojson) : q.polygon_geojson;
@@ -1471,6 +1508,12 @@ async function loadQuote(id) {
       draw.deleteAll();
       draw.add(feature);
       if (q.lat && q.lng) map.flyTo({ center: [q.lng, q.lat], zoom: 18 });
+    } else {
+      // Clear any previous drawing from the map
+      drawnFeature = null;
+      if (draw) draw.deleteAll();
+      clearPreview();
+      setEl('measure-badge', 'display', 'none');
     }
     if (q.address) {
       lastAddress = q.address; lastLat = q.lat; lastLng = q.lng;
@@ -1521,14 +1564,14 @@ function printQuote() { generatePDF(true); }
 
 function generatePDF(branded) {
   syncLineItemsFromDOM();
-  const client = document.getElementById('client-name')?.value || 'Client';
+  const client = esc(document.getElementById('client-name')?.value || 'Client');
   const markup = parseFloat(document.getElementById('markup')?.value) || 0;
   const subtotal = getLineItemsSubtotal();
   const total = subtotal * (1 + markup / 100);
-  const notes = document.getElementById('notes')?.value || '';
-  const narrative = document.getElementById('narrative-text')?.textContent || '';
+  const notes = esc(document.getElementById('notes')?.value || '');
+  const narrative = esc(document.getElementById('narrative-text')?.textContent || '');
   const today = new Date().toLocaleDateString();
-  const address = document.getElementById('quote-address')?.value || lastAddress || '';
+  const address = esc(document.getElementById('quote-address')?.value || lastAddress || '');
 
   // Build line items table rows
   const itemRows = lineItems.map((item, idx) => {
@@ -1692,6 +1735,10 @@ function newQuote() {
   document.getElementById('manual-area') && (document.getElementById('manual-area').value = '');
   const addrInput = document.getElementById('quote-address');
   if (addrInput) addrInput.value = '';
+  lastAddress = '';
+  lastLat = null;
+  lastLng = null;
+  setText('address-display', '');
   document.getElementById('narrative-section').style.display = 'none';
   // Reset editing state
   editingQuoteId = null;
