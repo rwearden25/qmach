@@ -422,9 +422,32 @@ function onLineItemChange() {
     const subEl = el.querySelector('.li-subtotal-val');
     if (subEl) subEl.textContent = '$' + fmtMoney(sub);
   });
-  // Debounce the heavier calc pipeline (measurement conversions, pricing equivalents)
+  // ── GRAND TOTAL updates IMMEDIATELY — no debounce ──
+  updateTotalDisplay();
+  // Debounce only the heavy measurement conversion pipeline
   clearTimeout(_lineItemCalcTimer);
-  _lineItemCalcTimer = setTimeout(() => updateCalc(), 150);
+  _lineItemCalcTimer = setTimeout(() => {
+    updateAllMeasurementInputs();
+    updateMeasureOptions();
+    if (drawnFeature || drawnRawMeters > 0 || getDisplayMeasurement() > 0) updateBadge();
+  }, 150);
+}
+
+// ── Lightweight total display — called on every keystroke ──
+function updateTotalDisplay() {
+  const subtotal = getLineItemsSubtotal();
+  const markup = parseFloat(document.getElementById('markup')?.value) || 0;
+  const total = subtotal * (1 + markup / 100);
+
+  const itemCount = lineItems.filter(i => i.area > 0 && i.price > 0).length;
+  const breakdownText = itemCount > 0
+    ? `${itemCount} item${itemCount > 1 ? 's' : ''}` + (markup > 0 ? ` + ${markup}% markup` : '')
+    : '—';
+
+  setText('total-display', '$' + fmtMoney(total));
+  setText('breakdown-display', breakdownText);
+  // Sticky total bar
+  setText('sticky-total-val', '$' + fmtMoney(total));
 }
 
 function getLineItemsSubtotal() {
@@ -654,6 +677,9 @@ function finishDrawing() {
   updateCalc();
   updateBadge();
 
+  // ── Auto-populate first line item with the measurement ──
+  autoPopulateLineItem();
+
   // Scroll panel to top
   const scroll = document.getElementById('panel-scroll');
   if (scroll) scroll.scrollTop = 0;
@@ -700,7 +726,7 @@ function clearDrawing() {
     const el = document.getElementById('munit-' + u);
     if (el) el.value = '';
     const box = document.getElementById('munit-box-' + u);
-    if (box) box.classList.remove('has-value');
+    if (box) { box.classList.remove('has-value'); box.classList.remove('selected'); }
   });
   document.getElementById('manual-area') && (document.getElementById('manual-area').value = '');
   const prow = document.getElementById('mrow-pricing');
@@ -921,7 +947,7 @@ function updateMeasureOptions() {
   const title = document.getElementById('mrow-title');
   const hint  = document.getElementById('mrow-hint');
   if (title) title.textContent = drawnRawType === 'line' ? '📏 Measurements (Line)' : '📐 Measurements';
-  if (hint)  hint.textContent  = drawnRawMeters > 0 ? 'Edit any value to adjust all others' : 'Draw on map or enter any value';
+  if (hint)  hint.textContent  = drawnRawMeters > 0 ? 'Tap a label to apply to quote' : 'Draw on map or type a value';
   // Keep hidden legacy select in sync
   const sel = document.getElementById('measure-type');
   if (sel) sel.value = 'sqft';
@@ -1102,6 +1128,37 @@ function unitLabel(type) {
   return { sqft: 'sq ft', linft: 'lin ft', sqyd: 'sq yd', acre: 'acres' }[type] || 'sq ft';
 }
 
+// ── Bridge: measurement box → first line item ──
+function selectMeasurementForItem(unit) {
+  const val = getMeasurementByUnit(unit);
+  if (!val || val <= 0) { showToast('Enter a measurement value first'); return; }
+  if (lineItems.length === 0) addLineItem();
+  const item = lineItems[0];
+  item.area = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
+  item.unit = unit;
+  // Visual: highlight selected box
+  document.querySelectorAll('.munit-box').forEach(b => b.classList.remove('selected'));
+  document.getElementById('munit-box-' + unit)?.classList.add('selected');
+  renderLineItems();
+  updateCalc();
+  showToast(`${fmt(val)} ${unitLabel(unit)} applied ✓`);
+}
+
+// ── Auto-populate first line item from current measurement ──
+function autoPopulateLineItem() {
+  if (lineItems.length === 0) return;
+  const unit = drawnRawType === 'line' ? 'linft' : 'sqft';
+  const m = getAllMeasurements();
+  const val = m[unit];
+  if (!val || val <= 0) return;
+  lineItems[0].area = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
+  lineItems[0].unit = unit;
+  // Highlight the auto-selected box
+  document.querySelectorAll('.munit-box').forEach(b => b.classList.remove('selected'));
+  document.getElementById('munit-box-' + unit)?.classList.add('selected');
+  renderLineItems();
+}
+
 function getPrice() {
   // Legacy — returns price of first line item for backward compat
   if (lineItems.length > 0) return lineItems[0].price || 0;
@@ -1113,20 +1170,9 @@ function updateCalc() {
   updateAllMeasurementInputs();
   updateMeasureOptions();
 
-  // Calculate grand total from line items
+  // Calculate and display grand total
   syncLineItemsFromDOM();
-  const subtotal = getLineItemsSubtotal();
-  const markup = parseFloat(document.getElementById('markup')?.value) || 0;
-  const total = subtotal * (1 + markup / 100);
-
-  // Build breakdown
-  const itemCount = lineItems.filter(i => i.area > 0 && i.price > 0).length;
-  const breakdownText = itemCount > 0
-    ? `${itemCount} item${itemCount > 1 ? 's' : ''}` + (markup > 0 ? ` + ${markup}% markup` : '')
-    : '—';
-
-  setText('total-display', '$' + fmtMoney(total));
-  setText('breakdown-display', breakdownText);
+  updateTotalDisplay();
 
   if (drawnFeature || drawnRawMeters > 0 || getDisplayMeasurement() > 0) updateBadge();
 }
@@ -1492,6 +1538,9 @@ async function loadQuote(id) {
     drawnPerimeterMeters = 0;
     if (savedArea > 0) {
       setRawMetersFromAreaAndUnit(savedArea, savedUnit);
+      // Highlight the unit used in the loaded quote
+      document.querySelectorAll('.munit-box').forEach(b => b.classList.remove('selected'));
+      document.getElementById('munit-box-' + savedUnit)?.classList.add('selected');
     }
     if (q.ai_narrative) {
       document.getElementById('narrative-text').textContent = q.ai_narrative;
@@ -1730,7 +1779,7 @@ function newQuote() {
     const el = document.getElementById('munit-' + u);
     if (el) el.value = '';
     const box = document.getElementById('munit-box-' + u);
-    if (box) box.classList.remove('has-value');
+    if (box) { box.classList.remove('has-value'); box.classList.remove('selected'); }
   });
   document.getElementById('manual-area') && (document.getElementById('manual-area').value = '');
   const addrInput = document.getElementById('quote-address');

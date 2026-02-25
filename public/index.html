@@ -101,6 +101,35 @@
 .munit-input::-webkit-inner-spin-button,
 .munit-input::-webkit-outer-spin-button { -webkit-appearance: none; }
 .munit-input::placeholder { color: #C5D4E0; font-weight: 400; font-size: 13px; }
+/* "↓ use" indicator — only visible when box has a value */
+.munit-use {
+  display: none;
+  color: var(--accent, #E8A020);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: middle;
+}
+.munit-box.has-value .munit-use {
+  display: inline;
+}
+.munit-box.has-value .munit-label {
+  cursor: pointer;
+  -webkit-tap-highlight-color: rgba(232,160,32,0.2);
+}
+.munit-box.has-value .munit-label:active {
+  color: var(--accent, #E8A020);
+}
+/* Selected state — the unit currently applied to line item */
+.munit-box.selected {
+  border-color: var(--accent, #E8A020) !important;
+  background: #FFF8EC !important;
+  box-shadow: 0 0 0 2px rgba(232,160,32,0.25);
+}
+.munit-box.selected .munit-label {
+  color: var(--accent, #E8A020);
+}
 /* Pricing equivalents row */
 .mrow-pricing {
   margin-top: 10px;
@@ -289,19 +318,19 @@
         </div>
         <div class="mrow-units">
           <div class="munit-box" id="munit-box-sqft">
-            <div class="munit-label">Sq Ft</div>
+            <div class="munit-label" onclick="selectMeasurementForItem('sqft')">Sq Ft <span class="munit-use">↓ use</span></div>
             <input type="number" class="munit-input" id="munit-sqft" placeholder="0" min="0" step="1" oninput="onMeasurementInput('sqft', this.value)">
           </div>
           <div class="munit-box" id="munit-box-linft">
-            <div class="munit-label">Lin Ft <span class="munit-sub">perim</span></div>
+            <div class="munit-label" onclick="selectMeasurementForItem('linft')">Lin Ft <span class="munit-use">↓ use</span></div>
             <input type="number" class="munit-input" id="munit-linft" placeholder="0" min="0" step="0.1" oninput="onMeasurementInput('linft', this.value)">
           </div>
           <div class="munit-box" id="munit-box-sqyd">
-            <div class="munit-label">Sq Yd</div>
+            <div class="munit-label" onclick="selectMeasurementForItem('sqyd')">Sq Yd <span class="munit-use">↓ use</span></div>
             <input type="number" class="munit-input" id="munit-sqyd" placeholder="0" min="0" step="0.1" oninput="onMeasurementInput('sqyd', this.value)">
           </div>
           <div class="munit-box" id="munit-box-acre">
-            <div class="munit-label">Acres</div>
+            <div class="munit-label" onclick="selectMeasurementForItem('acre')">Acres <span class="munit-use">↓ use</span></div>
             <input type="number" class="munit-input" id="munit-acre" placeholder="0" min="0" step="0.0001" oninput="onMeasurementInput('acre', this.value)">
           </div>
         </div>
@@ -411,6 +440,13 @@
       <div id="stats-content"><div class="empty-state">Loading...</div></div>
     </div>
 
+  </div>
+  <!-- ── STICKY TOTAL — always visible at bottom of panel ── -->
+  <div class="sticky-total" id="sticky-total">
+    <div class="sticky-total-left">
+      <span class="sticky-total-label">Total</span>
+    </div>
+    <span class="sticky-total-val" id="sticky-total-val">$0.00</span>
   </div>
 </div>
 

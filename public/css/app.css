@@ -389,6 +389,7 @@ header {
   height: 64px !important;
   max-height: 64px !important;
 }
+#bottom-panel.snap-collapsed .sticky-total { display: none; }
 #bottom-panel.snap-full {
   height: calc(100vh - 48px) !important;
   max-height: calc(100vh - 48px) !important;
@@ -701,6 +702,32 @@ textarea { height: 60px; resize: vertical; }
   transition: all .15s;
 }
 .btn-new-quote:hover { border-color: var(--sky); color: var(--navy); }
+
+/* ═══ STICKY TOTAL BAR ═══ */
+.sticky-total {
+  background: var(--navy);
+  color: white;
+  padding: 10px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  border-top: 2px solid var(--accent);
+}
+.sticky-total-left { display: flex; align-items: center; gap: 6px; }
+.sticky-total-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--sky-light);
+}
+.sticky-total-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  color: var(--accent);
+  line-height: 1;
+}
 
 /* Narrative */
 .narrative-header {
