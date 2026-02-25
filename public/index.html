@@ -67,12 +67,6 @@
 .munit-box.has-value {
   border-color: var(--accent, #E8A020);
   background: #FFFBF0;
-  cursor: pointer;
-  -webkit-tap-highlight-color: rgba(232,160,32,0.2);
-}
-.munit-box.has-value:active {
-  transform: scale(0.97);
-  background: #FFF0D0;
 }
 .munit-box:focus-within {
   border-color: var(--accent, #E8A020);
@@ -198,6 +192,24 @@
 @media (max-width: 380px) {
   .mrow-units { grid-template-columns: 1fr 1fr; }
 }
+/* ── USER BADGE ── */
+.user-badge {
+  background: var(--accent, #E8A020);
+  color: var(--navy, #0D2137);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+.icon-btn-logout {
+  background: rgba(255,255,255,.08) !important;
+  font-size: 13px !important;
+  padding: 6px 8px !important;
+  opacity: 0.7;
+}
+.icon-btn-logout:hover { opacity: 1; background: rgba(220,38,38,.3) !important; }
 /* ── QUOTE ADDRESS AUTOCOMPLETE ── */
 .quote-addr-list {
   position: absolute;
@@ -248,8 +260,10 @@
   <div class="logo">QUOTE<span>machine</span></div>
   <div class="header-center" id="address-display"></div>
   <div class="header-actions">
+    <span class="user-badge" id="user-badge" style="display:none"></span>
     <button class="icon-btn" id="btn-saved-header" title="Saved Quotes">📋 <span id="saved-count">0</span></button>
     <button class="icon-btn" id="ai-chat-btn" title="AI Assistant">🤖</button>
+    <button class="icon-btn icon-btn-logout" id="btn-logout" title="Sign Out">↩</button>
   </div>
 </header>
 

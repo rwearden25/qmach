@@ -62,6 +62,8 @@ let isDragging = false;
 let mapStyleHasLabels = true;
 let debounceTimer = null;
 let authToken = sessionStorage.getItem('qmach_token') || '';
+let currentUserId = sessionStorage.getItem('qmach_userId') || '';
+let currentUserName = sessionStorage.getItem('qmach_userName') || '';
 
 // ── Line items state
 let lineItems = [];
@@ -88,7 +90,11 @@ async function authFetch(url, options = {}) {
   if (resp.status === 401) {
     // Session expired — show login
     sessionStorage.removeItem('qmach_token');
+    sessionStorage.removeItem('qmach_userId');
+    sessionStorage.removeItem('qmach_userName');
     authToken = '';
+    currentUserId = '';
+    currentUserName = '';
     showLoginGate();
     throw new Error('Unauthorized');
   }
@@ -112,6 +118,8 @@ async function checkAuth() {
     });
     const data = await resp.json();
     if (data.valid) {
+      if (data.userId) { currentUserId = data.userId; sessionStorage.setItem('qmach_userId', data.userId); }
+      if (data.userName) { currentUserName = data.userName; sessionStorage.setItem('qmach_userName', data.userName); }
       hideLoginGate();
       return true;
     }
@@ -138,6 +146,8 @@ async function doLogin() {
     if (data.success) {
       authToken = data.token;
       sessionStorage.setItem('qmach_token', authToken);
+      if (data.userId) { currentUserId = data.userId; sessionStorage.setItem('qmach_userId', data.userId); }
+      if (data.userName) { currentUserName = data.userName; sessionStorage.setItem('qmach_userName', data.userName); }
       hideLoginGate();
       bootApp();
     } else {
@@ -167,7 +177,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (authed) bootApp();
 });
 
+// ── User display
+function updateUserDisplay() {
+  const badge = document.getElementById('user-badge');
+  if (badge && currentUserName) {
+    badge.textContent = currentUserName;
+    badge.style.display = 'inline-block';
+  }
+}
+
+function doLogout() {
+  sessionStorage.removeItem('qmach_token');
+  sessionStorage.removeItem('qmach_userId');
+  sessionStorage.removeItem('qmach_userName');
+  authToken = '';
+  currentUserId = '';
+  currentUserName = '';
+  showLoginGate();
+  // Clear the user badge
+  const badge = document.getElementById('user-badge');
+  if (badge) badge.style.display = 'none';
+}
+
 async function bootApp() {
+  updateUserDisplay();
   updateCalc();
   initPanelDrag();
   initModalBackdrops();
@@ -211,21 +244,15 @@ async function bootApp() {
   on('btn-add-item', () => addLineItem());
   addLineItem(); // start with one
 
-  // ── Measurement tap — ENTIRE box is tappable (not just the small button) ──
+  // ── Measurement tap buttons — proper event delegation ──
   const mrowUnits = document.querySelector('.mrow-units');
   if (mrowUnits) {
     mrowUnits.addEventListener('click', function(e) {
-      // Ignore clicks on the input itself (user wants to type)
-      if (e.target.closest('.munit-input')) return;
-      // Find the closest munit-box
-      const box = e.target.closest('.munit-box');
-      if (!box) return;
-      // Only work if box has a value
-      if (!box.classList.contains('has-value')) return;
+      const btn = e.target.closest('.munit-tap-btn');
+      if (!btn) return;
       e.preventDefault();
       e.stopPropagation();
-      // Extract unit from box id: "munit-box-sqft" → "sqft"
-      const unit = box.id.replace('munit-box-', '');
+      const unit = btn.getAttribute('data-unit');
       if (unit) selectMeasurementForItem(unit);
     });
   }
@@ -283,6 +310,7 @@ async function bootApp() {
 
   // AI chat
   on('ai-chat-btn',   () => openAiPanel());
+  on('btn-logout',    () => doLogout());
   on('ai-panel-close',() => closeAiPanel());
   on('ai-overlay',    () => closeAiPanel());
   on('chat-send-btn', () => sendChat());
@@ -465,7 +493,15 @@ let _lineItemCalcTimer = null;
 
 function onLineItemChange() {
   syncLineItemsFromDOM();
-  // ── GRAND TOTAL + SUBTOTALS update IMMEDIATELY — no debounce ──
+  // Update subtotals in-place immediately (cheap DOM read/write)
+  lineItems.forEach(item => {
+    const el = document.getElementById(`li-${item.id}`);
+    if (!el) return;
+    const sub = item.area * item.price * item.qty;
+    const subEl = el.querySelector('.li-subtotal-val');
+    if (subEl) subEl.textContent = '$' + fmtMoney(sub);
+  });
+  // ── GRAND TOTAL updates IMMEDIATELY — no debounce ──
   updateTotalDisplay();
   // Debounce only the heavy measurement conversion pipeline
   clearTimeout(_lineItemCalcTimer);
@@ -478,15 +514,6 @@ function onLineItemChange() {
 
 // ── Lightweight total display — called on every keystroke ──
 function updateTotalDisplay() {
-  // ── Always refresh individual subtotals first ──
-  lineItems.forEach(item => {
-    const el = document.getElementById(`li-${item.id}`);
-    if (!el) return;
-    const sub = item.area * item.price * item.qty;
-    const subEl = el.querySelector('.li-subtotal-val');
-    if (subEl) subEl.textContent = '$' + fmtMoney(sub);
-  });
-
   const subtotal = getLineItemsSubtotal();
   const markup = parseFloat(document.getElementById('markup')?.value) || 0;
   const total = subtotal * (1 + markup / 100);
@@ -999,7 +1026,7 @@ function updateMeasureOptions() {
   const title = document.getElementById('mrow-title');
   const hint  = document.getElementById('mrow-hint');
   if (title) title.textContent = drawnRawType === 'line' ? '📏 Measurements (Line)' : '📐 Measurements';
-  if (hint)  hint.textContent  = drawnRawMeters > 0 ? 'TAP A BOX TO APPLY TO QUOTE' : 'Draw on map or type a value';
+  if (hint)  hint.textContent  = drawnRawMeters > 0 ? 'Tap a label to apply to quote' : 'Draw on map or type a value';
   // Keep hidden legacy select in sync
   const sel = document.getElementById('measure-type');
   if (sel) sel.value = 'sqft';

@@ -1371,7 +1371,7 @@ textarea { height: 60px; resize: vertical; }
 
   /* ── MEASUREMENT BOXES ── */
   #measurement-row { gap: 6px; padding: 10px 10px; }
-  .mrow-hint { font-size: 10px; }   /* keep visible but smaller */
+  .mrow-hint { display: none; }   /* not enough room */
   .munit-input { font-size: 16px !important; }
 
   /* ── ALL INPUTS: 16px minimum stops iOS auto-zoom ── */
