@@ -2093,7 +2093,12 @@ function getViewportHeight() {
 }
 
 function syncMapToPanel() {
-  // Update map container to fill space above panel
+  // On desktop (≥1024px) the panel is on the LEFT — don't adjust map bottom
+  if (window.innerWidth >= 1024) {
+    if (map) map.resize();
+    return;
+  }
+  // Mobile/tablet: update map container to fill space above panel
   const panel = document.getElementById('bottom-panel');
   const mapC = document.getElementById('map-container');
   if (panel && mapC) {
