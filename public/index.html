@@ -13,13 +13,15 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
 
-<!-- ═══ LOGIN GATE ═══ -->
+<!-- LOGIN -->
 <div id="login-gate">
   <div class="login-card">
     <div class="login-logo">QUOTE<span>machine</span></div>
@@ -30,52 +32,41 @@
   </div>
 </div>
 
-<!-- ═══ APP SHELL ═══ -->
+<!-- APP -->
 <div id="app-shell" class="hidden">
-
-  <!-- HEADER -->
-  <header id="app-header">
+  <header>
     <div class="logo">QUOTE<span>machine</span></div>
     <div class="header-tabs">
-      <button class="htab active" id="htab-quote" data-view="quote">📐 New</button>
-      <button class="htab" id="htab-saved" data-view="saved">📋 Saved</button>
-      <button class="htab" id="htab-stats" data-view="stats">📊 Stats</button>
+      <button class="htab active" data-view="quote">📐 New</button>
+      <button class="htab" data-view="saved">📋 Saved</button>
+      <button class="htab" data-view="stats">📊 Stats</button>
     </div>
-    <button class="icon-btn" id="btn-ai-chat" title="AI Assistant">🤖</button>
+    <button class="icon-btn" id="btn-ai-chat">🤖</button>
   </header>
 
-  <!-- ═══ QUOTE VIEW (Wizard) ═══ -->
+  <!-- QUOTE WIZARD -->
   <div id="view-quote" class="view active">
-
-    <!-- Progress dots -->
-    <div id="progress-bar" class="progress-bar">
-      <div class="pdot completed" data-step="0"><span>1</span></div><div class="pline" data-line="0"></div>
+    <div class="progress-bar">
+      <div class="pdot active" data-step="0"><span>1</span></div><div class="pline" data-line="0"></div>
       <div class="pdot" data-step="1"><span>2</span></div><div class="pline" data-line="1"></div>
       <div class="pdot" data-step="2"><span>3</span></div><div class="pline" data-line="2"></div>
       <div class="pdot" data-step="3"><span>4</span></div><div class="pline" data-line="3"></div>
       <div class="pdot" data-step="4"><span>5</span></div>
     </div>
-
-    <!-- Step content area -->
-    <div id="step-content" class="step-content">
-
+    <div class="step-content">
       <!-- STEP 0: ADDRESS -->
       <div class="step" id="step-0">
         <h1 class="step-title">Where's the job?</h1>
         <div class="field-group">
           <label class="flabel">Job address</label>
-          <div class="input-row">
-            <span class="input-icon">📍</span>
-            <input type="text" id="inp-address" placeholder="123 Main St, Dallas TX" autocomplete="off">
-          </div>
+          <div class="input-row"><span class="input-icon">📍</span>
+            <input type="text" id="inp-address" placeholder="123 Main St, Dallas TX" autocomplete="off"></div>
           <div id="addr-autocomplete" class="autocomplete-list"></div>
         </div>
         <div class="field-group">
           <label class="flabel">Client</label>
-          <div class="input-row">
-            <span class="input-icon">👤</span>
-            <input type="text" id="inp-client" placeholder="Name or company">
-          </div>
+          <div class="input-row"><span class="input-icon">👤</span>
+            <input type="text" id="inp-client" placeholder="Name or company"></div>
         </div>
         <div class="quick-row">
           <button class="quick-btn" id="btn-gps"><div class="qb-icon">📍</div><div class="qb-label">GPS</div></button>
@@ -84,53 +75,46 @@
           <button class="quick-btn" id="btn-street"><div class="qb-icon">👁</div><div class="qb-label">Street</div></button>
         </div>
       </div>
-
       <!-- STEP 1: SERVICE -->
       <div class="step hidden" id="step-1">
         <h1 class="step-title">What's the job?</h1>
         <div id="service-list" class="service-list"></div>
       </div>
-
       <!-- STEP 2: MEASURE -->
       <div class="step hidden" id="step-2">
         <h1 class="step-title">How big?</h1>
         <button id="btn-open-map" class="map-trigger">
-          <div class="mt-icon">🗺️</div>
-          <div class="mt-label">Open Map & Draw</div>
-          <div class="mt-hint">Satellite view · tap corners · auto-calculate</div>
-          <div class="mt-coming">(Coming in Phase 2)</div>
+          <div class="mt-icon">🛰️</div>
+          <div class="mt-label">Open Satellite Map & Draw</div>
+          <div class="mt-hint">Tap corners · auto-calculate area</div>
         </button>
+        <div id="map-result" class="map-result hidden">
+          <div class="mr-check">✓</div>
+          <div class="mr-value" id="mr-value">0</div>
+          <div class="mr-unit" id="mr-unit">sq ft</div>
+          <button id="btn-redraw" class="mr-redraw">↺ Redraw</button>
+        </div>
         <div class="divider"><span>or type it</span></div>
         <div class="measure-row">
           <div class="field-group" style="flex:1">
             <label class="flabel">Area / length</label>
-            <div class="input-row">
-              <input type="number" id="inp-area" placeholder="0" min="0" step="1">
-            </div>
+            <div class="input-row"><input type="number" id="inp-area" placeholder="0" min="0" step="1"></div>
           </div>
           <div class="field-group" style="width:110px">
             <label class="flabel">Unit</label>
-            <select id="inp-unit">
-              <option value="sqft">Sq Ft</option>
-              <option value="linft">Lin Ft</option>
-              <option value="sqyd">Sq Yd</option>
-              <option value="acre">Acres</option>
-            </select>
+            <select id="inp-unit"><option value="sqft">Sq Ft</option><option value="linft">Lin Ft</option><option value="sqyd">Sq Yd</option><option value="acre">Acres</option></select>
           </div>
         </div>
         <div id="conversion-chips" class="conv-chips"></div>
       </div>
-
       <!-- STEP 3: PRICE -->
       <div class="step hidden" id="step-3">
         <h1 class="step-title">Set your price</h1>
         <div id="price-context" class="price-context"></div>
         <div class="field-group">
           <label class="flabel" id="price-label">$ per unit</label>
-          <div class="input-row">
-            <span class="input-prefix">$</span>
-            <input type="number" id="inp-price" placeholder="0.00" min="0" step="0.01">
-          </div>
+          <div class="input-row"><span class="input-prefix">$</span>
+            <input type="number" id="inp-price" placeholder="0.00" min="0" step="0.01"></div>
         </div>
         <div id="quick-prices" class="quick-prices"></div>
         <button id="btn-ai-price" class="btn-secondary">✨ AI Suggest Price</button>
@@ -139,121 +123,74 @@
           <div class="lt-breakdown" id="lt-breakdown"></div>
         </div>
       </div>
-
       <!-- STEP 4: REVIEW -->
       <div class="step hidden" id="step-4">
-        <!-- Grand total hero -->
-        <div class="total-hero">
-          <div class="th-label">Total</div>
-          <div class="th-amount" id="review-total">$0.00</div>
-          <div class="th-count" id="review-count">1 service</div>
-        </div>
+        <div class="total-hero"><div class="th-label">Total</div><div class="th-amount" id="review-total">$0.00</div><div class="th-count" id="review-count">1 service</div></div>
         <button id="btn-add-another" class="btn-add-another">＋ Add another service</button>
-        <!-- Summary card -->
         <div id="review-card" class="review-card"></div>
-        <!-- Notes -->
         <textarea id="inp-notes" placeholder="Notes (optional)"></textarea>
-        <!-- Primary action -->
         <button id="btn-save-share" class="btn-primary gold">Save & Share</button>
-        <!-- Secondary -->
-        <div class="sec-row">
-          <button id="btn-pdf" class="btn-secondary">📄 PDF</button>
-          <button id="btn-ai-narrative" class="btn-secondary">✍️ AI Scope</button>
-        </div>
-        <!-- Narrative output -->
+        <div class="sec-row"><button id="btn-pdf" class="btn-secondary">📄 PDF</button><button id="btn-ai-narrative" class="btn-secondary">✍️ AI Scope</button></div>
         <div id="narrative-box" class="narrative-box hidden"></div>
-        <!-- New quote -->
         <button id="btn-new-quote" class="btn-text-link">Start new quote</button>
       </div>
-
-    </div><!-- /step-content -->
-
-    <!-- Bottom action (Continue / Review) -->
+    </div>
     <div id="bottom-action" class="bottom-action">
       <button id="btn-continue" class="btn-primary" disabled>Continue →</button>
       <button id="btn-back" class="btn-text-back hidden">← Back</button>
     </div>
-
-  </div><!-- /view-quote -->
-
-  <!-- ═══ SAVED VIEW ═══ -->
-  <div id="view-saved" class="view">
-    <div class="view-pad">
-      <h1 class="step-title">Saved Quotes</h1>
-      <div class="search-row">
-        <input type="text" id="search-quotes" placeholder="🔍 Search by client, job type...">
-        <button id="btn-export" class="btn-sm">Export</button>
-      </div>
-      <div id="saved-list"><div class="empty-state">No saved quotes yet.</div></div>
-    </div>
   </div>
 
-  <!-- ═══ STATS VIEW ═══ -->
-  <div id="view-stats" class="view">
-    <div class="view-pad">
-      <h1 class="step-title">Stats</h1>
-      <div id="stats-content"><div class="empty-state">Loading...</div></div>
-    </div>
+  <!-- SAVED -->
+  <div id="view-saved" class="view"><div class="view-pad"><h1 class="step-title">Saved Quotes</h1>
+    <div class="search-row"><input type="text" id="search-quotes" placeholder="🔍 Search..."><button id="btn-export" class="btn-sm">Export</button></div>
+    <div id="saved-list"><div class="empty-state">No saved quotes yet.</div></div>
+  </div></div>
+
+  <!-- STATS -->
+  <div id="view-stats" class="view"><div class="view-pad"><h1 class="step-title">Stats</h1><div id="stats-content"><div class="empty-state">Loading...</div></div></div></div>
+</div>
+
+<!-- FULL-SCREEN MAP OVERLAY -->
+<div id="map-overlay" class="map-overlay hidden">
+  <div id="map-box"></div>
+  <div class="map-top-bar">
+    <div class="map-instruction" id="map-instruction">Tap the corners of the work area</div>
+    <button id="btn-map-close" class="map-close-btn">✕</button>
   </div>
-
-</div><!-- /app-shell -->
-
-<!-- ═══ SHARE SHEET (bottom slide-up) ═══ -->
-<div class="sheet-overlay" id="share-sheet">
-  <div class="sheet">
-    <div class="sheet-handle"></div>
-    <div class="sheet-title">Quote saved! How to send it?</div>
-    <div class="sheet-actions">
-      <button class="share-btn sms" id="share-sms">💬 Text Message</button>
-      <button class="share-btn email" id="share-email">✉️ Email</button>
-      <button class="share-btn copy" id="share-copy">📋 Copy to Clipboard</button>
-      <button class="share-btn pdf" id="share-pdf">📄 Generate PDF</button>
-    </div>
-    <button class="btn-text-link" id="share-done">Done</button>
+  <div class="map-bottom-bar">
+    <div class="map-pts" id="map-pts">Tap on the map to start</div>
+    <button id="btn-map-done" class="btn-primary green" disabled>✓ Done — Calculate Area</button>
+    <button id="btn-map-redo" class="map-redo">↺ Start over</button>
   </div>
 </div>
 
-<!-- ═══ AI PRICE MODAL ═══ -->
-<div class="modal-overlay" id="ai-price-modal">
-  <div class="modal">
-    <h3>✨ AI Price Suggestion</h3>
-    <div id="ai-price-content"></div>
-    <div class="modal-btns">
-      <button class="mbtn cancel" id="ai-price-dismiss">Dismiss</button>
-      <button class="mbtn apply" id="ai-price-apply">✓ Apply</button>
-    </div>
-  </div>
-</div>
+<!-- SHARE SHEET -->
+<div class="sheet-overlay" id="share-sheet"><div class="sheet"><div class="sheet-handle"></div>
+  <div class="sheet-title">Quote saved! How to send it?</div>
+  <div class="sheet-actions">
+    <button class="share-btn sms" id="share-sms">💬 Text Message</button>
+    <button class="share-btn email" id="share-email">✉️ Email</button>
+    <button class="share-btn copy" id="share-copy">📋 Copy to Clipboard</button>
+    <button class="share-btn pdf" id="share-pdf">📄 Generate PDF</button>
+  </div><button class="btn-text-link" id="share-done">Done</button>
+</div></div>
 
-<!-- ═══ AI CHAT PANEL ═══ -->
-<div id="ai-panel" class="side-panel">
-  <div class="sp-header">
-    <span>🤖 AI Assistant</span>
-    <button id="ai-panel-close">✕</button>
-  </div>
+<!-- AI PRICE MODAL -->
+<div class="modal-overlay" id="ai-price-modal"><div class="modal"><h3>✨ AI Price Suggestion</h3><div id="ai-price-content"></div>
+  <div class="modal-btns"><button class="mbtn cancel" id="ai-price-dismiss">Dismiss</button><button class="mbtn apply" id="ai-price-apply">✓ Apply</button></div>
+</div></div>
+
+<!-- AI CHAT -->
+<div id="ai-panel" class="side-panel"><div class="sp-header"><span>🤖 AI Assistant</span><button id="ai-panel-close">✕</button></div>
   <div id="chat-messages" class="chat-messages"></div>
-  <div class="chat-input-row">
-    <input type="text" id="chat-input" placeholder="Ask about pricing, scheduling...">
-    <button id="chat-send">➤</button>
-  </div>
+  <div class="chat-input-row"><input type="text" id="chat-input" placeholder="Ask about pricing..."><button id="chat-send">➤</button></div>
 </div>
 <div id="ai-overlay" class="overlay"></div>
-
-<!-- ═══ TOAST ═══ -->
 <div id="toast"></div>
-
-<!-- ═══ INSTALL BANNER ═══ -->
-<div id="install-banner" class="install-banner" style="display:none">
-  <span>📲 Install <strong>QUOTE machine</strong></span>
-  <div class="install-btns">
-    <button id="install-btn">Install</button>
-    <button id="install-dismiss" class="dismiss">Later</button>
-  </div>
-</div>
+<div id="install-banner" class="install-banner" style="display:none"><span>📲 Install <strong>QUOTE machine</strong></span><div class="install-btns"><button id="install-btn">Install</button><button id="install-dismiss" class="dismiss">Later</button></div></div>
 
 <script src="/js/app.js"></script>
-<script>
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});</script>
 </body>
 </html>
