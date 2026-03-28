@@ -1,1739 +1,622 @@
 // ═══════════════════════════════════════
-//  GEOMETRY MATH (no external library)
-//  Replaces turf.js which fails CSP eval check
+//  QUOTE machine — Wizard UX (Phase 1)
+//  Step flow: Address → Service → Measure → Price → Review
 // ═══════════════════════════════════════
 
-// Haversine distance between two [lng, lat] points in meters
-function haversineMeters(a, b) {
-  const R = 6371008.8; // Earth radius in meters
-  const lat1 = a[1] * Math.PI / 180;
-  const lat2 = b[1] * Math.PI / 180;
-  const dLat = (b[1] - a[1]) * Math.PI / 180;
-  const dLng = (b[0] - a[0]) * Math.PI / 180;
-  const x = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1) * Math.cos(lat2) *
-            Math.sin(dLng/2) * Math.sin(dLng/2);
-  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
+// ── Constants
+const JOB_TYPES = [
+  { id: 'pressure-washing', label: 'Pressure Washing', icon: '💦', unit: 'sqft', range: '$0.08–$0.35/sf' },
+  { id: 'parking-lot-striping', label: 'Lot Striping', icon: '🅿️', unit: 'linft', range: '$0.15–$0.50/lf' },
+  { id: 'sealcoating', label: 'Sealcoating', icon: '🛣️', unit: 'sqft', range: '$0.10–$0.25/sf' },
+  { id: 'painting', label: 'Painting / Coating', icon: '🎨', unit: 'sqft', range: '$1.50–$4.00/sf' },
+  { id: 'roofing', label: 'Roofing', icon: '🏠', unit: 'sqft', range: '$3.50–$8.00/sf' },
+  { id: 'concrete', label: 'Concrete', icon: '🧱', unit: 'sqft', range: '$4.00–$12.00/sf' },
+  { id: 'landscaping', label: 'Landscaping', icon: '🌿', unit: 'sqft', range: '$2.00–$6.00/sf' },
+  { id: 'custom', label: 'Other / Custom', icon: '📋', unit: 'sqft', range: 'Your rate' }
+];
+const UNIT_LABELS = { sqft: 'sq ft', linft: 'lin ft', sqyd: 'sq yd', acre: 'acres' };
+const UNIT_SHORT = { sqft: 'sf', linft: 'lf', sqyd: 'sy', acre: 'ac' };
+const QUICK_PRICES = {
+  'pressure-washing': [0.08, 0.12, 0.18, 0.25, 0.35],
+  'parking-lot-striping': [0.15, 0.25, 0.35, 0.50],
+  'sealcoating': [0.10, 0.15, 0.20, 0.25],
+  'painting': [1.50, 2.00, 3.00, 4.00],
+  'roofing': [3.50, 5.00, 6.50, 8.00],
+  'concrete': [4.00, 6.00, 8.00, 12.00],
+  'landscaping': [2.00, 3.00, 4.00, 6.00],
+  'custom': [1.00, 5.00, 10.00, 25.00]
+};
+const STEPS = ['address', 'service', 'measure', 'price', 'review'];
 
-// Polygon area in square meters using spherical excess (shoelace on projected coords)
-function polygonAreaMeters(ring) {
-  // Convert lng/lat to approximate meters using equirectangular projection
-  const R = 6371008.8;
-  const toRad = d => d * Math.PI / 180;
-  const pts = ring.map(p => [
-    R * toRad(p[0]) * Math.cos(toRad(p[1])),
-    R * toRad(p[1])
-  ]);
-  // Shoelace formula
-  let area = 0;
-  for (let i = 0, n = pts.length, j = n - 1; i < n; j = i++) {
-    area += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]);
-  }
-  return Math.abs(area / 2);
-}
-
-// LineString total length in meters
-function lineStringMeters(coords) {
-  let total = 0;
-  for (let i = 1; i < coords.length; i++) total += haversineMeters(coords[i-1], coords[i]);
-  return total;
-}
-
-// ═══════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════
-let map = null;
-let draw = null;  // Legacy compat — now just a simple object, NOT MapboxDraw
+// ── State
+let authToken = sessionStorage.getItem('qmach_token') || '';
 let mapboxToken = '';
-let drawnFeature = null;
-let drawnRawMeters = 0;
-let drawnPerimeterMeters = 0;
-let drawnRawType = 'area';   // 'area' | 'line'
-let isDrawing = false;
-let drawMode = 'polygon';    // 'polygon' | 'line'
-let trackedPoints = [];      // [lng, lat] pairs we track ourselves
-let lastAddress = '';
-let lastLat = null;
-let lastLng = null;
+let step = 0;
+let items = [];          // completed line items [{service, area, unit, price}]
+let current = { service: null, area: '', unit: 'sqft', price: '' };
+let address = '';
+let clientName = '';
+let lastLat = null, lastLng = null;
+let editingQuoteId = null;
 let chatHistory = [];
 let aiPriceData = null;
-let isDragging = false;
-let mapStyleHasLabels = true;
 let debounceTimer = null;
-let authToken = sessionStorage.getItem('qmach_token') || '';
-let currentUserId = sessionStorage.getItem('qmach_userId') || '';
-let currentUserName = sessionStorage.getItem('qmach_userName') || '';
-
-// ── Line items state
-let lineItems = [];
-let lineItemIdCounter = 0;
-let editingQuoteId = null;  // null = new quote, string = editing existing
-const JOB_TYPES = [
-  { value: 'pressure-washing', label: 'Pressure Washing' },
-  { value: 'parking-lot-striping', label: 'Parking Lot Striping' },
-  { value: 'sealcoating', label: 'Sealcoating' },
-  { value: 'painting', label: 'Painting / Coating' },
-  { value: 'roofing', label: 'Roofing' },
-  { value: 'concrete', label: 'Concrete' },
-  { value: 'landscaping', label: 'Landscaping' },
-  { value: 'custom', label: 'Other / Custom' }
-];
 
 // ═══════════════════════════════════════
 //  AUTH
 // ═══════════════════════════════════════
-async function authFetch(url, options = {}) {
-  if (!options.headers) options.headers = {};
-  if (authToken) options.headers['x-auth-token'] = authToken;
-  const resp = await fetch(url, options);
-  if (resp.status === 401) {
-    // Session expired — show login
-    sessionStorage.removeItem('qmach_token');
-    sessionStorage.removeItem('qmach_userId');
-    sessionStorage.removeItem('qmach_userName');
-    authToken = '';
-    currentUserId = '';
-    currentUserName = '';
-    showLoginGate();
-    throw new Error('Unauthorized');
-  }
-  return resp;
+async function authFetch(url, opts = {}) {
+  if (!opts.headers) opts.headers = {};
+  if (authToken) opts.headers['x-auth-token'] = authToken;
+  const r = await fetch(url, opts);
+  if (r.status === 401) { sessionStorage.removeItem('qmach_token'); authToken = ''; showLogin(); throw new Error('Unauthorized'); }
+  return r;
 }
-
-function showLoginGate() {
-  const gate = document.getElementById('login-gate');
-  if (gate) gate.classList.remove('hidden');
-}
-
-function hideLoginGate() {
-  const gate = document.getElementById('login-gate');
-  if (gate) gate.classList.add('hidden');
-}
+function showLogin() { el('login-gate').classList.remove('hidden'); }
+function hideLogin() { el('login-gate').classList.add('hidden'); }
 
 async function checkAuth() {
   try {
-    const resp = await fetch('/api/auth/check', {
-      headers: authToken ? { 'x-auth-token': authToken } : {}
-    });
-    const data = await resp.json();
-    if (data.valid) {
-      if (data.userId) { currentUserId = data.userId; sessionStorage.setItem('qmach_userId', data.userId); }
-      if (data.userName) { currentUserName = data.userName; sessionStorage.setItem('qmach_userName', data.userName); }
-      hideLoginGate();
-      return true;
-    }
+    const r = await fetch('/api/auth/check', { headers: authToken ? { 'x-auth-token': authToken } : {} });
+    const d = await r.json();
+    if (d.valid) { hideLogin(); return true; }
   } catch {}
-  showLoginGate();
+  showLogin();
   return false;
 }
 
 async function doLogin() {
-  const btn = document.getElementById('login-btn');
-  const pw = document.getElementById('login-password');
-  const err = document.getElementById('login-error');
+  const btn = el('login-btn'), pw = el('login-password'), err = el('login-error');
   if (!pw.value.trim()) { err.textContent = 'Enter a password'; return; }
-  btn.disabled = true;
-  btn.textContent = 'Signing in...';
-  err.textContent = '';
+  btn.disabled = true; btn.textContent = 'Signing in...'; err.textContent = '';
   try {
-    const resp = await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw.value.trim() })
-    });
-    const data = await resp.json();
-    if (data.success) {
-      authToken = data.token;
-      sessionStorage.setItem('qmach_token', authToken);
-      if (data.userId) { currentUserId = data.userId; sessionStorage.setItem('qmach_userId', data.userId); }
-      if (data.userName) { currentUserName = data.userName; sessionStorage.setItem('qmach_userName', data.userName); }
-      hideLoginGate();
-      bootApp();
-    } else {
-      err.textContent = 'Wrong password';
-      pw.value = '';
-      pw.focus();
-    }
-  } catch {
-    err.textContent = 'Connection error';
-  }
-  btn.disabled = false;
-  btn.textContent = 'Sign In';
+    const r = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw.value.trim() }) });
+    const d = await r.json();
+    if (d.success) { authToken = d.token; sessionStorage.setItem('qmach_token', authToken); hideLogin(); bootApp(); }
+    else { err.textContent = 'Wrong password'; pw.value = ''; pw.focus(); }
+  } catch { err.textContent = 'Connection error'; }
+  btn.disabled = false; btn.textContent = 'Sign In';
 }
 
 // ═══════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
-  // Wire login form
-  document.getElementById('login-btn')?.addEventListener('click', doLogin);
-  document.getElementById('login-password')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') doLogin();
-  });
-
-  // Check if already authed
-  const authed = await checkAuth();
-  if (authed) bootApp();
+  on('login-btn', doLogin);
+  el('login-password')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  if (await checkAuth()) bootApp();
 });
 
-// ── User display
-function updateUserDisplay() {
-  const badge = document.getElementById('user-badge');
-  if (badge && currentUserName) {
-    badge.textContent = currentUserName;
-    badge.style.display = 'inline-block';
-  }
-}
-
-function doLogout() {
-  sessionStorage.removeItem('qmach_token');
-  sessionStorage.removeItem('qmach_userId');
-  sessionStorage.removeItem('qmach_userName');
-  authToken = '';
-  currentUserId = '';
-  currentUserName = '';
-  showLoginGate();
-  // Clear the user badge
-  const badge = document.getElementById('user-badge');
-  if (badge) badge.style.display = 'none';
-}
-
 async function bootApp() {
-  updateUserDisplay();
-  updateCalc();
-  initPanelDrag();
-  initModalBackdrops();
-  loadSavedCount();
+  el('app-shell').classList.remove('hidden');
+  renderServiceList();
 
-  // Address input
-  const addr = document.getElementById('addr-input');
-  if (addr) {
-    addr.addEventListener('input', () => {
-      clearTimeout(debounceTimer);
-      const q = addr.value.trim();
-      if (q.length < 3) { clearAutocomplete(); return; }
-      debounceTimer = setTimeout(() => fetchSuggestions(q), 300);
-    });
-    addr.addEventListener('keydown', e => { if (e.key === 'Enter') geocodeAddress(); });
-  }
-
-  // Tabs
-  on('tab-btn-quote', () => showTab('quote'));
-  on('tab-btn-saved', () => showTab('saved'));
-  on('tab-btn-stats', () => showTab('stats'));
-
-  // Map toolbar
-  on('tool-draw',      () => startDrawing('polygon'));
-  on('tool-line',      () => startDrawing('line'));
-  on('tool-clear',     () => clearDrawing());
-  on('tool-satellite', () => toggleLabels());
-  on('tool-streetview', () => openStreetView());
-  on('search-btn',     () => geocodeAddress());
-  on('badge-clear-btn',() => clearDrawing());
-
-  // Drawing overlay
-  on('btn-done-drawing',   () => finishDrawing());
-  on('btn-cancel-drawing', () => cancelDrawing());
-  on('btn-undo-point',     () => undoLastPoint());
-
-  // Quote form — auto-recalc (measure-type hidden, manual-area hidden, both kept for compat)
-  on('markup', () => updateCalc(), 'change');
-
-  // Line items
-  on('btn-add-item', () => addLineItem());
-  addLineItem(); // start with one
-
-  // ── Measurement tap buttons — proper event delegation ──
-  const mrowUnits = document.querySelector('.mrow-units');
-  if (mrowUnits) {
-    mrowUnits.addEventListener('click', function(e) {
-      const btn = e.target.closest('.munit-tap-btn');
-      if (!btn) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const unit = btn.getAttribute('data-unit');
-      if (unit) selectMeasurementForItem(unit);
-    });
-  }
-
-  // Address — use map address button
-  on('btn-use-map-addr', () => {
-    const addrInput = document.getElementById('quote-address');
-    if (addrInput && lastAddress) {
-      addrInput.value = lastAddress;
-      clearQuoteAddrAutocomplete();
-      showToast('Address set 📍');
-    }
-    else if (!lastAddress) showToast('Search an address on the map first');
+  // Header tabs
+  document.querySelectorAll('.htab').forEach(btn => {
+    btn.addEventListener('click', () => switchView(btn.dataset.view));
   });
 
-  // Quote address — live autocomplete
-  let quoteAddrTimer = null;
-  const quoteAddr = document.getElementById('quote-address');
-  if (quoteAddr) {
-    quoteAddr.addEventListener('input', () => {
-      clearTimeout(quoteAddrTimer);
-      const q = quoteAddr.value.trim();
-      if (q.length < 3) { clearQuoteAddrAutocomplete(); return; }
-      quoteAddrTimer = setTimeout(() => fetchQuoteAddrSuggestions(q), 300);
+  // Step nav
+  on('btn-continue', onContinue);
+  on('btn-back', () => goStep(step - 1));
+
+  // Progress dot clicks
+  document.querySelectorAll('.pdot').forEach(dot => {
+    dot.addEventListener('click', () => {
+      const s = parseInt(dot.dataset.step);
+      if (s < step) goStep(s);
     });
-    // Scroll field into view on focus so autocomplete dropdown isn't clipped
-    quoteAddr.addEventListener('focus', () => {
-      setTimeout(() => {
-        const row = quoteAddr.closest('.form-row') || quoteAddr;
-        row.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 200);
+  });
+
+  // Address autocomplete
+  const addrInput = el('inp-address');
+  if (addrInput) {
+    addrInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      const q = addrInput.value.trim();
+      if (q.length < 3) { clearAddrAutocomplete(); return; }
+      debounceTimer = setTimeout(() => fetchAddrSuggestions(q), 300);
     });
-    quoteAddr.addEventListener('keydown', e => {
-      if (e.key === 'Escape') clearQuoteAddrAutocomplete();
-    });
-    // Close on outside click
+    addrInput.addEventListener('keydown', e => { if (e.key === 'Escape') clearAddrAutocomplete(); });
     document.addEventListener('click', e => {
-      if (!quoteAddr.contains(e.target) && !document.getElementById('quote-addr-autocomplete')?.contains(e.target)) {
-        clearQuoteAddrAutocomplete();
-      }
+      if (!addrInput.contains(e.target) && !el('addr-autocomplete')?.contains(e.target)) clearAddrAutocomplete();
     });
   }
 
-  // Quote actions
-  on('btn-save',            () => saveQuote());
-  on('btn-narrative',       () => generateNarrative());
-  on('btn-narrative-regen', () => generateNarrative());
-  on('btn-print',           () => printQuote());
-  on('btn-share',           () => openShareModal(null));
-  on('btn-new',             () => newQuote());
-  on('ai-suggest-btn',      () => aiSuggestPrice());
-  on('btn-saved-header',    () => showTab('saved'));
-  on('btn-pdf',             () => generatePDF(true));
-  on('btn-pdf-plain',       () => generatePDF(false));
+  // Quick buttons
+  on('btn-gps', geolocateUser);
+  on('btn-gmaps', () => openExternal('maps'));
+  on('btn-gearth', () => openExternal('earth'));
+  on('btn-street', () => openExternal('street'));
 
-  // AI chat
-  on('ai-chat-btn',   () => openAiPanel());
-  on('btn-logout',    () => doLogout());
-  on('ai-panel-close',() => closeAiPanel());
-  on('ai-overlay',    () => closeAiPanel());
-  on('chat-send-btn', () => sendChat());
-  const chatIn = document.getElementById('chat-input');
-  if (chatIn) chatIn.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+  // Measure inputs
+  el('inp-area')?.addEventListener('input', onMeasureChange);
+  el('inp-unit')?.addEventListener('change', onMeasureChange);
 
-  // Share modal
-  on('share-cancel', () => closeModal('share-modal'));
-  on('share-copy',   () => copyShare());
-  on('share-sms',    () => smsShare());
-  on('share-email',  () => emailShare());
+  // Price input
+  el('inp-price')?.addEventListener('input', onPriceChange);
 
-  // AI price modal
+  // Map trigger (Phase 2 placeholder)
+  on('btn-open-map', () => toast('Map drawing coming in Phase 2'));
+
+  // AI price
+  on('btn-ai-price', aiSuggestPrice);
   on('ai-price-dismiss', () => closeModal('ai-price-modal'));
-  on('ai-price-apply',   () => applyAiPrice());
+  on('ai-price-apply', applyAiPrice);
+
+  // Review actions
+  on('btn-add-another', addAnother);
+  on('btn-save-share', saveAndShare);
+  on('btn-pdf', () => generatePDF());
+  on('btn-ai-narrative', generateNarrative);
+  on('btn-new-quote', resetQuote);
+
+  // Share sheet
+  on('share-sms', () => { closeSheet(); smsShare(); });
+  on('share-email', () => { closeSheet(); emailShare(); });
+  on('share-copy', () => { closeSheet(); copyShare(); });
+  on('share-pdf', () => { closeSheet(); generatePDF(); });
+  on('share-done', closeSheet);
+  el('share-sheet')?.addEventListener('click', e => { if (e.target.id === 'share-sheet') closeSheet(); });
 
   // Saved tab
-  on('search-input', () => loadSaved(), 'input');
-  on('export-btn',   () => exportAll());
+  el('search-quotes')?.addEventListener('input', loadSaved);
+  on('btn-export', exportAll);
 
-  // Load map
+  // AI chat
+  on('btn-ai-chat', openChat);
+  on('ai-panel-close', closeChat);
+  on('ai-overlay', closeChat);
+  on('chat-send', sendChat);
+  el('chat-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+
+  // PWA install
+  setupInstallBanner();
+
+  // Load mapbox token for geocoding
   try {
     const cfg = await authFetch('/api/config').then(r => r.json());
     mapboxToken = cfg.mapboxToken || '';
-    if (!mapboxToken) return;
-    initMap();
-    setTimeout(() => { if (map && map.resize) map.resize(); }, 100);
-    geolocateUser();
-  } catch(err) {
-    console.error('Boot:', err);
+  } catch {}
+
+  // Start at step 0
+  goStep(0);
+}
+
+// ═══════════════════════════════════════
+//  WIZARD NAVIGATION
+// ═══════════════════════════════════════
+function goStep(s) {
+  if (s < 0 || s >= STEPS.length) return;
+  step = s;
+
+  // Show/hide steps
+  document.querySelectorAll('.step').forEach((el, i) => {
+    el.classList.toggle('hidden', i !== s);
+    if (i === s) el.style.animation = 'none';
+    if (i === s) { void el.offsetHeight; el.style.animation = ''; } // retrigger animation
+  });
+
+  // Update progress dots
+  document.querySelectorAll('.pdot').forEach((dot, i) => {
+    dot.classList.remove('active', 'completed');
+    if (i < s) dot.classList.add('completed');
+    else if (i === s) dot.classList.add('active');
+  });
+  document.querySelectorAll('.pline').forEach((line, i) => {
+    line.classList.toggle('filled', i < s);
+  });
+
+  // Bottom action bar
+  const bottomAction = el('bottom-action');
+  const btnContinue = el('btn-continue');
+  const btnBack = el('btn-back');
+
+  if (s === 1 || s === 4) {
+    // Service step: auto-advance, no continue. Review: has its own buttons.
+    bottomAction.classList.add('hidden');
+  } else {
+    bottomAction.classList.remove('hidden');
+    btnBack.classList.toggle('hidden', s === 0);
+
+    if (s === 3) {
+      btnContinue.textContent = 'Review Quote →';
+      btnContinue.className = 'btn-primary green';
+    } else {
+      btnContinue.textContent = 'Continue →';
+      btnContinue.className = 'btn-primary';
+    }
+  }
+
+  updateContinueBtn();
+
+  // Step-specific setup
+  if (s === 2) setupMeasureStep();
+  if (s === 3) setupPriceStep();
+  if (s === 4) renderReview();
+}
+
+function onContinue() {
+  if (step === 3) {
+    // Finish current item and go to review
+    items.push({ ...current });
+    current = { service: null, area: '', unit: 'sqft', price: '' };
+    goStep(4);
+  } else if (step < STEPS.length - 1) {
+    goStep(step + 1);
   }
 }
 
-function on(id, fn, evt = 'click') {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener(evt, fn);
+function addAnother() {
+  // Loop back to service selection for next item
+  goStep(1);
+}
+
+function canContinue() {
+  switch (step) {
+    case 0: return (el('inp-address')?.value.trim().length > 3);
+    case 2: return parseFloat(el('inp-area')?.value) > 0;
+    case 3: return parseFloat(el('inp-price')?.value) > 0;
+    default: return true;
+  }
+}
+
+function updateContinueBtn() {
+  const btn = el('btn-continue');
+  if (btn) btn.disabled = !canContinue();
 }
 
 // ═══════════════════════════════════════
-//  LINE ITEMS
+//  VIEW SWITCHING (tabs)
 // ═══════════════════════════════════════
-function addLineItem(data) {
-  lineItemIdCounter++;
-  const id = lineItemIdCounter;
-  const item = {
-    id,
-    type: data?.type || 'pressure-washing',
-    area: data?.area || 0,
-    unit: data?.unit || 'sqft',
-    price: data?.price || 0,
-    qty: data?.qty || 1
-  };
-  lineItems.push(item);
-  renderLineItems();
-  updateCalc();
+function switchView(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  el('view-' + view)?.classList.add('active');
+  document.querySelectorAll('.htab').forEach(t => t.classList.toggle('active', t.dataset.view === view));
+  if (view === 'saved') loadSaved();
+  if (view === 'stats') loadStats();
 }
 
-function removeLineItem(id) {
-  lineItems = lineItems.filter(i => i.id !== id);
-  if (lineItems.length === 0) addLineItem();  // never leave form empty
-  else { renderLineItems(); updateCalc(); }
-}
+// ═══════════════════════════════════════
+//  STEP 1: SERVICE LIST
+// ═══════════════════════════════════════
+function renderServiceList() {
+  const list = el('service-list');
+  if (!list) return;
+  list.innerHTML = JOB_TYPES.map(job => `
+    <button class="svc-row" data-id="${job.id}">
+      <span class="svc-icon">${job.icon}</span>
+      <div class="svc-info">
+        <div class="svc-name">${job.label}</div>
+        <div class="svc-range">${job.range}</div>
+      </div>
+      <span class="svc-arrow">›</span>
+    </button>
+  `).join('');
 
-function getLineItemFromDOM(id) {
-  const el = document.getElementById(`li-${id}`);
-  if (!el) return null;
-  return {
-    type: el.querySelector('.li-type')?.value || 'custom',
-    area: parseFloat(el.querySelector('.li-area')?.value) || 0,
-    unit: el.querySelector('.li-unit')?.value || 'sqft',
-    price: parseFloat(el.querySelector('.li-price')?.value) || 0,
-    qty: parseInt(el.querySelector('.li-qty')?.value) || 1
-  };
-}
+  list.querySelectorAll('.svc-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.dataset.id;
+      const job = JOB_TYPES.find(j => j.id === id);
+      current.service = id;
+      current.unit = job?.unit || 'sqft';
 
-function syncLineItemsFromDOM() {
-  lineItems.forEach(item => {
-    const vals = getLineItemFromDOM(item.id);
-    if (vals) Object.assign(item, vals);
+      // Highlight
+      list.querySelectorAll('.svc-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+
+      // Auto-advance after 280ms
+      setTimeout(() => goStep(2), 280);
+    });
   });
 }
 
-// ── Price dropdown options ($0.01 → $30.00) ──
-function buildPriceOptions(selectedPrice) {
-  const prices = [];
-  for (let i = 1; i <= 10; i++)  prices.push(i * 0.01);        // $0.01–$0.10
-  for (let i = 3; i <= 19; i++)  prices.push(i * 0.05);        // $0.15–$0.95
-  for (let i = 4; i <= 19; i++)  prices.push(i * 0.25);        // $1.00–$4.75
-  for (let i = 10; i <= 19; i++) prices.push(i * 0.50);        // $5.00–$9.50
-  for (let i = 10; i <= 30; i++) prices.push(i * 1.00);        // $10–$30
-
-  const rounded = selectedPrice ? parseFloat(parseFloat(selectedPrice).toFixed(2)) : 0;
-  // If user has a custom price that's not in our list, inject it
-  let hasMatch = rounded === 0 || prices.some(p => parseFloat(p.toFixed(2)) === rounded);
-  let opts = '<option value="0">— Select —</option>';
-  for (const p of prices) {
-    const pv = parseFloat(p.toFixed(2));
-    const sel = pv === rounded ? ' selected' : '';
-    opts += `<option value="${pv}"${sel}>$${pv.toFixed(2)}</option>`;
-  }
-  if (rounded > 0 && !hasMatch) {
-    opts += `<option value="${rounded}" selected>$${rounded.toFixed(2)} (custom)</option>`;
-  }
-  return opts;
+// ═══════════════════════════════════════
+//  STEP 2: MEASURE
+// ═══════════════════════════════════════
+function setupMeasureStep() {
+  const unitSel = el('inp-unit');
+  if (unitSel && current.unit) unitSel.value = current.unit;
+  const areaInp = el('inp-area');
+  if (areaInp) { areaInp.value = current.area || ''; areaInp.focus(); }
+  onMeasureChange();
 }
 
-function renderLineItems() {
-  const container = document.getElementById('line-items-container');
-  if (!container) return;
-  const onlyOne = lineItems.length === 1;
+function onMeasureChange() {
+  current.area = el('inp-area')?.value || '';
+  current.unit = el('inp-unit')?.value || 'sqft';
 
-  container.innerHTML = lineItems.map((item, idx) => {
-    const typeOptions = JOB_TYPES.map(t =>
-      `<option value="${t.value}" ${t.value === item.type ? 'selected' : ''}>${t.label}</option>`
-    ).join('');
-    const unitOptions = [
-      ['sqft','Sq Ft'],['linft','Lin Ft'],['sqyd','Sq Yd'],['acre','Acres']
-    ].map(([v,l]) => `<option value="${v}" ${v === item.unit ? 'selected' : ''}>${l}</option>`).join('');
-    const qtyOptions = [1,2,3,4,5].map(q =>
-      `<option value="${q}" ${q === item.qty ? 'selected' : ''}>${q}×</option>`
-    ).join('');
-    const priceOptions = buildPriceOptions(item.price);
-    const sub = item.area * item.price * item.qty;
+  // Conversion chips
+  const chips = el('conversion-chips');
+  const v = parseFloat(current.area);
+  if (chips && v > 0 && current.unit === 'sqft') {
+    chips.innerHTML = `
+      <span class="conv-chip">${(v / 9).toFixed(1)} <span style="color:var(--text-lt)">sq yd</span></span>
+      <span class="conv-chip">${(v / 43560).toFixed(4)} <span style="color:var(--text-lt)">acres</span></span>
+    `;
+  } else if (chips) {
+    chips.innerHTML = '';
+  }
+  updateContinueBtn();
+}
 
-    return `
-    <div class="line-item ${onlyOne ? 'only-item' : ''}" id="li-${item.id}">
-      <div class="li-header">
-        <div class="li-num">${idx + 1}</div>
-        <select class="li-type" onchange="onLineItemChange()">${typeOptions}</select>
-        <button class="li-remove" onclick="removeLineItem(${item.id})" title="Remove">✕</button>
+// ═══════════════════════════════════════
+//  STEP 3: PRICE
+// ═══════════════════════════════════════
+function setupPriceStep() {
+  const svc = JOB_TYPES.find(j => j.id === current.service);
+  const ctx = el('price-context');
+  if (ctx && svc) {
+    ctx.innerHTML = `
+      <span class="pc-icon">${svc.icon}</span>
+      <span class="pc-name">${svc.label}</span>
+      <span class="pc-area">${fmtNum(current.area)} ${UNIT_SHORT[current.unit] || 'sf'}</span>
+    `;
+  }
+
+  const lbl = el('price-label');
+  if (lbl) lbl.textContent = `$ per ${UNIT_LABELS[current.unit] || 'unit'}`;
+
+  // Quick prices
+  const qp = el('quick-prices');
+  const prices = QUICK_PRICES[current.service] || [];
+  if (qp) {
+    qp.innerHTML = prices.map(p => `<button class="qp-btn" data-price="${p}">$${p}</button>`).join('');
+    qp.querySelectorAll('.qp-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        current.price = btn.dataset.price;
+        el('inp-price').value = current.price;
+        qp.querySelectorAll('.qp-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        onPriceChange();
+      });
+    });
+  }
+
+  const priceInp = el('inp-price');
+  if (priceInp) { priceInp.value = current.price || ''; priceInp.focus(); }
+  onPriceChange();
+}
+
+function onPriceChange() {
+  current.price = el('inp-price')?.value || '';
+  const area = parseFloat(current.area) || 0;
+  const price = parseFloat(current.price) || 0;
+  const total = area * price;
+
+  const lt = el('live-total');
+  if (lt) {
+    if (total > 0) {
+      lt.classList.remove('hidden');
+      el('lt-amount').textContent = '$' + fmtMoney(total);
+      el('lt-breakdown').textContent = `${fmtNum(current.area)} ${UNIT_SHORT[current.unit]} × $${current.price}/${UNIT_SHORT[current.unit]}`;
+    } else {
+      lt.classList.add('hidden');
+    }
+  }
+
+  // Update quick price highlights
+  el('quick-prices')?.querySelectorAll('.qp-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.price === current.price);
+  });
+
+  updateContinueBtn();
+}
+
+// ═══════════════════════════════════════
+//  STEP 4: REVIEW
+// ═══════════════════════════════════════
+function renderReview() {
+  const allItems = [...items];
+  // If current has data but wasn't pushed yet (editing), include it
+  if (current.service && !allItems.find(i => i === current)) {
+    // current was already pushed in onContinue, but check just in case
+  }
+
+  const grandTotal = allItems.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+
+  el('review-total').textContent = '$' + fmtMoney(grandTotal);
+  el('review-count').textContent = allItems.length + ' service' + (allItems.length !== 1 ? 's' : '');
+
+  // Build summary card
+  const card = el('review-card');
+  if (!card) return;
+
+  address = el('inp-address')?.value || '';
+  clientName = el('inp-client')?.value || '';
+
+  let html = '';
+  html += rcRow('Client', clientName || '—', 0);
+  html += rcRow('Address', address, 0);
+
+  allItems.forEach((item, idx) => {
+    const svc = JOB_TYPES.find(j => j.id === item.service);
+    const sub = (parseFloat(item.area) || 0) * (parseFloat(item.price) || 0);
+    html += `<div class="rc-item">
+      <div class="rc-item-header">
+        <div class="rc-item-name"><span>${svc?.icon || '📋'}</span> ${svc?.label || item.service}</div>
+        <span class="rc-item-sub">$${fmtMoney(sub)}</span>
       </div>
-      <div class="li-fields">
-        <div class="li-field">
-          <label>Area <button class="li-use-map" onclick="useMapForItem(${item.id})">📐 Map</button></label>
-          <input type="number" class="li-area" value="${item.area || ''}" placeholder="0" min="0" step="1" oninput="onLineItemChange()">
-        </div>
-        <div class="li-field">
-          <label>Unit</label>
-          <select class="li-unit" onchange="onLineItemChange()">${unitOptions}</select>
-        </div>
-        <div class="li-field">
-          <label>$/Unit</label>
-          <select class="li-price" onchange="onLineItemChange()">${priceOptions}</select>
-        </div>
-      </div>
-      <div class="li-fields" style="grid-template-columns: 1fr 2fr; margin-top:4px">
-        <div class="li-field">
-          <label>Qty</label>
-          <select class="li-qty" onchange="onLineItemChange()">${qtyOptions}</select>
-        </div>
-        <div class="li-subtotal">
-          <span class="li-subtotal-label">Subtotal</span>
-          <span class="li-subtotal-val">$${fmtMoney(sub)}</span>
-        </div>
-      </div>
+      <div class="rc-item-detail">${fmtNum(item.area)} ${UNIT_LABELS[item.unit]} × $${item.price}/${UNIT_SHORT[item.unit]}</div>
     </div>`;
-  }).join('');
-}
-
-function useMapForItem(id) {
-  const item = lineItems.find(i => i.id === id);
-  if (!item) return;
-  const itemEl = document.getElementById(`li-${id}`);
-  if (!itemEl) return;
-  const unit = item.unit || (itemEl.querySelector('.li-unit')?.value) || 'sqft';
-  const val = getMeasurementByUnit(unit);
-  if (!val) { showToast('No measurement yet — draw on map first'); return; }
-
-  // ── Update DOM input directly — NO full rebuild ──
-  const areaInput = itemEl.querySelector('.li-area');
-  const rounded = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
-  if (areaInput) areaInput.value = rounded;
-
-  // Sync state + update subtotals + total
-  onLineItemChange();
-  showToast(`${fmt(val)} ${unitLabel(unit)} applied ✓`);
-}
-
-let _lineItemCalcTimer = null;
-
-function onLineItemChange() {
-  syncLineItemsFromDOM();
-  // Update subtotals in-place immediately (cheap DOM read/write)
-  lineItems.forEach(item => {
-    const el = document.getElementById(`li-${item.id}`);
-    if (!el) return;
-    const sub = item.area * item.price * item.qty;
-    const subEl = el.querySelector('.li-subtotal-val');
-    if (subEl) subEl.textContent = '$' + fmtMoney(sub);
-  });
-  // ── GRAND TOTAL updates IMMEDIATELY — no debounce ──
-  updateTotalDisplay();
-  // Debounce only the heavy measurement conversion pipeline
-  clearTimeout(_lineItemCalcTimer);
-  _lineItemCalcTimer = setTimeout(() => {
-    updateAllMeasurementInputs();
-    updateMeasureOptions();
-    if (drawnFeature || drawnRawMeters > 0 || getDisplayMeasurement() > 0) updateBadge();
-  }, 150);
-}
-
-// ── Lightweight total display — called on every keystroke ──
-function updateTotalDisplay() {
-  const subtotal = getLineItemsSubtotal();
-  const markup = parseFloat(document.getElementById('markup')?.value) || 0;
-  const total = subtotal * (1 + markup / 100);
-
-  const itemCount = lineItems.filter(i => i.area > 0 && i.price > 0).length;
-  const breakdownText = itemCount > 0
-    ? `${itemCount} item${itemCount > 1 ? 's' : ''}` + (markup > 0 ? ` + ${markup}% markup` : '')
-    : '—';
-
-  setText('total-display', '$' + fmtMoney(total));
-  setText('breakdown-display', breakdownText);
-  // Sticky total bar
-  setText('sticky-total-val', '$' + fmtMoney(total));
-}
-
-function getLineItemsSubtotal() {
-  return lineItems.reduce((sum, item) => sum + (item.area * item.price * item.qty), 0);
-}
-
-// ═══════════════════════════════════════
-//  MAP
-// ═══════════════════════════════════════
-function initMap() {
-  mapboxgl.accessToken = mapboxToken;
-
-  map = new mapboxgl.Map({
-    container: 'map',
-    style: 'mapbox://styles/mapbox/satellite-streets-v12',
-    center: [-96.7970, 32.7767],
-    zoom: 16,
-    maxZoom: 19,
-    attributionControl: true,
-    logoPosition: 'bottom-left',
-    maxTileCacheSize: 50,          // limit GPU memory on mobile
-    fadeDuration: 0,               // skip tile fade animation (saves GPU)
-    trackResize: true
   });
 
-  map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right');
-  map.addControl(new mapboxgl.GeolocateControl({
-    positionOptions: { enableHighAccuracy: true },
-    trackUserLocation: false
-  }), 'bottom-right');
+  card.innerHTML = html;
 
-  // ── Shape display — replaces MapboxDraw (saves ~200KB JS)
-  // Uses a simple GeoJSON source + layers instead of the full Draw library
-  draw = {
-    _data: { type: 'FeatureCollection', features: [] },
-    _update() {
-      if (map && map.getSource('drawn-shape')) {
-        map.getSource('drawn-shape').setData(this._data);
-        // Also update vertex points
-        const verts = [];
-        this._data.features.forEach(f => {
-          const coords = f.geometry.type === 'Polygon' ? f.geometry.coordinates[0]
-            : f.geometry.type === 'LineString' ? f.geometry.coordinates : [];
-          coords.forEach(c => {
-            verts.push({ type: 'Feature', geometry: { type: 'Point', coordinates: c }, properties: {} });
-          });
-        });
-        if (map.getSource('drawn-verts')) {
-          map.getSource('drawn-verts').setData({ type: 'FeatureCollection', features: verts });
-        }
-      }
-    },
-    deleteAll() { this._data = { type: 'FeatureCollection', features: [] }; this._update(); },
-    add(feature) {
-      const f = feature.type === 'Feature' ? feature : { type: 'Feature', geometry: feature, properties: {} };
-      this._data.features.push(f);
-      this._update();
-    },
-    getAll() { return JSON.parse(JSON.stringify(this._data)); }
-  };
-
-  map.on('load', () => {
-    // Add our own live-preview layer for in-progress drawing
-    map.addSource('draw-preview', {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] }
-    });
-    map.addLayer({
-      id: 'draw-preview-fill',
-      type: 'fill',
-      source: 'draw-preview',
-      filter: ['==', '$type', 'Polygon'],
-      paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.18 }
-    });
-    map.addLayer({
-      id: 'draw-preview-line',
-      type: 'line',
-      source: 'draw-preview',
-      paint: { 'line-color': '#E8A020', 'line-width': 2.5, 'line-dasharray': [3,2] }
-    });
-    map.addLayer({
-      id: 'draw-preview-points',
-      type: 'circle',
-      source: 'draw-preview',
-      filter: ['==', '$type', 'Point'],
-      paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 }
-    });
-
-    // ── Finalized shape layers (replaces MapboxDraw rendering)
-    map.addSource('drawn-shape', {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] }
-    });
-    map.addSource('drawn-verts', {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] }
-    });
-    map.addLayer({
-      id: 'drawn-shape-fill', type: 'fill', source: 'drawn-shape',
-      filter: ['==', '$type', 'Polygon'],
-      paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.2 }
-    });
-    map.addLayer({
-      id: 'drawn-shape-stroke', type: 'line', source: 'drawn-shape',
-      filter: ['==', '$type', 'Polygon'],
-      paint: { 'line-color': '#E8A020', 'line-width': 3 }
-    });
-    map.addLayer({
-      id: 'drawn-shape-line', type: 'line', source: 'drawn-shape',
-      filter: ['==', '$type', 'LineString'],
-      paint: { 'line-color': '#E8A020', 'line-width': 4, 'line-dasharray': [2, 1] }
-    });
-    map.addLayer({
-      id: 'drawn-verts-circle', type: 'circle', source: 'drawn-verts',
-      paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 }
-    });
-
-    // ── Direct canvas listener bypasses MapboxDraw event interception
-    // map.on('click') does NOT fire when MapboxDraw is attached.
-    // We use pointerdown + pointerup with distance threshold to
-    // distinguish taps from map pans (critical for mobile).
-    const canvas = map.getCanvas();
-    let _ptrDown = null;  // { x, y, time }
-    const TAP_MAX_DIST = 12;   // px — if finger moved more, it's a pan
-    const TAP_MAX_TIME = 500;  // ms — if held longer, it's a long-press
-
-    canvas.addEventListener('pointerdown', e => {
-      if (!isDrawing) return;
-      if (e.button !== undefined && e.button !== 0) return;
-      _ptrDown = { x: e.clientX, y: e.clientY, time: Date.now() };
-    });
-
-    canvas.addEventListener('pointerup', e => {
-      if (!isDrawing || !_ptrDown) return;
-      // Only handle left-click / single touch (button 0)
-      if (e.button !== undefined && e.button !== 0) return;
-      // Ignore if the tap was on a UI element (button, select, input)
-      if (e.target && e.target !== canvas) return;
-
-      // ── Pan vs tap detection
-      const dx = e.clientX - _ptrDown.x;
-      const dy = e.clientY - _ptrDown.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const elapsed = Date.now() - _ptrDown.time;
-      _ptrDown = null;
-
-      if (dist > TAP_MAX_DIST) return;  // finger moved — was a pan
-      if (elapsed > TAP_MAX_TIME) return; // long press — ignore
-
-      // Get pixel position relative to canvas
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-
-      // Convert pixel to lng/lat
-      const lngLat = map.unproject([x, y]);
-      const pt = [lngLat.lng, lngLat.lat];
-
-      trackedPoints.push(pt);
-      console.log('Point added via canvas:', pt, '— total:', trackedPoints.length);
-      updatePointCounter();
-      updateDrawPreview();
-    });
-
-    activateTool('tool-draw');
-  });
-
-  // ── WebGL context loss recovery
-  // Mobile browsers kill the GPU context when memory is tight or app is backgrounded.
-  // Without this handler the map shows a blank blue screen.
-  const canvas = map.getCanvas();
-  canvas.addEventListener('webglcontextlost', (e) => {
-    console.warn('[Map] WebGL context lost');
-    e.preventDefault(); // allows context to be restored
-  });
-  canvas.addEventListener('webglcontextrestored', () => {
-    console.log('[Map] WebGL context restored — reloading style');
-    const currentStyle = mapStyleHasLabels
-      ? 'mapbox://styles/mapbox/satellite-streets-v12'
-      : 'mapbox://styles/mapbox/satellite-v9';
-    map.setStyle(currentStyle);
-    // Re-add custom layers after style finishes loading
-    map.once('style.load', () => {
-      addCustomMapLayers();
-      if (draw) draw._update();  // restore any drawn shape
-    });
-  });
-
-  // ── Visibility change — recover when returning to tab/app
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && map) {
-      // Short delay lets the browser finish recompositing
-      setTimeout(() => {
-        map.resize();
-        // If tiles aren't rendering, force a small pan to trigger reload
-        const c = map.getCenter();
-        map.panBy([1, 0], { duration: 0 });
-        setTimeout(() => map.panBy([-1, 0], { duration: 0 }), 50);
-      }, 200);
-    }
-  });
-
-  // ── Window resize / orientation change
-  window.addEventListener('resize', () => {
-    if (map) setTimeout(() => map.resize(), 100);
-  });
-
-  // ── Map error handler — catch tile load failures gracefully
-  map.on('error', (e) => {
-    console.warn('[Map] Error:', e.error?.message || e.message || 'unknown');
-    // Don't crash — just log it
-  });
-
-  // ── Memory pressure: reduce tile cache when browser signals low memory
-  if (navigator.deviceMemory && navigator.deviceMemory <= 4) {
-    console.log('[Map] Low memory device detected — limiting tile cache');
-    // Already set maxTileCacheSize: 50, but also reduce draw complexity
-  }
-}
-
-// ─── Draw start / finish / cancel
-function startDrawing(mode) {
-  if (!map || !map.loaded()) { showToast('Map is loading...'); return; }
-  drawMode = mode;
-  isDrawing = true;
-  trackedPoints = [];
-  draw.deleteAll();
-  clearPreview();
-
-  // Update toolbar & counter
-  activateTool(mode === 'polygon' ? 'tool-draw' : 'tool-line');
-  updatePointCounter();
-
-  // Show drawing overlay
-  const inst = document.getElementById('drawing-instructions');
-  if (inst) {
-    inst.innerHTML = mode === 'polygon'
-      ? '<strong>Tap the corners</strong> of the work area, then tap Done'
-      : '<strong>Tap points</strong> along the line to measure, then tap Done';
-  }
-  setEl('drawing-overlay', 'display', 'block');
-  setEl('measure-badge', 'display', 'none');
-  // Update done button text
-  const doneBtn = document.getElementById('btn-done-drawing');
-  if (doneBtn) doneBtn.textContent = mode === 'polygon' ? '✓ Done — Calculate Area' : '✓ Done — Calculate Length';
-
-  // Change cursor
-  map.getCanvas().style.cursor = 'crosshair';
-}
-
-function finishDrawing() {
-  if (!isDrawing) return;
-
-  const ptCount = trackedPoints.length;
-  console.log('finishDrawing: points =', ptCount, trackedPoints);
-
-  if (ptCount < 2) {
-    showToast('Tap at least 2 points on the map first');
-    return;
-  }
-
-  isDrawing = false;
-  map.getCanvas().style.cursor = '';
-  setEl('drawing-overlay', 'display', 'none');
-  clearPreview();
-
-  let feature;
-
-  // Always try polygon if 3+ points, otherwise line
-  const usePolygon = drawMode === 'polygon' && ptCount >= 3;
-
-  if (usePolygon) {
-    const ring = [...trackedPoints, trackedPoints[0]];
-    feature = {
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [ring] },
-      properties: {}
-    };
-    try {
-      const coords = feature.geometry.coordinates[0];
-      const sq = polygonAreaMeters(coords);
-      const perim = lineStringMeters(coords);
-      console.log('Area result:', sq, 'sq meters, perimeter:', perim, 'meters');
-      if (!sq || sq <= 0) throw new Error('Zero area');
-      drawnRawMeters = sq;
-      drawnPerimeterMeters = perim;
-      drawnRawType = 'area';
-    } catch(e) {
-      console.error('Area calculation error:', e);
-      showToast('Area calculation failed — try drawing again');
-      return;
-    }
-  } else {
-    feature = {
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: trackedPoints },
-      properties: {}
-    };
-    try {
-      const len = lineStringMeters(feature.geometry.coordinates);
-      console.log('Length result:', len, 'meters');
-      if (!len || len <= 0) throw new Error('Zero length');
-      drawnRawMeters = len;
-      drawnRawType = 'line';
-    } catch(e) {
-      console.error('Length calculation error:', e);
-      showToast('Length calculation failed — try drawing again');
-      return;
-    }
-  }
-
-  drawnFeature = feature;
-
-  // Display on map
-  draw.deleteAll();
-  draw.add(feature);
-
-  // Update form
-  document.getElementById('manual-area').value = '';
-  updateMeasureOptions();
-  updateCalc();
-  updateBadge();
-
-  // ── Auto-populate first line item with the measurement ──
-  autoPopulateLineItem();
-
-  // Scroll panel to top
-  const scroll = document.getElementById('panel-scroll');
-  if (scroll) scroll.scrollTop = 0;
-
-  if (usePolygon) {
-    showToast('Area measured! Set your price below ↓');
-  } else if (drawMode === 'polygon' && ptCount === 2) {
-    showToast('2 points → measured as line. Use 3+ for area.');
-  } else {
-    showToast('Length measured! Set your price below ↓');
-  }
-}
-
-function cancelDrawing() {
-  isDrawing = false;
-  trackedPoints = [];
-  map.getCanvas().style.cursor = '';
-  setEl('drawing-overlay', 'display', 'none');
-  clearPreview();
-  activateTool('tool-draw');
-}
-
-function undoLastPoint() {
-  if (!isDrawing || trackedPoints.length === 0) return;
-  trackedPoints.pop();
-  console.log('Undo — points remaining:', trackedPoints.length);
-  updatePointCounter();
-  updateDrawPreview();
-  showToast('Point removed ↩');
-}
-
-function clearDrawing() {
-  if (isDrawing) cancelDrawing();
-  drawnFeature = null;
-  drawnRawMeters = 0;
-  drawnPerimeterMeters = 0;
-  drawnRawType = 'area';
-  trackedPoints = [];
-  if (draw) draw.deleteAll();
-  clearPreview();
-  setEl('measure-badge', 'display', 'none');
-  // Clear all 4 measurement inputs
-  ['sqft','linft','sqyd','acre'].forEach(u => {
-    const el = document.getElementById('munit-' + u);
-    if (el) el.value = '';
-    const box = document.getElementById('munit-box-' + u);
-    if (box) { box.classList.remove('has-value'); box.classList.remove('selected'); }
-  });
-  document.getElementById('manual-area') && (document.getElementById('manual-area').value = '');
-  const prow = document.getElementById('mrow-pricing');
-  if (prow) prow.style.display = 'none';
-  updateMeasureOptions();
-  updateCalc();
-}
-
-// ─── Live preview while drawing
-function updateDrawPreview() {
-  if (!map || !map.getSource('draw-preview')) return;
-  const pts = trackedPoints;
-  const features = [];
-
-  // Points
-  pts.forEach(pt => {
-    features.push({ type: 'Feature', geometry: { type: 'Point', coordinates: pt }, properties: {} });
-  });
-
-  // Line connecting points
-  if (pts.length >= 2) {
-    const coords = drawMode === 'polygon' && pts.length >= 3
-      ? [...pts, pts[0]]  // close it visually
-      : pts;
-    features.push({
-      type: 'Feature',
-      geometry: { type: 'LineString', coordinates: coords },
-      properties: {}
-    });
-  }
-
-  // Fill preview for polygon
-  if (drawMode === 'polygon' && pts.length >= 3) {
-    features.push({
-      type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [[...pts, pts[0]]] },
-      properties: {}
-    });
-  }
-
-  map.getSource('draw-preview').setData({ type: 'FeatureCollection', features });
-}
-
-function clearPreview() {
-  if (map && map.getSource('draw-preview')) {
-    map.getSource('draw-preview').setData({ type: 'FeatureCollection', features: [] });
-  }
-}
-
-// ─── Toolbar highlight
-function activateTool(id) {
-  document.querySelectorAll('.map-tool-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById(id)?.classList.add('active');
-}
-
-// ─── Point counter during drawing
-function updatePointCounter() {
-  const el = document.getElementById('point-counter');
-  const undoBtn = document.getElementById('btn-undo-point');
-  if (!el) return;
-  const n = trackedPoints.length;
-
-  // Enable/disable undo button
-  if (undoBtn) undoBtn.disabled = n === 0;
-
-  if (n === 0) {
-    el.textContent = 'Tap on the map to add points';
-  } else if (n === 1) {
-    el.textContent = '1 point — tap more corners';
-  } else if (n === 2) {
-    el.textContent = '2 points — tap more or tap Done for a line';
-  } else {
-    el.textContent = `${n} points — tap Done to finish`;
-  }
-}
-
-// ─── Toggle satellite labels
-// ─── Street View / 360°
-function openStreetView() {
-  let lat, lng;
-  if (map) {
-    const center = map.getCenter();
-    lat = center.lat;
-    lng = center.lng;
-  }
-  if (lastLat && lastLng) {
-    lat = lastLat;
-    lng = lastLng;
-  }
-  if (!lat || !lng) {
-    showToast('Search an address first');
-    return;
-  }
-  // Open Google Street View in new tab
-  const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}&heading=0&pitch=0&fov=90`;
-  window.open(url, '_blank');
-}
-
-function toggleLabels() {
-  if (!map) return;
-  mapStyleHasLabels = !mapStyleHasLabels;
-  const style = mapStyleHasLabels
-    ? 'mapbox://styles/mapbox/satellite-streets-v12'
-    : 'mapbox://styles/mapbox/satellite-v9';
-  const savedShape = draw ? draw.getAll() : null;
-  map.setStyle(style);
-  map.once('style.load', () => {
-    // Re-add all custom sources/layers after style reload
-    addCustomMapLayers();
-    // Restore saved shape
-    if (draw && savedShape?.features.length) {
-      draw._data = savedShape;
-      draw._update();
-    }
-    showToast(mapStyleHasLabels ? 'Labels on' : 'Labels off');
+  // Wire edit clicks on client/address rows
+  card.querySelectorAll('.rc-row').forEach(row => {
+    row.addEventListener('click', () => goStep(parseInt(row.dataset.step)));
   });
 }
 
-// Helper: add all custom GeoJSON sources and layers to the map
-// Called on initial load and after any style change
-function addCustomMapLayers() {
-  if (!map) return;
-  // Draw preview (in-progress)
-  if (!map.getSource('draw-preview')) {
-    map.addSource('draw-preview', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({ id: 'draw-preview-fill', type: 'fill', source: 'draw-preview', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.18 } });
-    map.addLayer({ id: 'draw-preview-line', type: 'line', source: 'draw-preview', paint: { 'line-color': '#E8A020', 'line-width': 2.5, 'line-dasharray': [3,2] } });
-    map.addLayer({ id: 'draw-preview-points', type: 'circle', source: 'draw-preview', filter: ['==', '$type', 'Point'], paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-  }
-  // Drawn shape (finalized)
-  if (!map.getSource('drawn-shape')) {
-    map.addSource('drawn-shape', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addSource('drawn-verts', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({ id: 'drawn-shape-fill', type: 'fill', source: 'drawn-shape', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.2 } });
-    map.addLayer({ id: 'drawn-shape-stroke', type: 'line', source: 'drawn-shape', filter: ['==', '$type', 'Polygon'], paint: { 'line-color': '#E8A020', 'line-width': 3 } });
-    map.addLayer({ id: 'drawn-shape-line', type: 'line', source: 'drawn-shape', filter: ['==', '$type', 'LineString'], paint: { 'line-color': '#E8A020', 'line-width': 4, 'line-dasharray': [2,1] } });
-    map.addLayer({ id: 'drawn-verts-circle', type: 'circle', source: 'drawn-verts', paint: { 'circle-radius': 6, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-  }
+function rcRow(label, value, stepIdx) {
+  return `<div class="rc-row" data-step="${stepIdx}">
+    <span class="rc-label">${label}</span>
+    <div><span class="rc-value">${esc(value)}</span><span class="rc-edit">✏️</span></div>
+  </div>`;
 }
 
 // ═══════════════════════════════════════
 //  GEOCODING
 // ═══════════════════════════════════════
-async function fetchSuggestions(q) {
+async function fetchAddrSuggestions(q) {
   if (!mapboxToken) return;
   try {
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=5&country=US`;
     const data = await fetch(url).then(r => r.json());
-    const list = document.getElementById('autocomplete-list');
-    list.innerHTML = '';
-    (data.features || []).forEach(f => {
-      const item = document.createElement('div');
-      item.className = 'autocomplete-item';
-      item.textContent = f.place_name;
-      item.addEventListener('click', () => {
-        document.getElementById('addr-input').value = f.place_name;
-        clearAutocomplete();
-        flyTo(f.center[0], f.center[1], f.place_name);
-      });
-      list.appendChild(item);
-    });
-  } catch(e) {}
-}
-
-async function geocodeAddress() {
-  const q = document.getElementById('addr-input').value.trim();
-  if (!q || !mapboxToken) return;
-  clearAutocomplete();
-  try {
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=1`;
-    const data = await fetch(url).then(r => r.json());
-    if (data.features?.length) { const f = data.features[0]; flyTo(f.center[0], f.center[1], f.place_name); }
-    else showToast('Address not found');
-  } catch { showToast('Search error'); }
-}
-
-function clearAutocomplete() {
-  const el = document.getElementById('autocomplete-list');
-  if (el) el.innerHTML = '';
-}
-
-function clearQuoteAddrAutocomplete() {
-  const el = document.getElementById('quote-addr-autocomplete');
-  if (el) el.innerHTML = '';
-}
-
-async function fetchQuoteAddrSuggestions(q) {
-  if (!mapboxToken) return;
-  try {
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=5&country=US&types=address,place,poi`;
-    const data = await fetch(url).then(r => r.json());
-    const list = document.getElementById('quote-addr-autocomplete');
+    const list = el('addr-autocomplete');
     if (!list) return;
     list.innerHTML = '';
     (data.features || []).forEach(f => {
       const item = document.createElement('div');
-      item.className = 'autocomplete-item';
+      item.className = 'ac-item';
       item.textContent = f.place_name;
       item.addEventListener('click', () => {
-        const input = document.getElementById('quote-address');
-        if (input) input.value = f.place_name;
-        // Also update map + lastAddress so 📐 and share/save have the right address
-        lastAddress = f.place_name;
-        lastLat = f.center[1];
-        lastLng = f.center[0];
-        setText('address-display', f.place_name.split(',').slice(0,2).join(','));
-        clearQuoteAddrAutocomplete();
-        // Fly map to the selected address
-        if (map) map.flyTo({ center: f.center, zoom: 18, speed: 1.5 });
-        showToast('Address set 📍');
+        el('inp-address').value = f.place_name;
+        lastLat = f.center[1]; lastLng = f.center[0];
+        clearAddrAutocomplete();
+        updateContinueBtn();
       });
       list.appendChild(item);
     });
-  } catch(e) {}
+  } catch {}
 }
 
-function flyTo(lng, lat, name) {
-  lastLat = lat; lastLng = lng; lastAddress = name;
-  setText('address-display', name.split(',').slice(0,2).join(','));
-  const addrInput = document.getElementById('quote-address');
-  if (addrInput && !addrInput.value) addrInput.value = name;
-  if (map) map.flyTo({ center: [lng, lat], zoom: 18, speed: 1.5 });
+function clearAddrAutocomplete() {
+  const list = el('addr-autocomplete');
+  if (list) list.innerHTML = '';
 }
 
 function geolocateUser() {
-  if (!navigator.geolocation) return;
-  navigator.geolocation.getCurrentPosition(pos => {
-    if (map) map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 18 });
-  }, () => {});
-}
-
-// ═══════════════════════════════════════
-//  MEASUREMENT & CALC
-// ═══════════════════════════════════════
-function updateMeasureOptions() {
-  // Update title based on draw type
-  const title = document.getElementById('mrow-title');
-  const hint  = document.getElementById('mrow-hint');
-  if (title) title.textContent = drawnRawType === 'line' ? '📏 Measurements (Line)' : '📐 Measurements';
-  if (hint)  hint.textContent  = drawnRawMeters > 0 ? 'Tap a label to apply to quote' : 'Draw on map or type a value';
-  // Keep hidden legacy select in sync
-  const sel = document.getElementById('measure-type');
-  if (sel) sel.value = 'sqft';
-}
-
-// Returns all 4 measurement values from current raw meters
-function getAllMeasurements() {
-  if (drawnRawMeters > 0) {
-    if (drawnRawType === 'line') {
-      const linft = drawnRawMeters * 3.28084;
-      return { sqft: null, linft: linft, sqyd: drawnRawMeters * 1.09361, acre: null };
-    } else {
-      return {
-        sqft:  drawnRawMeters * 10.7639,
-        linft: drawnPerimeterMeters > 0 ? drawnPerimeterMeters * 3.28084 : null,
-        sqyd:  drawnRawMeters * 1.19599,
-        acre:  drawnRawMeters / 4046.86
-      };
-    }
-  }
-  // No drawing — check each box for manual entry and convert from whichever has a value
-  const sqftVal = parseFloat(document.getElementById('munit-sqft')?.value);
-  if (sqftVal > 0) {
-    return { sqft: sqftVal, linft: null, sqyd: sqftVal / 9, acre: sqftVal / 43560 };
-  }
-  const sqydVal = parseFloat(document.getElementById('munit-sqyd')?.value);
-  if (sqydVal > 0) {
-    return { sqft: sqydVal * 9, linft: null, sqyd: sqydVal, acre: (sqydVal * 9) / 43560 };
-  }
-  const acreVal = parseFloat(document.getElementById('munit-acre')?.value);
-  if (acreVal > 0) {
-    return { sqft: acreVal * 43560, linft: null, sqyd: (acreVal * 43560) / 9, acre: acreVal };
-  }
-  const linftVal = parseFloat(document.getElementById('munit-linft')?.value);
-  if (linftVal > 0) {
-    return { sqft: null, linft: linftVal, sqyd: null, acre: null };
-  }
-  return { sqft: 0, linft: 0, sqyd: 0, acre: 0 };
-}
-
-// Update all 4 input boxes from raw meters (called after draw or after editing one box)
-function updateAllMeasurementInputs() {
-  const m = getAllMeasurements();
-  const fmt4 = (v, decimals) => v != null && v > 0 ? parseFloat(v.toFixed(decimals)) : '';
-
-  const sqftEl  = document.getElementById('munit-sqft');
-  const linftEl = document.getElementById('munit-linft');
-  const sqydEl  = document.getElementById('munit-sqyd');
-  const acreEl  = document.getElementById('munit-acre');
-
-  // Only update boxes that are NOT currently focused (don't overwrite what user is typing)
-  const active = document.activeElement?.id;
-  if (active !== 'munit-sqft'  && sqftEl)  sqftEl.value  = fmt4(m.sqft, 1);
-  if (active !== 'munit-linft' && linftEl) linftEl.value = m.linft != null ? fmt4(m.linft, 1) : '';
-  if (active !== 'munit-sqyd'  && sqydEl)  sqydEl.value  = fmt4(m.sqyd, 2);
-  if (active !== 'munit-acre'  && acreEl)  acreEl.value  = fmt4(m.acre, 4);
-
-  // Highlight boxes that have values
-  ['sqft','linft','sqyd','acre'].forEach(u => {
-    const box = document.getElementById('munit-box-' + u);
-    const val = m[u];
-    if (box) box.classList.toggle('has-value', val != null && val > 0);
-  });
-
-  // Update legacy hidden inputs for backward compat
-  const manual = document.getElementById('manual-area');
-  if (manual) manual.value = m.sqft > 0 ? parseFloat(m.sqft.toFixed(1)) : '';
-
-  // Update pricing equivalents row
-  updatePricingEquivalents(m);
-}
-
-// When price is set on a line item, show what it costs per other unit
-function updatePricingEquivalents(m) {
-  const row = document.getElementById('mrow-pricing');
-  if (!row) return;
-  syncLineItemsFromDOM();
-  const firstItem = lineItems.find(i => i.price > 0 && i.area > 0);
-  if (!firstItem || !m) { row.style.display = 'none'; return; }
-  // Need either sqft or linft to have a value
-  const hasMeasurement = (m.sqft != null && m.sqft > 0) || (m.linft != null && m.linft > 0);
-  if (!hasMeasurement) { row.style.display = 'none'; return; }
-
-  // Show relevant price equivalents based on measurement type
-  let chips;
-  if (firstItem.unit === 'linft') {
-    chips = `<span class="mrow-price-chip">$${parseFloat(firstItem.price.toFixed(2))} / Lin Ft</span>`;
-  } else {
-    const pricePerSqft = firstItem.unit === 'sqft'  ? firstItem.price
-      : firstItem.unit === 'sqyd'  ? firstItem.price / 9
-      : firstItem.unit === 'acre'  ? firstItem.price / 43560
-      : firstItem.price;
-
-    const items = [
-      { label: 'Sq Ft',  val: pricePerSqft },
-      { label: 'Sq Yd',  val: pricePerSqft * 9 },
-      { label: 'Acre',   val: pricePerSqft * 43560 },
-    ];
-    chips = items.map(it => `<span class="mrow-price-chip">$${parseFloat(it.val.toFixed(4))} / ${it.label}</span>`).join('');
-  }
-
-  row.innerHTML = `<div class="mrow-pricing-label">Price equivalents:</div>` + chips;
-  row.style.display = 'block';
-}
-
-// Called when user types in any measurement box — recalculate raw meters and update all others
-function onMeasurementInput(unit, value) {
-  const v = parseFloat(value);
-  if (isNaN(v) || v <= 0) {
-    // Clear everything if all boxes are empty
-    const anyFilled = ['sqft','linft','sqyd','acre'].some(u => {
-      if (u === unit) return false;
-      const el = document.getElementById('munit-' + u);
-      return parseFloat(el?.value) > 0;
-    });
-    if (!anyFilled) { drawnRawMeters = 0; drawnPerimeterMeters = 0; }
-    updateCalc();
-    return;
-  }
-
-  // Recalculate drawnRawMeters based on which unit was edited
-  if (drawnRawType === 'line') {
-    if      (unit === 'linft') drawnRawMeters = v / 3.28084;
-    else if (unit === 'sqyd')  drawnRawMeters = v / 1.09361;
-    else                        drawnRawMeters = v / 3.28084;
-  } else {
-    if      (unit === 'sqft')  drawnRawMeters = v / 10.7639;
-    else if (unit === 'linft') drawnPerimeterMeters = v / 3.28084;  // adjust perimeter only
-    else if (unit === 'sqyd')  drawnRawMeters = v / 1.19599;
-    else if (unit === 'acre')  drawnRawMeters = v * 4046.86;
-  }
-
-  // ── Auto-fill first line item so total updates immediately ──
-  autoFillFirstLineItemArea();
-  updateCalc();
-}
-
-// ── Push current measurement into first line item's area field
-// Called when user types in measurement boxes — no copy/paste needed
-function autoFillFirstLineItemArea() {
-  if (lineItems.length === 0) return;
-  const firstItem = lineItems[0];
-  const firstEl = document.getElementById(`li-${firstItem.id}`);
-  if (!firstEl) return;
-
-  // Use whatever unit the line item is currently set to
-  const unitSel = firstEl.querySelector('.li-unit');
-  const unit = unitSel?.value || firstItem.unit || 'sqft';
-  const val = getMeasurementByUnit(unit);
-  if (!val || val <= 0) return;
-
-  // Update DOM input directly
-  const areaInput = firstEl.querySelector('.li-area');
-  const rounded = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
-  if (areaInput) areaInput.value = rounded;
-
-  // Sync state so total recalculates
-  syncLineItemsFromDOM();
-}
-
-// Set raw meters from a known area + unit (used when loading a quote)
-function setRawMetersFromAreaAndUnit(area, unit) {
-  if (!area || area <= 0) { drawnRawMeters = 0; drawnPerimeterMeters = 0; return; }
-  const v = parseFloat(area);
-  drawnRawType = (unit === 'linft') ? 'line' : 'area';
-  switch(unit) {
-    case 'sqft':  drawnRawMeters = v / 10.7639; break;
-    case 'sqyd':  drawnRawMeters = v / 1.19599; break;
-    case 'acre':  drawnRawMeters = v * 4046.86; break;
-    case 'linft': drawnRawMeters = v / 3.28084; break;
-    default:      drawnRawMeters = v / 10.7639;
-  }
-}
-
-function getDisplayMeasurement() {
-  // Returns primary measurement value (sqft for area, linft for line)
-  if (drawnRawMeters > 0) {
-    if (drawnRawType === 'line') return drawnRawMeters * 3.28084;
-    return drawnRawMeters * 10.7639;
-  }
-  // Check sqft first, then linft for manual entry
-  const sqft = parseFloat(document.getElementById('munit-sqft')?.value);
-  if (sqft > 0) return sqft;
-  const linft = parseFloat(document.getElementById('munit-linft')?.value);
-  if (linft > 0) return linft;
-  return 0;
-}
-
-// Get measurement value in a specific unit
-function getMeasurementByUnit(unit) {
-  const el = document.getElementById('munit-' + unit);
-  const typed = parseFloat(el?.value);
-  if (!isNaN(typed) && typed > 0) return typed;
-  // Derive from raw meters
-  if (drawnRawMeters > 0) {
-    const m = getAllMeasurements();
-    return m[unit] || 0;
-  }
-  return 0;
-}
-
-function unitLabel(type) {
-  return { sqft: 'sq ft', linft: 'lin ft', sqyd: 'sq yd', acre: 'acres' }[type] || 'sq ft';
-}
-
-// ── Bridge: measurement box → first line item ──
-function selectMeasurementForItem(unit) {
-  const val = getMeasurementByUnit(unit);
-  if (!val || val <= 0) { showToast('Enter a measurement value first'); return; }
-  if (lineItems.length === 0) { addLineItem(); }
-  const item = lineItems[0];
-  const itemEl = document.getElementById(`li-${item.id}`);
-  if (!itemEl) return;
-
-  // ── Update the DOM inputs directly — NO full rebuild ──
-  const areaInput = itemEl.querySelector('.li-area');
-  const unitSelect = itemEl.querySelector('.li-unit');
-  const rounded = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
-  if (areaInput) areaInput.value = rounded;
-  if (unitSelect) unitSelect.value = unit;
-
-  // Visual: highlight selected box
-  document.querySelectorAll('.munit-box').forEach(b => b.classList.remove('selected'));
-  document.getElementById('munit-box-' + unit)?.classList.add('selected');
-
-  // Trigger calc — reads from live DOM, updates subtotal + total
-  onLineItemChange();
-  showToast(`${fmt(val)} ${unitLabel(unit)} applied ✓`);
-}
-
-// ── Auto-populate first line item from current measurement ──
-function autoPopulateLineItem() {
-  if (lineItems.length === 0) return;
-  const item = lineItems[0];
-  const itemEl = document.getElementById(`li-${item.id}`);
-  if (!itemEl) return;
-
-  const unit = drawnRawType === 'line' ? 'linft' : 'sqft';
-  const m = getAllMeasurements();
-  const val = m[unit];
-  if (!val || val <= 0) return;
-
-  // ── Update DOM inputs directly — NO full rebuild ──
-  const areaInput = itemEl.querySelector('.li-area');
-  const unitSelect = itemEl.querySelector('.li-unit');
-  const rounded = parseFloat(val.toFixed(unit === 'acre' ? 4 : 1));
-  if (areaInput) areaInput.value = rounded;
-  if (unitSelect) unitSelect.value = unit;
-
-  // Highlight the auto-selected box
-  document.querySelectorAll('.munit-box').forEach(b => b.classList.remove('selected'));
-  document.getElementById('munit-box-' + unit)?.classList.add('selected');
-
-  // Sync state + update subtotals + total
-  onLineItemChange();
-}
-
-function getPrice() {
-  // Legacy — returns price of first line item for backward compat
-  if (lineItems.length > 0) return lineItems[0].price || 0;
-  return 0;
-}
-
-function updateCalc() {
-  // Update all 4 measurement inputs
-  updateAllMeasurementInputs();
-  updateMeasureOptions();
-
-  // Calculate and display grand total
-  syncLineItemsFromDOM();
-  updateTotalDisplay();
-
-  if (drawnFeature || drawnRawMeters > 0 || getDisplayMeasurement() > 0) updateBadge();
-}
-
-function updateBadge() {
-  const m = getAllMeasurements();
-  const isLine = drawnRawType === 'line';
-  const val = isLine ? (m.linft || 0) : (m.sqft || 0);
-  const unit = isLine ? 'lin ft' : 'sq ft';
-  if (val <= 0) { setEl('measure-badge', 'display', 'none'); return; }
-  setText('badge-val', fmt(val));
-  setText('badge-unit', unit);
-  setEl('measure-badge', 'display', 'flex');
-}
-
-// ═══════════════════════════════════════
-//  AI FEATURES
-// ═══════════════════════════════════════
-async function aiSuggestPrice() {
-  const btn = document.getElementById('ai-suggest-btn');
-  syncLineItemsFromDOM();
-  const firstItem = lineItems[0];
-  const area = firstItem?.area || getDisplayMeasurement();
-  if (!area) { showToast('Enter an area on the first line item'); return; }
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Getting prices...'; }
-  try {
-    const res = await authFetch('/api/ai/suggest-price', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        project_type: firstItem?.type || 'pressure-washing',
-        area: area.toFixed(1),
-        unit: unitLabel(firstItem?.unit || 'sqft'),
-        location: lastAddress || 'DFW Texas'
-      })
-    });
-    if (!res.ok) throw new Error();
-    aiPriceData = await res.json();
-    showAiPriceModal(aiPriceData);
-  } catch { showToast('AI pricing unavailable'); }
-  finally { if (btn) { btn.disabled = false; btn.textContent = '✨ AI Suggest Price'; } }
-}
-
-function showAiPriceModal(d) {
-  const f2 = v => '$' + parseFloat(v||0).toFixed(2);
-  document.getElementById('ai-price-content').innerHTML = `
-    <div class="price-tier low">
-      <div><div class="tier-label">🟢 Low / Budget</div><div class="tier-sub">Competitive rate</div></div>
-      <div class="tier-right"><div class="tier-val">${f2(d.low_per_unit)}<span>/unit</span></div><div class="tier-total">Total ≈ ${f2(d.low_total)}</div></div>
-    </div>
-    <div class="price-tier mid">
-      <div><div class="tier-label">⭐ Recommended</div><div class="tier-sub">Market rate</div></div>
-      <div class="tier-right"><div class="tier-val">${f2(d.recommended_per_unit)}<span>/unit</span></div><div class="tier-total">Total ≈ ${f2(d.mid_total)}</div></div>
-    </div>
-    <div class="price-tier high">
-      <div><div class="tier-label">🔴 Premium</div><div class="tier-sub">High-end market</div></div>
-      <div class="tier-right"><div class="tier-val">${f2(d.high_per_unit)}<span>/unit</span></div><div class="tier-total">Total ≈ ${f2(d.high_total)}</div></div>
-    </div>
-    ${d.reasoning ? `<div class="ai-reasoning">💡 ${esc(d.reasoning)}</div>` : ''}`;
-  openModal('ai-price-modal');
-}
-
-function applyAiPrice() {
-  if (!aiPriceData || lineItems.length === 0) return;
-  syncLineItemsFromDOM();  // preserve user's current inputs
-  const rec = parseFloat(aiPriceData.recommended_per_unit);
-  lineItems[0].price = rec;
-  renderLineItems();  // must rebuild to inject custom price option
-  // Force the select value (innerHTML can lag on mobile WebKit)
-  const itemEl = document.getElementById(`li-${lineItems[0].id}`);
-  const priceSelect = itemEl?.querySelector('.li-price');
-  if (priceSelect) priceSelect.value = String(parseFloat(rec.toFixed(2)));
-  onLineItemChange();  // update subtotals + total from live DOM
-  closeModal('ai-price-modal');
-  showToast('AI price applied ✨');
-}
-
-async function generateNarrative() {
-  const client = document.getElementById('client-name')?.value.trim();
-  if (!client) { showToast('Enter a client name first'); return; }
-  const narrBtn = document.getElementById('btn-narrative');
-  const regenBtn = document.getElementById('btn-narrative-regen');
-  if (narrBtn) { narrBtn.disabled = true; narrBtn.textContent = '⏳ Writing...'; }
-  if (regenBtn) regenBtn.disabled = true;
-  const section = document.getElementById('narrative-section');
-  const box = document.getElementById('narrative-text');
-  section.style.display = 'block';
-  box.textContent = '✍️ Writing...';
-  syncLineItemsFromDOM();
-  const markup = parseFloat(document.getElementById('markup')?.value) || 0;
-  const subtotal = getLineItemsSubtotal();
-  const total = subtotal * (1 + markup / 100);
-  const itemsSummary = lineItems.map(i => {
-    const typeName = JOB_TYPES.find(t => t.value === i.type)?.label || i.type;
-    return `${typeName}: ${fmt(i.area)} ${unitLabel(i.unit)} × $${i.price.toFixed(2)} × ${i.qty} = $${fmtMoney(i.area * i.price * i.qty)}`;
-  }).join('\n');
-  try {
-    const res = await authFetch('/api/ai/generate-narrative', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_name: client,
-        project_type: lineItems.map(i => JOB_TYPES.find(t => t.value === i.type)?.label || i.type).join(' + '),
-        area: lineItems[0]?.area?.toFixed(1) || '0',
-        unit: unitLabel(lineItems[0]?.unit || 'sqft'),
-        price_per_unit: lineItems[0]?.price?.toFixed(2) || '0',
-        total: fmtMoney(total),
-        notes: document.getElementById('notes')?.value + '\n\nLine items:\n' + itemsSummary,
-        address: lastAddress, qty: 1
-      })
-    });
-    const data = await res.json();
-    box.textContent = data.narrative || 'No narrative returned.';
-    showToast('Narrative ready ✍️');
-  } catch { box.textContent = 'Could not generate — check connection.'; }
-  finally {
-    if (narrBtn) { narrBtn.disabled = false; narrBtn.textContent = '✍️ Narrative'; }
-    if (regenBtn) regenBtn.disabled = false;
-  }
-}
-
-// AI Chat
-function openAiPanel() {
-  document.getElementById('ai-panel').classList.add('open');
-  document.getElementById('ai-overlay').classList.add('open');
-  if (!chatHistory.length) addChatMsg('ai', "Hi! Ask me anything about pricing, measurements, or job scoping 💡");
-  setTimeout(() => document.getElementById('chat-input')?.focus(), 300);
-}
-function closeAiPanel() {
-  document.getElementById('ai-panel').classList.remove('open');
-  document.getElementById('ai-overlay').classList.remove('open');
-}
-
-async function sendChat() {
-  const input = document.getElementById('chat-input');
-  const sendBtn = document.getElementById('chat-send-btn');
-  const msg = input?.value.trim();
-  if (!msg) return;
-  if (sendBtn) sendBtn.disabled = true;
-  input.value = '';
-  addChatMsg('user', msg);
-  chatHistory.push({ role: 'user', content: msg });
-  const tid = addChatMsg('ai', '...', true);
-  try {
-    const res = await authFetch('/api/ai/chat', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: chatHistory.slice(-10),
-        context: {
-          project_type: lineItems[0]?.type || 'custom',
-          area: getDisplayMeasurement().toFixed(1),
-          unit: unitLabel(lineItems[0]?.unit || 'sqft'),
-          price: getPrice().toFixed(2), address: lastAddress
+  if (!navigator.geolocation) { toast('GPS not available'); return; }
+  toast('Getting location...');
+  navigator.geolocation.getCurrentPosition(async pos => {
+    lastLat = pos.coords.latitude; lastLng = pos.coords.longitude;
+    // Reverse geocode
+    if (mapboxToken) {
+      try {
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lastLng},${lastLat}.json?access_token=${mapboxToken}&limit=1`;
+        const data = await fetch(url).then(r => r.json());
+        if (data.features?.length) {
+          el('inp-address').value = data.features[0].place_name;
+          updateContinueBtn();
+          toast('Location set 📍');
         }
-      })
-    });
-    const data = await res.json();
-    removeMsg(tid);
-    const reply = data.reply || 'Something went wrong.';
-    addChatMsg('ai', reply);
-    chatHistory.push({ role: 'assistant', content: reply });
-  } catch { removeMsg(tid); addChatMsg('ai', 'Connection error.'); }
-  finally { if (sendBtn) sendBtn.disabled = false; }
+      } catch { toast('Could not resolve address'); }
+    } else {
+      el('inp-address').value = `${lastLat.toFixed(5)}, ${lastLng.toFixed(5)}`;
+      updateContinueBtn();
+      toast('Location set 📍');
+    }
+  }, () => toast('Location denied'));
 }
 
-let _chatMsgCounter = 0;
-function addChatMsg(role, text, isTyping = false) {
-  const c = document.getElementById('chat-messages');
-  if (!c) return '';
-  const id = 'msg-' + Date.now() + '-' + (++_chatMsgCounter);
-  const div = document.createElement('div');
-  div.id = id;
-  div.className = `chat-msg ${role}${isTyping ? ' typing' : ''}`;
-  div.textContent = text;
-  c.appendChild(div);
-  c.scrollTop = c.scrollHeight;
-  return id;
+function openExternal(type) {
+  const addr = el('inp-address')?.value || '';
+  const lat = lastLat, lng = lastLng;
+  const q = addr || (lat && lng ? `${lat},${lng}` : '');
+  if (!q) { toast('Enter an address first'); return; }
+  const urls = {
+    maps: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
+    earth: `https://earth.google.com/web/search/${encodeURIComponent(q)}`,
+    street: lat && lng
+      ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`
+  };
+  window.open(urls[type], '_blank');
 }
-function removeMsg(id) { document.getElementById(id)?.remove(); }
 
 // ═══════════════════════════════════════
 //  SAVE / LOAD
 // ═══════════════════════════════════════
-async function saveQuote() {
-  const client = document.getElementById('client-name')?.value.trim();
-  if (!client) { showToast('Enter a client name first'); return; }
-  const saveBtn = document.getElementById('btn-save');
-  if (saveBtn?.disabled) return;  // already saving
-  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = '⏳ Saving...'; }
-  syncLineItemsFromDOM();
-  const markup = parseFloat(document.getElementById('markup')?.value) || 0;
-  const subtotal = getLineItemsSubtotal();
-  const total = subtotal * (1 + markup / 100);
-  const unit = lineItems[0]?.unit || 'sqft';
-  const narrative = document.getElementById('narrative-text')?.textContent || '';
-  const primaryType = lineItems[0]?.type || 'custom';
-  const primaryArea = lineItems[0]?.area || 0;
-  const primaryPrice = lineItems[0]?.price || 0;
-  const address = document.getElementById('quote-address')?.value || lastAddress || '';
+async function saveAndShare() {
+  address = el('inp-address')?.value || '';
+  clientName = el('inp-client')?.value || '';
+  if (!clientName) { toast('Enter a client name'); goStep(0); return; }
+
+  const allItems = [...items];
+  const grandTotal = allItems.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const primary = allItems[0] || {};
+  const narrative = el('narrative-box')?.textContent || '';
+
   const payload = {
-    client_name: client,
-    project_type: primaryType,
-    area: primaryArea, unit, price_per_unit: primaryPrice, total, qty: 1,
-    notes: document.getElementById('notes')?.value || '',
-    address, lat: lastLat, lng: lastLng,
-    polygon_geojson: drawnFeature ? drawnFeature.geometry : null,
+    client_name: clientName,
+    project_type: primary.service || 'custom',
+    area: parseFloat(primary.area) || 0,
+    unit: primary.unit || 'sqft',
+    price_per_unit: parseFloat(primary.price) || 0,
+    total: grandTotal,
+    qty: 1,
+    notes: el('inp-notes')?.value || '',
+    address: address,
+    lat: lastLat, lng: lastLng,
+    polygon_geojson: null,
     ai_narrative: (narrative && !narrative.includes('Writing')) ? narrative : '',
-    line_items: lineItems.map(i => ({
-      type: i.type, area: i.area, unit: i.unit, price: i.price, qty: i.qty,
-      label: JOB_TYPES.find(t => t.value === i.type)?.label || i.type,
-      subtotal: i.area * i.price * i.qty
+    line_items: allItems.map(i => ({
+      type: i.service, area: parseFloat(i.area) || 0, unit: i.unit,
+      price: parseFloat(i.price) || 0, qty: 1,
+      label: JOB_TYPES.find(j => j.id === i.service)?.label || i.service,
+      subtotal: (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0)
     })),
-    markup
+    markup: 0
   };
+
   try {
     let res;
     if (editingQuoteId) {
       res = await authFetch(`/api/quotes/${editingQuoteId}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
     } else {
       res = await authFetch('/api/quotes', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
       });
     }
     if (!res.ok) throw new Error();
-    showToast(editingQuoteId ? 'Quote updated! ✓' : 'Quote saved! 💾');
-    // Reset editing state
     editingQuoteId = null;
-    if (saveBtn) { saveBtn.textContent = '💾 Save'; saveBtn.classList.remove('editing'); }
-    loadSavedCount();
-  } catch { showToast('Save failed — check connection'); }
-  finally {
-    if (saveBtn) saveBtn.disabled = false;
-  }
-}
-
-async function loadSavedCount() {
-  try {
-    const data = await authFetch('/api/stats').then(r => r.json());
-    const n = data.total_quotes || 0;
-    setText('saved-count', n);
-    setText('saved-count-tab', n);
-  } catch {}
+    toast('Saved! 💾');
+    setTimeout(() => openSheet(), 300);
+  } catch { toast('Save failed — check connection'); }
 }
 
 async function loadSaved() {
-  const search = document.getElementById('search-input')?.value || '';
-  const container = document.getElementById('saved-list');
+  const search = el('search-quotes')?.value || '';
+  const container = el('saved-list');
   if (!container) return;
   container.innerHTML = '<div class="empty-state">Loading...</div>';
   try {
     const res = await authFetch(`/api/quotes?search=${encodeURIComponent(search)}&limit=30`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     renderSavedList(data.quotes || []);
-  } catch (err) {
-    console.error('loadSaved error:', err);
-    container.innerHTML = `<div class="empty-state">Failed to load quotes.<br><button onclick="loadSaved()" style="margin-top:8px;padding:6px 14px;border-radius:6px;border:1px solid #ccc;cursor:pointer">Retry</button></div>`;
+  } catch {
+    container.innerHTML = '<div class="empty-state">Failed to load.</div>';
   }
 }
 
 function renderSavedList(quotes) {
-  const container = document.getElementById('saved-list');
+  const container = el('saved-list');
   if (!quotes.length) { container.innerHTML = '<div class="empty-state">No quotes yet.</div>'; return; }
   window._savedQuotes = {};
   quotes.forEach(q => { window._savedQuotes[q.id] = q; });
+
   container.innerHTML = quotes.map(q => {
-    // Build 4-unit display from saved area+unit
-    const savedArea = parseFloat(q.area) || 0;
-    const savedUnit = q.unit || 'sqft';
-    let measurements = { sqft: 0, linft: null, sqyd: 0, acre: 0 };
-    if (savedArea > 0) {
-      // Convert to raw meters then to all units
-      let rawM = 0;
-      switch(savedUnit) {
-        case 'sqft':  rawM = savedArea / 10.7639; break;
-        case 'sqyd':  rawM = savedArea / 1.19599; break;
-        case 'acre':  rawM = savedArea * 4046.86; break;
-        case 'linft': rawM = savedArea / 3.28084; break;
-        default:      rawM = savedArea / 10.7639;
-      }
-      if (savedUnit === 'linft') {
-        measurements = { sqft: null, linft: rawM * 3.28084, sqyd: null, acre: null };
-      } else {
-        measurements = { sqft: rawM * 10.7639, linft: null, sqyd: rawM * 1.19599, acre: rawM / 4046.86 };
-      }
-    }
-
-    const fmtM = (v, d) => v != null && v > 0 ? parseFloat(v.toFixed(d)).toLocaleString() : '—';
-    const measureBadges = `
-      <div class="qc-measurements">
-        ${measurements.sqft != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.sqft, 1)}</strong> sq ft</span>` : ''}
-        ${measurements.linft != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.linft, 1)}</strong> lin ft</span>` : ''}
-        ${measurements.sqyd != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.sqyd, 2)}</strong> sq yd</span>` : ''}
-        ${measurements.acre != null ? `<span class="qcm-chip"><strong>${fmtM(measurements.acre, 4)}</strong> acres</span>` : ''}
-      </div>`;
-
-    let itemsSummary = '';
+    let itemsText = '';
     try {
-      const items = JSON.parse(q.line_items || '[]');
-      if (items.length > 1) {
-        itemsSummary = items.map(i => (i.label || i.type).replace(/-/g,' ')).join(' + ');
-      } else if (items.length === 1) {
-        itemsSummary = `${(items[0].label || items[0].type).replace(/-/g,' ')}`;
-      }
+      const li = JSON.parse(q.line_items || '[]');
+      itemsText = li.map(i => (i.label || i.type || '').replace(/-/g, ' ')).join(' + ');
     } catch {}
-    if (!itemsSummary) {
-      itemsSummary = `${(q.project_type||'').replace(/-/g,' ')}`;
-    }
+    if (!itemsText) itemsText = (q.project_type || '').replace(/-/g, ' ');
 
-    return `
-    <div class="quote-card">
+    return `<div class="quote-card">
       <div class="qc-header">
         <div>
           <div class="qc-client">${esc(q.client_name)}</div>
-          <div class="qc-meta">${esc(itemsSummary)}</div>
+          <div class="qc-meta">${itemsText}</div>
           <div class="qc-meta">${new Date(q.created_at).toLocaleDateString()}</div>
         </div>
         <div class="qc-total">$${fmtMoney(q.total)}</div>
       </div>
-      ${q.address ? `<div class="qc-meta">📍 ${esc(q.address.split(',').slice(0,2).join(','))}</div>` : ''}
-      ${savedArea > 0 ? measureBadges : ''}
+      ${q.address ? `<div class="qc-meta">📍 ${esc(q.address.split(',').slice(0, 2).join(','))}</div>` : ''}
       <div class="qc-actions">
         <button class="mini-btn edit" data-id="${q.id}">✏️ Edit</button>
         <button class="mini-btn load" data-id="${q.id}">Load</button>
@@ -1745,7 +628,10 @@ function renderSavedList(quotes) {
 
   container.querySelectorAll('.mini-btn.edit').forEach(b => b.addEventListener('click', () => editQuote(b.dataset.id)));
   container.querySelectorAll('.mini-btn.load').forEach(b => b.addEventListener('click', () => loadQuote(b.dataset.id)));
-  container.querySelectorAll('.mini-btn.share').forEach(b => b.addEventListener('click', () => openShareModal(window._savedQuotes[b.dataset.id])));
+  container.querySelectorAll('.mini-btn.share').forEach(b => b.addEventListener('click', () => {
+    const q = window._savedQuotes[b.dataset.id];
+    if (q) { buildShareTextFromQuote(q); openSheet(); }
+  }));
   container.querySelectorAll('.mini-btn.del').forEach(b => b.addEventListener('click', () => deleteQuote(b.dataset.id)));
 }
 
@@ -1753,248 +639,300 @@ async function loadQuote(id) {
   try {
     const q = await authFetch(`/api/quotes/${id}`).then(r => r.json());
     if (q.error) throw new Error();
-    document.getElementById('client-name').value = q.client_name || '';
-    document.getElementById('notes').value = q.notes || '';
-    document.getElementById('markup').value = q.markup || 0;
 
-    // Restore line items
-    lineItems = [];
-    lineItemIdCounter = 0;
-    let items = [];
-    try { items = JSON.parse(q.line_items || '[]'); } catch {}
-    if (items.length > 0) {
-      items.forEach(i => addLineItem(i));
-    } else {
-      // Legacy single-item quote
-      addLineItem({
-        type: q.project_type || 'pressure-washing',
-        area: parseFloat(q.area) || 0,
-        unit: q.unit || 'sqft',
-        price: parseFloat(q.price_per_unit) || 0,
-        qty: parseInt(q.qty) || 1
+    el('inp-client').value = q.client_name || '';
+    el('inp-address').value = q.address || '';
+    el('inp-notes').value = q.notes || '';
+    address = q.address || ''; clientName = q.client_name || '';
+    lastLat = q.lat; lastLng = q.lng;
+
+    items = [];
+    let lineItems = [];
+    try { lineItems = JSON.parse(q.line_items || '[]'); } catch {}
+
+    if (lineItems.length > 0) {
+      // Put last item as "current", rest as completed
+      lineItems.forEach((li, idx) => {
+        const item = { service: li.type, area: String(li.area || 0), unit: li.unit || 'sqft', price: String(li.price || 0) };
+        if (idx < lineItems.length - 1) items.push(item);
+        else current = item;
       });
+    } else {
+      current = {
+        service: q.project_type || 'custom',
+        area: String(q.area || 0),
+        unit: q.unit || 'sqft',
+        price: String(q.price_per_unit || 0)
+      };
     }
 
-    // Restore measurement: set raw meters from saved area+unit, then display all 4
-    const savedArea = parseFloat(q.area) || 0;
-    const savedUnit = q.unit || 'sqft';
-    drawnRawMeters = 0;
-    drawnPerimeterMeters = 0;
-    if (savedArea > 0) {
-      setRawMetersFromAreaAndUnit(savedArea, savedUnit);
-      // Highlight the unit used in the loaded quote
-      document.querySelectorAll('.munit-box').forEach(b => b.classList.remove('selected'));
-      document.getElementById('munit-box-' + savedUnit)?.classList.add('selected');
-    }
     if (q.ai_narrative) {
-      document.getElementById('narrative-text').textContent = q.ai_narrative;
-      document.getElementById('narrative-section').style.display = 'block';
-    } else {
-      document.getElementById('narrative-text').textContent = '';
-      document.getElementById('narrative-section').style.display = 'none';
+      el('narrative-box').textContent = q.ai_narrative;
+      el('narrative-box').classList.remove('hidden');
     }
-    if (q.polygon_geojson && draw && map?.loaded()) {
-      const geo = typeof q.polygon_geojson === 'string' ? JSON.parse(q.polygon_geojson) : q.polygon_geojson;
-      const feature = { type: 'Feature', geometry: geo, properties: {} };
-      drawnFeature = feature;
-      drawnRawType = geo.type === 'LineString' ? 'line' : 'area';
-      draw.deleteAll();
-      draw.add(feature);
-      if (q.lat && q.lng) map.flyTo({ center: [q.lng, q.lat], zoom: 18 });
-    } else {
-      // Clear any previous drawing from the map
-      drawnFeature = null;
-      if (draw) draw.deleteAll();
-      clearPreview();
-      setEl('measure-badge', 'display', 'none');
-    }
-    if (q.address) {
-      lastAddress = q.address; lastLat = q.lat; lastLng = q.lng;
-      setText('address-display', q.address.split(',').slice(0,2).join(','));
-      const addrInput = document.getElementById('quote-address');
-      if (addrInput) addrInput.value = q.address;
-    }
-    updateMeasureOptions();
-    updateCalc();
-    showTab('quote');
-    showToast('Quote loaded ✓');
-  } catch { showToast('Could not load quote'); }
+
+    switchView('quote');
+    // Go to review with all items loaded
+    if (current.service) items.push({ ...current });
+    current = { service: null, area: '', unit: 'sqft', price: '' };
+    goStep(4);
+    toast('Quote loaded ✓');
+  } catch { toast('Could not load quote'); }
 }
 
 async function editQuote(id) {
   await loadQuote(id);
   editingQuoteId = id;
-  const saveBtn = document.getElementById('btn-save');
-  if (saveBtn) { saveBtn.textContent = '💾 Update'; saveBtn.classList.add('editing'); }
-  showToast('Editing — make changes and hit Update');
+  toast('Editing — make changes and Save');
 }
 
 async function deleteQuote(id) {
   if (!confirm('Delete this quote?')) return;
   try {
     await authFetch(`/api/quotes/${id}`, { method: 'DELETE' });
-    showToast('Deleted');
-    loadSaved(); loadSavedCount();
-  } catch { showToast('Delete failed'); }
+    toast('Deleted'); loadSaved();
+  } catch { toast('Delete failed'); }
 }
 
 async function exportAll() {
   try {
-    // Paginate to fetch all quotes
-    let allQuotes = [];
-    let offset = 0;
-    const batchSize = 200;
-    while (true) {
-      const data = await authFetch(`/api/quotes?limit=${batchSize}&offset=${offset}`).then(r => r.json());
-      const batch = data.quotes || [];
-      allQuotes = allQuotes.concat(batch);
-      if (batch.length < batchSize || allQuotes.length >= data.total) break;
-      offset += batchSize;
-    }
-    const text = allQuotes.map(q => buildShareText(q)).join('\n\n══════════════\n\n');
+    const data = await authFetch('/api/quotes?limit=500').then(r => r.json());
+    const text = (data.quotes || []).map(q => buildShareTextFromQuote(q)).join('\n\n══════════════\n\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
     a.download = 'quotes-' + Date.now() + '.txt';
-    a.click();
-    showToast(`Exported ${allQuotes.length} quotes!`);
-  } catch { showToast('Export failed'); }
+    a.click(); toast('Exported!');
+  } catch { toast('Export failed'); }
 }
 
 // ═══════════════════════════════════════
-//  PRINT / SHARE
+//  AI FEATURES
 // ═══════════════════════════════════════
-function printQuote() { generatePDF(true); }
+async function aiSuggestPrice() {
+  const area = parseFloat(current.area);
+  if (!area) { toast('Enter an area first'); return; }
+  const btn = el('btn-ai-price');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Getting prices...'; }
+  try {
+    const res = await authFetch('/api/ai/suggest-price', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_type: current.service || 'custom',
+        area: area.toFixed(1),
+        unit: UNIT_LABELS[current.unit] || 'sq ft',
+        location: el('inp-address')?.value || 'DFW Texas'
+      })
+    });
+    if (!res.ok) throw new Error();
+    aiPriceData = await res.json();
+    showAiPriceModal(aiPriceData);
+  } catch { toast('AI pricing unavailable'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '✨ AI Suggest Price'; } }
+}
 
-function generatePDF(branded) {
-  syncLineItemsFromDOM();
-  const client = esc(document.getElementById('client-name')?.value || 'Client');
-  const markup = parseFloat(document.getElementById('markup')?.value) || 0;
-  const subtotal = getLineItemsSubtotal();
-  const total = subtotal * (1 + markup / 100);
-  const notes = esc(document.getElementById('notes')?.value || '');
-  const narrative = esc(document.getElementById('narrative-text')?.textContent || '');
+function showAiPriceModal(d) {
+  const f2 = v => '$' + parseFloat(v || 0).toFixed(2);
+  el('ai-price-content').innerHTML = `
+    <div class="price-tier low"><div><div class="tier-label">🟢 Low</div><div class="tier-sub">Competitive</div></div>
+      <div class="tier-right"><div class="tier-val">${f2(d.low_per_unit)}<span>/unit</span></div><div class="tier-total">≈ ${f2(d.low_total)}</div></div></div>
+    <div class="price-tier mid"><div><div class="tier-label">⭐ Recommended</div><div class="tier-sub">Market rate</div></div>
+      <div class="tier-right"><div class="tier-val">${f2(d.recommended_per_unit)}<span>/unit</span></div><div class="tier-total">≈ ${f2(d.mid_total)}</div></div></div>
+    <div class="price-tier high"><div><div class="tier-label">🔴 Premium</div><div class="tier-sub">High-end</div></div>
+      <div class="tier-right"><div class="tier-val">${f2(d.high_per_unit)}<span>/unit</span></div><div class="tier-total">≈ ${f2(d.high_total)}</div></div></div>
+    ${d.reasoning ? `<div class="ai-reasoning">💡 ${d.reasoning}</div>` : ''}`;
+  openModal('ai-price-modal');
+}
+
+function applyAiPrice() {
+  if (!aiPriceData) return;
+  current.price = String(parseFloat(aiPriceData.recommended_per_unit));
+  el('inp-price').value = current.price;
+  onPriceChange();
+  closeModal('ai-price-modal');
+  toast('Price applied ✨');
+}
+
+async function generateNarrative() {
+  clientName = el('inp-client')?.value || '';
+  if (!clientName) { toast('Enter a client name'); return; }
+  const box = el('narrative-box');
+  box.classList.remove('hidden');
+  box.textContent = '✍️ Writing...';
+
+  const allItems = [...items];
+  const grandTotal = allItems.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const primary = allItems[0] || {};
+  const itemsSummary = allItems.map(i => {
+    const label = JOB_TYPES.find(j => j.id === i.service)?.label || i.service;
+    return `${label}: ${fmtNum(i.area)} ${UNIT_LABELS[i.unit]} × $${parseFloat(i.price).toFixed(2)} = $${fmtMoney((parseFloat(i.area) || 0) * (parseFloat(i.price) || 0))}`;
+  }).join('\n');
+
+  try {
+    const res = await authFetch('/api/ai/generate-narrative', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_name: clientName,
+        project_type: allItems.map(i => JOB_TYPES.find(j => j.id === i.service)?.label || i.service).join(' + '),
+        area: primary.area || '0', unit: UNIT_LABELS[primary.unit] || 'sq ft',
+        price_per_unit: primary.price || '0', total: fmtMoney(grandTotal),
+        notes: (el('inp-notes')?.value || '') + '\n\nLine items:\n' + itemsSummary,
+        address: el('inp-address')?.value || '', qty: 1
+      })
+    });
+    const data = await res.json();
+    box.textContent = data.narrative || 'No narrative returned.';
+    toast('Narrative ready ✍️');
+  } catch { box.textContent = 'Could not generate.'; }
+}
+
+// AI Chat
+function openChat() {
+  el('ai-panel').classList.add('open');
+  el('ai-overlay').classList.add('open');
+  if (!chatHistory.length) addChatMsg('ai', 'Hi! Ask me anything about pricing, measurements, or job scoping 💡');
+  setTimeout(() => el('chat-input')?.focus(), 300);
+}
+function closeChat() {
+  el('ai-panel').classList.remove('open');
+  el('ai-overlay').classList.remove('open');
+}
+async function sendChat() {
+  const input = el('chat-input');
+  const msg = input?.value.trim();
+  if (!msg) return;
+  input.value = '';
+  addChatMsg('user', msg);
+  chatHistory.push({ role: 'user', content: msg });
+  const tid = addChatMsg('ai', '...', true);
+  try {
+    const res = await authFetch('/api/ai/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: chatHistory.slice(-10),
+        context: {
+          project_type: current.service,
+          area: current.area, unit: UNIT_LABELS[current.unit],
+          price: current.price, address: el('inp-address')?.value || ''
+        }
+      })
+    });
+    const data = await res.json();
+    removeMsg(tid);
+    const reply = data.reply || 'Something went wrong.';
+    addChatMsg('ai', reply);
+    chatHistory.push({ role: 'assistant', content: reply });
+  } catch { removeMsg(tid); addChatMsg('ai', 'Connection error.'); }
+}
+function addChatMsg(role, text, typing = false) {
+  const c = el('chat-messages'); if (!c) return '';
+  const id = 'msg-' + Date.now();
+  const div = document.createElement('div');
+  div.id = id; div.className = `chat-msg ${role}${typing ? ' typing' : ''}`;
+  div.textContent = text; c.appendChild(div); c.scrollTop = c.scrollHeight; return id;
+}
+function removeMsg(id) { document.getElementById(id)?.remove(); }
+
+// ═══════════════════════════════════════
+//  PDF
+// ═══════════════════════════════════════
+function generatePDF() {
+  const allItems = [...items];
+  const grandTotal = allItems.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  clientName = el('inp-client')?.value || 'Client';
+  address = el('inp-address')?.value || '';
+  const notes = el('inp-notes')?.value || '';
+  const narrative = el('narrative-box')?.textContent || '';
   const today = new Date().toLocaleDateString();
-  const address = esc(document.getElementById('quote-address')?.value || lastAddress || '');
 
-  // Build line items table rows
-  const itemRows = lineItems.map((item, idx) => {
-    const label = JOB_TYPES.find(t => t.value === item.type)?.label || item.type;
-    const sub = item.area * item.price * item.qty;
+  const itemRows = allItems.map(i => {
+    const label = JOB_TYPES.find(j => j.id === i.service)?.label || i.service;
+    const sub = (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0);
     return `<tr>
       <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;font-weight:600">${label}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:right">${fmt(item.area)} ${unitLabel(item.unit)}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:right">$${item.price.toFixed(2)}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:center">${item.qty}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:right">${fmtNum(i.area)} ${UNIT_LABELS[i.unit]}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:right">$${parseFloat(i.price).toFixed(2)}</td>
       <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:right;font-weight:700">$${fmtMoney(sub)}</td>
     </tr>`;
   }).join('');
 
-  const header = branded
-    ? `<h1 style="font-family:'Bebas Neue',sans-serif;font-size:42px;letter-spacing:4px;color:#1C3A5E;margin:0">QUOTE<span style="color:#E8A020">machine</span></h1>`
-    : `<h1 style="font-size:28px;font-weight:700;color:#1C3A5E;margin:0">Estimate</h1>`;
-
   const win = window.open('', '_blank');
-  if (!win) { showToast('Allow popups to print'); return; }
-  win.document.write(`<!DOCTYPE html><html><head><title>Quote — ${client}</title>
+  if (!win) { toast('Allow popups to print'); return; }
+  win.document.write(`<!DOCTYPE html><html><head><title>Quote — ${clientName}</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>*{box-sizing:border-box}body{font-family:'DM Sans',sans-serif;padding:40px;color:#0D2137;max-width:700px;margin:0 auto}
-.sub{color:#6B8FAD;font-size:13px;margin-bottom:24px}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
-.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:3px}
-.val{font-size:15px;font-weight:600;text-transform:capitalize}
 table{width:100%;border-collapse:collapse;margin:16px 0}
 th{text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;border-bottom:2px solid #1C3A5E}
-th:nth-child(n+2){text-align:right}th:nth-child(4){text-align:center}
-.totals-section{margin:20px 0}
-.total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:14px}
-.total-row.grand{background:#0D2137;color:white;padding:16px 20px;border-radius:10px;margin-top:8px}
-.total-row.grand .t-val{font-family:'Bebas Neue',sans-serif;font-size:42px;color:#E8A020}
-.narrative{background:#F4F7FA;border-radius:8px;padding:16px;font-size:13px;line-height:1.8;margin:16px 0;color:#2B4B6F;white-space:pre-wrap}
-.footer{font-size:11px;color:#9ab;margin-top:28px;text-align:center}
+th:nth-child(n+2){text-align:right}
+.total-row{background:#0D2137;color:white;padding:16px 20px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin:20px 0}
+.total-val{font-family:'Bebas Neue',sans-serif;font-size:42px;color:#E8A020}
+.narrative{background:#F4F7FA;border-radius:8px;padding:16px;font-size:13px;line-height:1.8;margin:16px 0;white-space:pre-wrap}
 @media print{.no-print{display:none!important}}</style></head><body>
-${header}
-<div class="sub">Estimate · ${today}</div>
-<div class="info-grid">
-  <div><div class="lbl">Client</div><div class="val">${client}</div></div>
-  ${address?`<div><div class="lbl">Location</div><div class="val" style="text-transform:none;font-size:13px">${address}</div></div>`:'<div></div>'}
+<h1 style="font-family:'Bebas Neue',sans-serif;font-size:42px;letter-spacing:4px;color:#1C3A5E;margin:0">QUOTE<span style="color:#E8A020">machine</span></h1>
+<div style="color:#6B8FAD;font-size:13px;margin-bottom:24px">Estimate · ${today}</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+  <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:3px">Client</div><div style="font-size:15px;font-weight:600">${clientName}</div></div>
+  ${address ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:3px">Location</div><div style="font-size:13px">${address}</div></div>` : ''}
 </div>
-<table>
-  <thead><tr><th>Service</th><th>Area</th><th>Rate</th><th>Qty</th><th>Subtotal</th></tr></thead>
-  <tbody>${itemRows}</tbody>
-</table>
-<div class="totals-section">
-  <div class="total-row"><span>Subtotal</span><span>$${fmtMoney(subtotal)}</span></div>
-  ${markup > 0 ? `<div class="total-row"><span>Markup (${markup}%)</span><span>$${fmtMoney(subtotal * markup / 100)}</span></div>` : ''}
-  <div class="total-row grand"><div><div class="lbl" style="color:rgba(255,255,255,.6)">Estimated Total</div></div><div class="t-val">$${fmtMoney(total)}</div></div>
-</div>
-${notes?`<div class="lbl" style="margin-bottom:6px">Notes</div><div style="font-size:13px;line-height:1.6;margin-bottom:16px">${notes}</div>`:''}
-${narrative&&!narrative.includes('Writing')?`<div class="lbl" style="margin-bottom:6px">Scope of Work</div><div class="narrative">${narrative}</div>`:''}
-<div class="footer">This is an estimate. Final pricing subject to on-site inspection.</div>
-<br><button class="no-print" onclick="window.print()" style="padding:12px 28px;background:#0D2137;color:white;border:none;border-radius:8px;font-size:15px;cursor:pointer;margin-top:8px">🖨️ Print / Save as PDF</button>
+<table><thead><tr><th>Service</th><th>Area</th><th>Rate</th><th>Subtotal</th></tr></thead><tbody>${itemRows}</tbody></table>
+<div class="total-row"><div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.6);font-weight:700">Estimated Total</div></div><div class="total-val">$${fmtMoney(grandTotal)}</div></div>
+${notes ? `<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:6px">Notes</div><div style="font-size:13px;line-height:1.6;margin-bottom:16px">${notes}</div>` : ''}
+${narrative && !narrative.includes('Writing') ? `<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:6px">Scope of Work</div><div class="narrative">${narrative}</div>` : ''}
+<div style="font-size:11px;color:#9ab;margin-top:28px;text-align:center">This is an estimate. Final pricing subject to on-site inspection.</div>
+<br><button class="no-print" onclick="window.print()" style="padding:12px 28px;background:#0D2137;color:white;border:none;border-radius:8px;font-size:15px;cursor:pointer">🖨️ Print / Save as PDF</button>
 </body></html>`);
   win.document.close();
 }
 
-function buildShareText(q) {
-  if (q) {
-    let itemsText = '';
-    try {
-      const items = JSON.parse(q.line_items || '[]');
-      if (items.length > 0) {
-        itemsText = items.map(i => `  • ${i.label || i.type}: ${fmt(i.area)} ${unitLabel(i.unit)} × $${parseFloat(i.price).toFixed(2)}${i.qty>1?' ×'+i.qty:''} = $${fmtMoney(i.subtotal || i.area*i.price*i.qty)}`).join('\n');
-      }
-    } catch {}
-    if (!itemsText) {
-      itemsText = `  • ${(q.project_type||'').replace(/-/g,' ')}: ${fmt(q.area)} ${unitLabel(q.unit)} × $${parseFloat(q.price_per_unit).toFixed(2)}`;
-    }
-    return `📋 QUOTE machine\nClient: ${q.client_name}\n${q.address?'Location: '+q.address+'\n':''}Items:\n${itemsText}\n──────────\nTOTAL: $${fmtMoney(q.total)}\n${q.notes?'Notes: '+q.notes+'\n':''}Date: ${new Date(q.created_at).toLocaleDateString()}`.replace(/\n{3,}/g,'\n\n');
-  }
-  // Build from current form
-  syncLineItemsFromDOM();
-  const client = document.getElementById('client-name')?.value || 'Client';
-  const markup = parseFloat(document.getElementById('markup')?.value) || 0;
-  const subtotal = getLineItemsSubtotal();
-  const total = subtotal * (1 + markup / 100);
-  const notes = document.getElementById('notes')?.value || '';
-  const itemsText = lineItems.map(i => {
-    const label = JOB_TYPES.find(t => t.value === i.type)?.label || i.type;
-    return `  • ${label}: ${fmt(i.area)} ${unitLabel(i.unit)} × $${i.price.toFixed(2)}${i.qty>1?' ×'+i.qty:''} = $${fmtMoney(i.area*i.price*i.qty)}`;
+// ═══════════════════════════════════════
+//  SHARE
+// ═══════════════════════════════════════
+function openSheet() { el('share-sheet')?.classList.add('open'); }
+function closeSheet() { el('share-sheet')?.classList.remove('open'); }
+
+function buildShareText() {
+  const allItems = [...items];
+  const grandTotal = allItems.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  clientName = el('inp-client')?.value || 'Client';
+  address = el('inp-address')?.value || '';
+  const itemsText = allItems.map(i => {
+    const label = JOB_TYPES.find(j => j.id === i.service)?.label || i.service;
+    return `  • ${label}: ${fmtNum(i.area)} ${UNIT_LABELS[i.unit]} × $${parseFloat(i.price).toFixed(2)} = $${fmtMoney((parseFloat(i.area) || 0) * (parseFloat(i.price) || 0))}`;
   }).join('\n');
-  const address = document.getElementById('quote-address')?.value || lastAddress || '';
-  return `📋 QUOTE machine\nClient: ${client}\n${address?'Location: '+address+'\n':''}Items:\n${itemsText}\n${markup>0?'Markup: '+markup+'%\n':''}──────────\nTOTAL: $${fmtMoney(total)}\n${notes?'Notes: '+notes+'\n':''}Date: ${new Date().toLocaleDateString()}`.replace(/\n{3,}/g,'\n\n');
+  return `📋 QUOTE machine\nClient: ${clientName}\n${address ? 'Location: ' + address + '\n' : ''}Items:\n${itemsText}\n──────────\nTOTAL: $${fmtMoney(grandTotal)}\nDate: ${new Date().toLocaleDateString()}`;
 }
 
-function openShareModal(q) {
-  document.getElementById('share-text').value = buildShareText(q||null);
-  openModal('share-modal');
+function buildShareTextFromQuote(q) {
+  let itemsText = '';
+  try {
+    const li = JSON.parse(q.line_items || '[]');
+    itemsText = li.map(i => `  • ${i.label || i.type}: ${fmtNum(i.area)} ${UNIT_LABELS[i.unit] || i.unit} × $${parseFloat(i.price).toFixed(2)} = $${fmtMoney(i.subtotal || (i.area * i.price))}`).join('\n');
+  } catch {}
+  return `📋 QUOTE machine\nClient: ${q.client_name}\n${q.address ? 'Location: ' + q.address + '\n' : ''}Items:\n${itemsText}\n──────────\nTOTAL: $${fmtMoney(q.total)}\nDate: ${new Date(q.created_at).toLocaleDateString()}`;
 }
+
 function copyShare() {
-  navigator.clipboard.writeText(document.getElementById('share-text').value)
-    .then(() => { showToast('Copied! 📋'); closeModal('share-modal'); })
-    .catch(() => showToast('Copy failed'));
+  navigator.clipboard.writeText(buildShareText()).then(() => toast('Copied! 📋')).catch(() => toast('Copy failed'));
 }
-function smsShare() { window.open('sms:?body=' + encodeURIComponent(document.getElementById('share-text').value)); }
-function emailShare() {
-  const b = encodeURIComponent(document.getElementById('share-text').value);
-  window.open(`mailto:?subject=${encodeURIComponent('Quote Estimate')}&body=${b}`);
-}
+function smsShare() { window.open('sms:?body=' + encodeURIComponent(buildShareText())); }
+function emailShare() { window.open(`mailto:?subject=${encodeURIComponent('Quote Estimate')}&body=${encodeURIComponent(buildShareText())}`); }
 
 // ═══════════════════════════════════════
 //  STATS
 // ═══════════════════════════════════════
 async function loadStats() {
-  const container = document.getElementById('stats-content');
+  const container = el('stats-content');
   try {
     const s = await authFetch('/api/stats').then(r => r.json());
-    const mu = v => '$' + parseFloat(v||0).toLocaleString(undefined,{maximumFractionDigits:0});
-    const rows = (s.by_type||[]).map(t => `
-      <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #E8EEF4">
-        <div style="font-size:13px;font-weight:600;text-transform:capitalize">${esc((t.project_type||'').replace(/-/g,' '))}</div>
+    const mu = v => '$' + parseFloat(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    const rows = (s.by_type || []).map(t => `
+      <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--surface2)">
+        <div style="font-size:13px;font-weight:600;text-transform:capitalize">${(t.project_type || '').replace(/-/g, ' ')}</div>
         <div style="text-align:right">
-          <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:#E8A020">${mu(t.revenue)}</div>
-          <div style="font-size:10px;color:#6B8FAD">${t.count} quote${t.count!=1?'s':''}</div>
+          <div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--accent)">${mu(t.revenue)}</div>
+          <div style="font-size:10px;color:var(--text-lt)">${t.count} quote${t.count != 1 ? 's' : ''}</div>
         </div>
       </div>`).join('');
+
     container.innerHTML = `
       <div class="stat-grid">
         <div class="stat-card"><div class="stat-val">${s.total_quotes}</div><div class="stat-lbl">Quotes</div></div>
@@ -2002,269 +940,69 @@ async function loadStats() {
         <div class="stat-card"><div class="stat-val">${mu(s.avg_quote)}</div><div class="stat-lbl">Avg Quote</div></div>
         <div class="stat-card"><div class="stat-val">${s.this_month}</div><div class="stat-lbl">This Month</div></div>
       </div>
-      ${rows?`<div class="section-title" style="margin-top:12px">By Job Type</div><div>${rows}</div>`:''}`;
+      ${rows ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-lt);margin:12px 0 6px">By Job Type</div><div>${rows}</div>` : ''}`;
   } catch { container.innerHTML = '<div class="empty-state">Failed to load stats.</div>'; }
 }
 
 // ═══════════════════════════════════════
-//  UI
+//  RESET
 // ═══════════════════════════════════════
-function showTab(tab) {
-  ['quote','saved','stats'].forEach(t => {
-    const el = document.getElementById('tab-' + t);
-    if (el) el.style.display = t === tab ? 'block' : 'none';
-  });
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    const id = btn.id?.replace('tab-btn-','');
-    btn.classList.toggle('active', id === tab);
-  });
-  // Only show sticky total on quote tab
-  const stickyTotal = document.getElementById('sticky-total');
-  if (stickyTotal) stickyTotal.style.display = tab === 'quote' ? 'flex' : 'none';
-  const scroll = document.getElementById('panel-scroll');
-  if (scroll) scroll.scrollTop = 0;
-  if (tab === 'saved') loadSaved();
-  if (tab === 'stats') loadStats();
-}
-
-function newQuote() {
-  document.getElementById('client-name').value = '';
-  document.getElementById('notes').value = '';
-  document.getElementById('markup').value = 0;
-  // Clear all measurement boxes
-  ['sqft','linft','sqyd','acre'].forEach(u => {
-    const el = document.getElementById('munit-' + u);
-    if (el) el.value = '';
-    const box = document.getElementById('munit-box-' + u);
-    if (box) { box.classList.remove('has-value'); box.classList.remove('selected'); }
-  });
-  document.getElementById('manual-area') && (document.getElementById('manual-area').value = '');
-  const addrInput = document.getElementById('quote-address');
-  if (addrInput) addrInput.value = '';
-  lastAddress = '';
-  lastLat = null;
-  lastLng = null;
-  setText('address-display', '');
-  document.getElementById('narrative-section').style.display = 'none';
-  // Reset editing state
+function resetQuote() {
+  step = 0; items = [];
+  current = { service: null, area: '', unit: 'sqft', price: '' };
   editingQuoteId = null;
-  const saveBtn = document.getElementById('btn-save');
-  if (saveBtn) { saveBtn.textContent = '💾 Save'; saveBtn.classList.remove('editing'); }
-  // Reset line items
-  lineItems = [];
-  lineItemIdCounter = 0;
-  addLineItem();
-  clearDrawing();
-  updateCalc();
-  showToast('New quote started');
+  el('inp-address').value = '';
+  el('inp-client').value = '';
+  el('inp-notes').value = '';
+  el('inp-area').value = '';
+  el('inp-price').value = '';
+  el('narrative-box').classList.add('hidden');
+  el('narrative-box').textContent = '';
+  // Deselect service
+  document.querySelectorAll('.svc-row').forEach(r => r.classList.remove('selected'));
+  goStep(0);
+  toast('New quote started');
 }
 
-function openModal(id)  { document.getElementById(id)?.classList.add('open'); }
-function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
+// ═══════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════
+function el(id) { return document.getElementById(id); }
+function on(id, fn) { el(id)?.addEventListener('click', fn); }
+function openModal(id) { el(id)?.classList.add('open'); }
+function closeModal(id) { el(id)?.classList.remove('open'); }
+function toast(msg) {
+  const t = el('toast'); if (!t) return;
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2600);
+}
+function fmtNum(n) { return parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }); }
+function fmtMoney(n) { return parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-function initModalBackdrops() {
-  document.querySelectorAll('.modal-overlay').forEach(o => {
-    o.addEventListener('click', e => { if (e.target === o) o.classList.remove('open'); });
+// ═══════════════════════════════════════
+//  PWA INSTALL
+// ═══════════════════════════════════════
+function setupInstallBanner() {
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); deferredPrompt = e;
+    if (sessionStorage.getItem('qmach_install_dismissed')) return;
+    el('install-banner').style.display = 'flex';
+  });
+  on('install-btn', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    el('install-banner').style.display = 'none';
+  });
+  on('install-dismiss', () => {
+    el('install-banner').style.display = 'none';
+    sessionStorage.setItem('qmach_install_dismissed', '1');
+  });
+  window.addEventListener('appinstalled', () => {
+    el('install-banner').style.display = 'none';
+    deferredPrompt = null;
   });
 }
-
-function showToast(msg) {
-  const el = document.getElementById('toast');
-  if (!el) return;
-  el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2800);
-}
-
-function setText(id, val)        { const el = document.getElementById(id); if (el) el.textContent = val; }
-function setEl(id, prop, val)    { const el = document.getElementById(id); if (el) el.style[prop] = val; }
-function fmt(n)      { return parseFloat(n||0).toLocaleString(undefined,{maximumFractionDigits:1}); }
-function fmtMoney(n) { return parseFloat(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function esc(s)      { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-
-// ═══════════════════════════════════════
-//  PANEL DRAG (iOS-safe)
-//  Uses visualViewport API for correct height on iOS Safari
-//  Syncs map-container bottom position with panel height
-// ═══════════════════════════════════════
-function getViewportHeight() {
-  // visualViewport gives the REAL visible area on iOS (excludes Safari chrome)
-  return window.visualViewport?.height || window.innerHeight;
-}
-
-function syncMapToPanel() {
-  // On desktop (≥1024px) the panel is on the LEFT — don't adjust map bottom
-  if (window.innerWidth >= 1024) {
-    if (map) map.resize();
-    return;
-  }
-  // Mobile/tablet: update map container to fill space above panel
-  const panel = document.getElementById('bottom-panel');
-  const mapC = document.getElementById('map-container');
-  if (panel && mapC) {
-    mapC.style.bottom = panel.offsetHeight + 'px';
-  }
-  if (map) map.resize();
-}
-
-function initPanelDrag() {
-  const handle = document.getElementById('panel-drag');
-  const panel  = document.getElementById('bottom-panel');
-  const chevron = document.getElementById('drag-chevron');
-  if (!handle || !panel) return;
-
-  const HEADER = 48;  // header height — must match CSS header { height: 48px }
-  const MAP_MIN = 160; // keep map visible for WebGL
-
-  const getSnaps = () => {
-    const vh = getViewportHeight();
-    return {
-      collapsed: 56,
-      half: Math.round(vh * 0.48),
-      full: Math.max(vh * 0.48, vh - HEADER - MAP_MIN)
-    };
-  };
-
-  let startY = 0, startH = 0, startTime = 0, lastY = 0;
-  let currentSnap = 'half';
-
-  const updateChevron = () => {
-    if (!chevron) return;
-    chevron.textContent = currentSnap === 'collapsed' ? '▲'
-      : currentSnap === 'full' ? '▼' : '—';
-  };
-
-  const snapTo = (snapName, animate) => {
-    const snaps = getSnaps();
-    const h = snaps[snapName] || snaps.half;
-    currentSnap = snapName;
-    panel.classList.remove('dragging', 'snap-collapsed', 'snap-full');
-    panel.style.height = h + 'px';
-    if (snapName === 'collapsed') panel.classList.add('snap-collapsed');
-    if (snapName === 'full') panel.classList.add('snap-full');
-    updateChevron();
-    // Sync map after CSS transition
-    syncMapToPanel();
-    setTimeout(syncMapToPanel, 350);
-  };
-
-  // Set initial state
-  snapTo('half', false);
-  updateChevron();
-
-  const onStart = y => {
-    isDragging = true;
-    startY = y; lastY = y;
-    startH = panel.offsetHeight;
-    startTime = Date.now();
-    panel.classList.add('dragging');
-    panel.classList.remove('snap-collapsed', 'snap-full');
-  };
-
-  const onMove = y => {
-    if (!isDragging) return;
-    lastY = y;
-    const snaps = getSnaps();
-    const newH = Math.max(snaps.collapsed, Math.min(snaps.full, startH + (startY - y)));
-    panel.style.height = newH + 'px';
-    syncMapToPanel();
-  };
-
-  const onEnd = () => {
-    if (!isDragging) return;
-    isDragging = false;
-    panel.classList.remove('dragging');
-    const snaps = getSnaps();
-    const h = panel.offsetHeight;
-    const dt = Date.now() - startTime;
-    const dy = startY - lastY;
-    const velocity = dt > 0 ? dy / dt : 0;
-
-    if (Math.abs(velocity) > 0.4) {
-      snapTo(velocity > 0
-        ? (currentSnap === 'collapsed' ? 'half' : 'full')
-        : (currentSnap === 'full' ? 'half' : 'collapsed'), true);
-      return;
-    }
-
-    const dists = [
-      { name: 'collapsed', d: Math.abs(h - snaps.collapsed) },
-      { name: 'half',      d: Math.abs(h - snaps.half) },
-      { name: 'full',      d: Math.abs(h - snaps.full) }
-    ];
-    dists.sort((a, b) => a.d - b.d);
-    snapTo(dists[0].name, true);
-  };
-
-  // Touch events
-  handle.addEventListener('touchstart', e => {
-    e.preventDefault();
-    onStart(e.touches[0].clientY);
-  }, { passive: false });
-  document.addEventListener('touchmove', e => {
-    if (isDragging) onMove(e.touches[0].clientY);
-  }, { passive: true });
-  document.addEventListener('touchend', onEnd);
-
-  // Mouse (desktop)
-  handle.addEventListener('mousedown', e => { onStart(e.clientY); e.preventDefault(); });
-  document.addEventListener('mousemove', e => { if (isDragging) onMove(e.clientY); });
-  document.addEventListener('mouseup', onEnd);
-
-  // Single tap on handle toggles between collapsed and half
-  handle.addEventListener('click', () => {
-    snapTo(currentSnap === 'collapsed' ? 'half' : 'collapsed', true);
-  });
-
-  // Re-sync on orientation change or viewport resize (iOS keyboard)
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', () => {
-      if (!isDragging) snapTo(currentSnap, true);
-    });
-  }
-  window.addEventListener('orientationchange', () => {
-    setTimeout(() => snapTo(currentSnap, true), 300);
-  });
-}
-
-// ═══════════════════════════════════════
-//  PULL TO REFRESH
-// ═══════════════════════════════════════
-// Pull-to-refresh REMOVED — it conflicts with map panning on mobile
-// and was causing accidental page reloads when swiping the map.
-
-// ═══════════════════════════════════════
-//  PWA INSTALL PROMPT
-// ═══════════════════════════════════════
-let deferredInstallPrompt = null;
-
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
-  // Don't show if user dismissed before
-  if (sessionStorage.getItem('qmach_install_dismissed')) return;
-  const banner = document.getElementById('install-banner');
-  if (banner) banner.style.display = 'block';
-});
-
-document.getElementById('install-btn')?.addEventListener('click', async () => {
-  if (!deferredInstallPrompt) return;
-  deferredInstallPrompt.prompt();
-  const result = await deferredInstallPrompt.userChoice;
-  if (result.outcome === 'accepted') {
-    showToast('App installed! 📲');
-  }
-  deferredInstallPrompt = null;
-  document.getElementById('install-banner').style.display = 'none';
-});
-
-document.getElementById('install-dismiss')?.addEventListener('click', () => {
-  document.getElementById('install-banner').style.display = 'none';
-  sessionStorage.setItem('qmach_install_dismissed', '1');
-});
-
-// Detect if already installed
-window.addEventListener('appinstalled', () => {
-  document.getElementById('install-banner').style.display = 'none';
-  deferredInstallPrompt = null;
-});
