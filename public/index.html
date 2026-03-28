@@ -13,8 +13,6 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
-<link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
-<script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
@@ -32,377 +30,230 @@
   </div>
 </div>
 
-<!-- ═══ HEADER ═══ -->
-<header>
-  <div class="logo">Q<span>M</span></div>
-  <div class="header-center" id="address-display"></div>
-  <div class="header-right">
-    <span class="user-badge" id="user-badge" style="display:none"></span>
-    <button class="hdr-btn" id="btn-saved-header" aria-label="Saved quotes"><span class="hdr-count" id="saved-count">0</span> Saved</button>
-    <button class="hdr-btn hdr-menu-btn" id="hdr-menu-toggle" aria-label="Menu">☰</button>
-  </div>
-</header>
+<!-- ═══ APP SHELL ═══ -->
+<div id="app-shell" class="hidden">
 
-<!-- ═══ HEADER DROPDOWN MENU (secondary actions) ═══ -->
-<div id="hdr-menu" class="hdr-menu">
-  <button class="hdr-menu-item" id="ai-chat-btn">🤖 AI Assistant</button>
-  <button class="hdr-menu-item" id="tab-btn-stats">📊 Stats Dashboard</button>
-  <button class="hdr-menu-item" id="export-btn">📥 Export All Quotes</button>
-  <button class="hdr-menu-item" id="btn-logout">↩ Sign Out</button>
-</div>
-
-<!-- ═══ MAP ═══ -->
-<div id="map-container">
-  <div id="map"></div>
-
-  <!-- Search -->
-  <div id="geocoder-wrapper">
-    <div id="geocoder-inner">
-      <input type="text" id="addr-input" placeholder="Search job address..." autocomplete="off">
-      <button id="search-btn" aria-label="Search address">Go</button>
+  <!-- HEADER -->
+  <header id="app-header">
+    <div class="logo">QUOTE<span>machine</span></div>
+    <div class="header-tabs">
+      <button class="htab active" id="htab-quote" data-view="quote">📐 New</button>
+      <button class="htab" id="htab-saved" data-view="saved">📋 Saved</button>
+      <button class="htab" id="htab-stats" data-view="stats">📊 Stats</button>
     </div>
-    <div id="autocomplete-list"></div>
-  </div>
+    <button class="icon-btn" id="btn-ai-chat" title="AI Assistant">🤖</button>
+  </header>
 
-  <!-- Map tools — floating right edge -->
-  <div id="map-toolbar">
-    <button class="map-tool-btn active" id="tool-draw" aria-label="Draw area on map">
-      <span class="tool-icon">✏️</span>
-      <span class="tool-tip">Draw Area</span>
-    </button>
-    <button class="map-tool-btn" id="tool-line" aria-label="Measure a line">
-      <span class="tool-icon">📏</span>
-      <span class="tool-tip">Line</span>
-    </button>
-    <button class="map-tool-btn" id="tool-clear" aria-label="Clear drawing">
-      <span class="tool-icon">🗑</span>
-      <span class="tool-tip">Clear</span>
-    </button>
-    <button class="map-tool-btn" id="tool-satellite" aria-label="Toggle map labels">
-      <span class="tool-icon">🗺</span>
-      <span class="tool-tip">Labels</span>
-    </button>
-    <button class="map-tool-btn" id="tool-streetview" aria-label="Open street view">
-      <span class="tool-icon">👁</span>
-      <span class="tool-tip">Street</span>
-    </button>
-  </div>
+  <!-- ═══ QUOTE VIEW (Wizard) ═══ -->
+  <div id="view-quote" class="view active">
 
-  <!-- Drawing mode overlay -->
-  <div id="drawing-overlay" style="display:none">
-    <div id="drawing-instructions"><strong>Tap corners</strong> of the work area</div>
-    <div id="point-counter">0 points</div>
-    <button id="btn-done-drawing">✓ Done — Calculate</button>
-    <div style="display:flex;gap:10px;align-items:center">
-      <button id="btn-undo-point" style="pointer-events:all;background:rgba(13,33,55,.7);color:rgba(255,255,255,.7);border:none;font-size:13px;cursor:pointer;padding:6px 14px;border-radius:12px;font-family:inherit" disabled>↩ Undo</button>
-      <button id="btn-cancel-drawing">✕ Cancel</button>
-    </div>
-  </div>
-
-  <!-- Measurement badge -->
-  <div id="measure-badge" style="display:none">
-    <div class="badge-main">
-      <span class="badge-val" id="badge-val">0</span>
-      <span class="badge-unit" id="badge-unit">sq ft</span>
-    </div>
-    <button id="badge-clear-btn" class="badge-clear">Redraw</button>
-  </div>
-</div>
-
-<!-- ═══ BOTTOM PANEL ═══ -->
-<div id="bottom-panel">
-  <div class="panel-drag" id="panel-drag">
-    <div class="drag-chevron" id="drag-chevron">▲</div>
-    <div class="drag-bar"></div>
-  </div>
-  <div class="panel-scroll" id="panel-scroll">
-
-    <!-- Two clean tabs -->
-    <div class="tab-row">
-      <button class="tab-btn active" id="tab-btn-quote">New Quote</button>
-      <button class="tab-btn" id="tab-btn-saved">Saved <span id="saved-count-tab">0</span></button>
+    <!-- Progress dots -->
+    <div id="progress-bar" class="progress-bar">
+      <div class="pdot completed" data-step="0"><span>1</span></div><div class="pline" data-line="0"></div>
+      <div class="pdot" data-step="1"><span>2</span></div><div class="pline" data-line="1"></div>
+      <div class="pdot" data-step="2"><span>3</span></div><div class="pline" data-line="2"></div>
+      <div class="pdot" data-step="3"><span>4</span></div><div class="pline" data-line="3"></div>
+      <div class="pdot" data-step="4"><span>5</span></div>
     </div>
 
-    <!-- ═══ QUOTE TAB ═══ -->
-    <div id="tab-quote">
+    <!-- Step content area -->
+    <div id="step-content" class="step-content">
 
-      <!-- STEP 1: Measurements — compact read grid -->
-      <div id="measurement-row" class="card">
-        <div class="card-header">
-          <span class="card-title" id="mrow-title">Measurements</span>
-          <span class="card-hint" id="mrow-hint">Draw on map or type below</span>
+      <!-- STEP 0: ADDRESS -->
+      <div class="step" id="step-0">
+        <h1 class="step-title">Where's the job?</h1>
+        <div class="field-group">
+          <label class="flabel">Job address</label>
+          <div class="input-row">
+            <span class="input-icon">📍</span>
+            <input type="text" id="inp-address" placeholder="123 Main St, Dallas TX" autocomplete="off">
+          </div>
+          <div id="addr-autocomplete" class="autocomplete-list"></div>
         </div>
-        <div class="mrow-units">
-          <div class="munit-box" id="munit-box-sqft">
-            <label class="munit-label" for="munit-sqft">Sq Ft</label>
-            <input type="number" class="munit-input" id="munit-sqft" placeholder="—" min="0" step="1">
-          </div>
-          <div class="munit-box" id="munit-box-linft">
-            <label class="munit-label" for="munit-linft">Lin Ft</label>
-            <input type="number" class="munit-input" id="munit-linft" placeholder="—" min="0" step="0.1">
-          </div>
-          <div class="munit-box" id="munit-box-sqyd">
-            <label class="munit-label" for="munit-sqyd">Sq Yd</label>
-            <input type="number" class="munit-input" id="munit-sqyd" placeholder="—" min="0" step="0.1">
-          </div>
-          <div class="munit-box" id="munit-box-acre">
-            <label class="munit-label" for="munit-acre">Acres</label>
-            <input type="number" class="munit-input" id="munit-acre" placeholder="—" min="0" step="0.0001">
+        <div class="field-group">
+          <label class="flabel">Client</label>
+          <div class="input-row">
+            <span class="input-icon">👤</span>
+            <input type="text" id="inp-client" placeholder="Name or company">
           </div>
         </div>
-        <div class="mrow-pricing" id="mrow-pricing" style="display:none"></div>
-      </div>
-      <!-- Hidden legacy inputs -->
-      <select id="measure-type" style="display:none"><option value="sqft">Sq Ft</option></select>
-      <input type="number" id="manual-area" style="display:none">
-
-      <!-- STEP 2: Client & Address -->
-      <div class="card">
-        <div class="form-field">
-          <label for="client-name">Client Name</label>
-          <input type="text" id="client-name" placeholder="Who is this quote for?">
-        </div>
-        <div class="form-field">
-          <label for="quote-address">Job Address</label>
-          <div class="input-with-btn">
-            <input type="text" id="quote-address" placeholder="Type or use map search" autocomplete="off">
-            <button class="input-action-btn" id="btn-use-map-addr" aria-label="Use address from map">📍</button>
-          </div>
-          <div id="quote-addr-autocomplete" class="autocomplete-list quote-addr-list"></div>
+        <div class="quick-row">
+          <button class="quick-btn" id="btn-gps"><div class="qb-icon">📍</div><div class="qb-label">GPS</div></button>
+          <button class="quick-btn" id="btn-gmaps"><div class="qb-icon">🗺️</div><div class="qb-label">Maps</div></button>
+          <button class="quick-btn" id="btn-gearth"><div class="qb-icon">🛰️</div><div class="qb-label">Earth</div></button>
+          <button class="quick-btn" id="btn-street"><div class="qb-icon">👁</div><div class="qb-label">Street</div></button>
         </div>
       </div>
 
-      <!-- STEP 3: Line Items (starts with 1, clean) -->
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Job Details</span>
-          <button class="link-btn" id="btn-add-item">+ Add Item</button>
-        </div>
-        <div id="line-items-container"></div>
+      <!-- STEP 1: SERVICE -->
+      <div class="step hidden" id="step-1">
+        <h1 class="step-title">What's the job?</h1>
+        <div id="service-list" class="service-list"></div>
       </div>
 
-      <!-- STEP 4: Total + Actions -->
-      <div class="total-card">
-        <div class="total-top">
-          <div class="total-label">Estimated Total</div>
-          <div class="total-amount" id="total-display">$0.00</div>
-          <div class="total-sub" id="breakdown-display">—</div>
-        </div>
-        <div class="total-actions">
-          <button class="btn-primary" id="btn-save">Save Quote</button>
-          <button class="btn-secondary" id="btn-share">Send to Client</button>
-        </div>
-      </div>
-
-      <!-- MORE OPTIONS (collapsed by default) -->
-      <details class="more-options">
-        <summary>More Options</summary>
-        <div class="more-content">
-          <div class="form-field">
-            <label for="markup">Markup %</label>
-            <select id="markup">
-              <option value="0">0% — No markup</option>
-              <option value="1">1%</option><option value="2">2%</option>
-              <option value="3">3%</option><option value="4">4%</option>
-              <option value="5">5%</option><option value="6">6%</option>
-              <option value="7">7%</option><option value="8">8%</option>
-              <option value="9">9%</option><option value="10">10%</option>
+      <!-- STEP 2: MEASURE -->
+      <div class="step hidden" id="step-2">
+        <h1 class="step-title">How big?</h1>
+        <button id="btn-open-map" class="map-trigger">
+          <div class="mt-icon">🗺️</div>
+          <div class="mt-label">Open Map & Draw</div>
+          <div class="mt-hint">Satellite view · tap corners · auto-calculate</div>
+          <div class="mt-coming">(Coming in Phase 2)</div>
+        </button>
+        <div class="divider"><span>or type it</span></div>
+        <div class="measure-row">
+          <div class="field-group" style="flex:1">
+            <label class="flabel">Area / length</label>
+            <div class="input-row">
+              <input type="number" id="inp-area" placeholder="0" min="0" step="1">
+            </div>
+          </div>
+          <div class="field-group" style="width:110px">
+            <label class="flabel">Unit</label>
+            <select id="inp-unit">
+              <option value="sqft">Sq Ft</option>
+              <option value="linft">Lin Ft</option>
+              <option value="sqyd">Sq Yd</option>
+              <option value="acre">Acres</option>
             </select>
           </div>
-          <div class="form-field">
-            <label for="notes">Notes</label>
-            <textarea id="notes" placeholder="Special instructions, scope details..."></textarea>
-          </div>
-          <button class="btn-outline" id="ai-suggest-btn">✨ AI Suggest Price</button>
-          <button class="btn-outline" id="btn-narrative">✍️ Generate Scope of Work</button>
-          <button class="btn-outline" id="btn-print">🖨️ Print / PDF</button>
-          <div class="pdf-row">
-            <button class="btn-outline small" id="btn-pdf">PDF (Branded)</button>
-            <button class="btn-outline small" id="btn-pdf-plain">PDF (Plain)</button>
-          </div>
-          <div id="narrative-section" style="display:none">
-            <div class="card-header" style="margin-top:10px">
-              <span class="card-title">AI Scope of Work</span>
-              <button class="link-btn" id="btn-narrative-regen">↺ Redo</button>
-            </div>
-            <div id="narrative-text" class="narrative-box"></div>
+        </div>
+        <div id="conversion-chips" class="conv-chips"></div>
+      </div>
+
+      <!-- STEP 3: PRICE -->
+      <div class="step hidden" id="step-3">
+        <h1 class="step-title">Set your price</h1>
+        <div id="price-context" class="price-context"></div>
+        <div class="field-group">
+          <label class="flabel" id="price-label">$ per unit</label>
+          <div class="input-row">
+            <span class="input-prefix">$</span>
+            <input type="number" id="inp-price" placeholder="0.00" min="0" step="0.01">
           </div>
         </div>
-      </details>
+        <div id="quick-prices" class="quick-prices"></div>
+        <button id="btn-ai-price" class="btn-secondary">✨ AI Suggest Price</button>
+        <div id="live-total" class="live-total hidden">
+          <div class="lt-amount" id="lt-amount">$0.00</div>
+          <div class="lt-breakdown" id="lt-breakdown"></div>
+        </div>
+      </div>
 
-      <button class="btn-new-quote" id="btn-new">+ Start New Quote</button>
+      <!-- STEP 4: REVIEW -->
+      <div class="step hidden" id="step-4">
+        <!-- Grand total hero -->
+        <div class="total-hero">
+          <div class="th-label">Total</div>
+          <div class="th-amount" id="review-total">$0.00</div>
+          <div class="th-count" id="review-count">1 service</div>
+        </div>
+        <button id="btn-add-another" class="btn-add-another">＋ Add another service</button>
+        <!-- Summary card -->
+        <div id="review-card" class="review-card"></div>
+        <!-- Notes -->
+        <textarea id="inp-notes" placeholder="Notes (optional)"></textarea>
+        <!-- Primary action -->
+        <button id="btn-save-share" class="btn-primary gold">Save & Share</button>
+        <!-- Secondary -->
+        <div class="sec-row">
+          <button id="btn-pdf" class="btn-secondary">📄 PDF</button>
+          <button id="btn-ai-narrative" class="btn-secondary">✍️ AI Scope</button>
+        </div>
+        <!-- Narrative output -->
+        <div id="narrative-box" class="narrative-box hidden"></div>
+        <!-- New quote -->
+        <button id="btn-new-quote" class="btn-text-link">Start new quote</button>
+      </div>
 
-    </div><!-- /tab-quote -->
+    </div><!-- /step-content -->
 
-    <!-- ═══ SAVED TAB ═══ -->
-    <div id="tab-saved" style="display:none">
-      <div class="form-field">
-        <input type="text" id="search-input" placeholder="Search by client, job type...">
+    <!-- Bottom action (Continue / Review) -->
+    <div id="bottom-action" class="bottom-action">
+      <button id="btn-continue" class="btn-primary" disabled>Continue →</button>
+      <button id="btn-back" class="btn-text-back hidden">← Back</button>
+    </div>
+
+  </div><!-- /view-quote -->
+
+  <!-- ═══ SAVED VIEW ═══ -->
+  <div id="view-saved" class="view">
+    <div class="view-pad">
+      <h1 class="step-title">Saved Quotes</h1>
+      <div class="search-row">
+        <input type="text" id="search-quotes" placeholder="🔍 Search by client, job type...">
+        <button id="btn-export" class="btn-sm">Export</button>
       </div>
       <div id="saved-list"><div class="empty-state">No saved quotes yet.</div></div>
     </div>
+  </div>
 
-    <!-- ═══ STATS TAB (hidden on mobile, accessed via menu) ═══ -->
-    <div id="tab-stats" style="display:none">
+  <!-- ═══ STATS VIEW ═══ -->
+  <div id="view-stats" class="view">
+    <div class="view-pad">
+      <h1 class="step-title">Stats</h1>
       <div id="stats-content"><div class="empty-state">Loading...</div></div>
     </div>
-
   </div>
-</div>
 
-<!-- ═══ STICKY TOTAL BAR (shows when scrolled past total) ═══ -->
-<div id="sticky-total" class="sticky-total" style="display:none">
-  <div class="sticky-amount" id="sticky-total-val">$0.00</div>
-  <button class="sticky-save" id="sticky-save-btn">Save</button>
-</div>
+</div><!-- /app-shell -->
 
-<!-- ═══ AI CHAT PANEL ═══ -->
-<div id="ai-panel" class="side-panel">
-  <div class="side-panel-header">
-    <span>AI Assistant</span>
-    <button id="ai-panel-close">✕</button>
-  </div>
-  <div id="chat-messages" class="chat-messages"></div>
-  <div class="chat-input-row">
-    <input type="text" id="chat-input" placeholder="Ask about pricing...">
-    <button id="chat-send-btn">➤</button>
-  </div>
-</div>
-<div id="ai-overlay"></div>
-
-<!-- ═══ SHARE MODAL ═══ -->
-<div class="modal-overlay" id="share-modal">
-  <div class="modal">
-    <h3>Send Quote</h3>
-    <div class="form-field">
-      <textarea id="share-text" rows="6"></textarea>
+<!-- ═══ SHARE SHEET (bottom slide-up) ═══ -->
+<div class="sheet-overlay" id="share-sheet">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Quote saved! How to send it?</div>
+    <div class="sheet-actions">
+      <button class="share-btn sms" id="share-sms">💬 Text Message</button>
+      <button class="share-btn email" id="share-email">✉️ Email</button>
+      <button class="share-btn copy" id="share-copy">📋 Copy to Clipboard</button>
+      <button class="share-btn pdf" id="share-pdf">📄 Generate PDF</button>
     </div>
-    <div class="modal-actions">
-      <button class="btn-outline" id="share-cancel">Cancel</button>
-      <button class="btn-primary" id="share-copy">📋 Copy</button>
-    </div>
-    <div class="modal-actions" style="margin-top:8px">
-      <button class="btn-primary" id="share-sms" style="background:#27AE60">💬 Text</button>
-      <button class="btn-primary" id="share-email" style="background:#6B9AC4">✉️ Email</button>
-    </div>
+    <button class="btn-text-link" id="share-done">Done</button>
   </div>
 </div>
 
 <!-- ═══ AI PRICE MODAL ═══ -->
 <div class="modal-overlay" id="ai-price-modal">
   <div class="modal">
-    <h3>AI Price Suggestion</h3>
+    <h3>✨ AI Price Suggestion</h3>
     <div id="ai-price-content"></div>
-    <div class="modal-actions" style="margin-top:14px">
-      <button class="btn-outline" id="ai-price-dismiss">Dismiss</button>
-      <button class="btn-primary" id="ai-price-apply">Apply Recommended</button>
+    <div class="modal-btns">
+      <button class="mbtn cancel" id="ai-price-dismiss">Dismiss</button>
+      <button class="mbtn apply" id="ai-price-apply">✓ Apply</button>
     </div>
   </div>
 </div>
 
-<!-- Pull-to-refresh removed — conflicted with map panning -->
-
-<!-- ═══ INSTALL BANNER ═══ -->
-<div id="install-banner" class="install-banner" style="display:none">
-  <div class="install-inner">
-    <span>Install <strong>QUOTE machine</strong></span>
-    <div class="install-btns">
-      <button id="install-btn">Install</button>
-      <button id="install-dismiss" class="dismiss">Later</button>
-    </div>
+<!-- ═══ AI CHAT PANEL ═══ -->
+<div id="ai-panel" class="side-panel">
+  <div class="sp-header">
+    <span>🤖 AI Assistant</span>
+    <button id="ai-panel-close">✕</button>
+  </div>
+  <div id="chat-messages" class="chat-messages"></div>
+  <div class="chat-input-row">
+    <input type="text" id="chat-input" placeholder="Ask about pricing, scheduling...">
+    <button id="chat-send">➤</button>
   </div>
 </div>
+<div id="ai-overlay" class="overlay"></div>
 
 <!-- ═══ TOAST ═══ -->
 <div id="toast"></div>
 
+<!-- ═══ INSTALL BANNER ═══ -->
+<div id="install-banner" class="install-banner" style="display:none">
+  <span>📲 Install <strong>QUOTE machine</strong></span>
+  <div class="install-btns">
+    <button id="install-btn">Install</button>
+    <button id="install-dismiss" class="dismiss">Later</button>
+  </div>
+</div>
+
 <script src="/js/app.js"></script>
 <script>
-// Force clear old service worker caches that may serve stale files
-if ('serviceWorker' in navigator) {
-  // Clear ALL old caches first
-  if (window.caches) {
-    caches.keys().then(function(names) {
-      names.forEach(function(name) {
-        if (name !== 'qmach-v3') {
-          console.log('[SW] Clearing old cache:', name);
-          caches.delete(name);
-        }
-      });
-    });
-  }
-  navigator.serviceWorker.register('/sw.js').catch(function() {});
-}
-
-// ── Header menu toggle
-(function() {
-  const btn = document.getElementById('hdr-menu-toggle');
-  const menu = document.getElementById('hdr-menu');
-  if (!btn || !menu) return;
-  btn.addEventListener('click', function(e) {
-    e.stopPropagation();
-    menu.classList.toggle('open');
-  });
-  document.addEventListener('click', function() {
-    menu.classList.remove('open');
-  });
-  // Close menu when any item is clicked
-  menu.querySelectorAll('.hdr-menu-item').forEach(function(item) {
-    item.addEventListener('click', function() { menu.classList.remove('open'); });
-  });
-})();
-
-// ── Measurement input wiring (replaces inline oninput)
-['sqft','linft','sqyd','acre'].forEach(function(unit) {
-  var el = document.getElementById('munit-' + unit);
-  if (el) el.addEventListener('input', function() {
-    if (typeof onMeasurementInput === 'function') onMeasurementInput(unit, this.value);
-  });
-});
-
-// ── Keyboard handling for iOS
-// When the keyboard opens, iOS Safari resizes the visual viewport.
-// We lock the layout to prevent jumping.
-(function() {
-  if (!window.visualViewport) return; // desktop doesn't need this
-  
-  var panel = document.getElementById('bottom-panel');
-  var initialHeight = 0;
-  
-  window.visualViewport.addEventListener('resize', function() {
-    // When keyboard opens, visualViewport.height shrinks
-    // Don't fight it — let the browser handle the resize
-    // Just make sure the map resizes
-    if (typeof map !== 'undefined' && map && map.resize) {
-      setTimeout(function() { map.resize(); }, 100);
-    }
-  });
-})();
-
-// ── Long-press tooltip for mobile tool buttons
-(function() {
-  var tipEl = null;
-  var timer = null;
-  document.querySelectorAll('[aria-label]').forEach(function(btn) {
-    btn.addEventListener('touchstart', function(e) {
-      var label = btn.getAttribute('aria-label');
-      if (!label) return;
-      timer = setTimeout(function() {
-        if (tipEl) tipEl.remove();
-        tipEl = document.createElement('div');
-        tipEl.className = 'touch-tooltip';
-        tipEl.textContent = label;
-        var rect = btn.getBoundingClientRect();
-        tipEl.style.top = (rect.top - 36) + 'px';
-        tipEl.style.left = (rect.left + rect.width/2) + 'px';
-        document.body.appendChild(tipEl);
-        setTimeout(function() { if (tipEl) tipEl.remove(); }, 2000);
-      }, 500);
-    }, {passive: true});
-    btn.addEventListener('touchend', function() { clearTimeout(timer); });
-    btn.addEventListener('touchcancel', function() { clearTimeout(timer); });
-  });
-})();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script>
 </body>
 </html>
