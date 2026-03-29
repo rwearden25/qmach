@@ -173,6 +173,7 @@ async function bootApp() {
   on('btn-pdf', () => generatePDF());
   on('btn-ai-narrative', generateNarrative);
   on('btn-new-quote', resetQuote);
+  on('btn-cancel', cancelQuote);
 
   // Share sheet
   on('share-sms', () => { closeSheet(); smsShare(); });
@@ -398,6 +399,12 @@ function goStep(s, fromPopState) {
 
   // Step-specific setup
   if (s === 0) el('inp-address')?.focus();
+  if (s === 1) {
+    // Pre-select current service if editing
+    document.querySelectorAll('.svc-row').forEach(r => {
+      r.classList.toggle('selected', r.dataset.id === current.service);
+    });
+  }
   if (s === 2) setupMeasureStep();
   if (s === 3) setupPriceStep();
   if (s === 4) renderReview();
@@ -564,7 +571,6 @@ function renderReview() {
   el('review-total').textContent = '$' + fmtMoney(gt);
   el('review-count').textContent = all.length + ' service' + (all.length !== 1 ? 's' : '');
 
-  // Read current form values (they persist in DOM across steps)
   address = el('inp-address')?.value || '';
   clientName = el('inp-client')?.value || '';
 
@@ -575,21 +581,48 @@ function renderReview() {
   html += rcRow('Client', clientName || '(tap to add)', 0);
   html += rcRow('Address', address || '(tap to add)', 0);
 
-  all.forEach(item => {
+  all.forEach((item, idx) => {
     const svc = JOB_TYPES.find(j => j.id === item.service);
     const sub = (parseFloat(item.area) || 0) * (parseFloat(item.price) || 0);
-    html += `<div class="rc-item">
+    html += `<div class="rc-item" style="cursor:pointer" data-item-idx="${idx}">
       <div class="rc-item-header">
         <div class="rc-item-name"><span>${svc?.icon || '📋'}</span> ${svc?.label || item.service}</div>
-        <span class="rc-item-sub">$${fmtMoney(sub)}</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="rc-item-sub">$${fmtMoney(sub)}</span>
+          <span class="rc-edit" data-edit-idx="${idx}" style="cursor:pointer;font-size:14px">✏️</span>
+          ${all.length > 1 ? `<span data-remove-idx="${idx}" style="cursor:pointer;font-size:14px;color:#DC2626">✕</span>` : ''}
+        </div>
       </div>
       <div class="rc-item-detail">${fmtNum(item.area)} ${UNIT_LABELS[item.unit]} × $${item.price}/${UNIT_SHORT[item.unit]}</div>
     </div>`;
   });
 
   card.innerHTML = html;
+
+  // Wire client/address row clicks
   card.querySelectorAll('.rc-row').forEach(row =>
     row.addEventListener('click', () => goStep(parseInt(row.dataset.step)))
+  );
+
+  // Wire edit buttons on service items
+  card.querySelectorAll('[data-edit-idx]').forEach(btn =>
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      editItem(parseInt(btn.dataset.editIdx));
+    })
+  );
+
+  // Wire remove buttons on service items
+  card.querySelectorAll('[data-remove-idx]').forEach(btn =>
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      removeItem(parseInt(btn.dataset.removeIdx));
+    })
+  );
+
+  // Wire whole row tap as edit shortcut
+  card.querySelectorAll('[data-item-idx]').forEach(row =>
+    row.addEventListener('click', () => editItem(parseInt(row.dataset.itemIdx)))
   );
 }
 
@@ -598,6 +631,30 @@ function rcRow(label, value, stepIdx) {
     <span class="rc-label">${label}</span>
     <div><span class="rc-value">${esc(value)}</span><span class="rc-edit">✏️</span></div>
   </div>`;
+}
+
+function editItem(idx) {
+  if (idx < 0 || idx >= items.length) return;
+  // Pull item out of items array and into current for editing
+  current = { ...items[idx] };
+  items.splice(idx, 1);
+  // Go to service step — user can change service, area, or price
+  goStep(1);
+}
+
+function removeItem(idx) {
+  if (idx < 0 || idx >= items.length) return;
+  if (items.length <= 1) { toast('Need at least one service'); return; }
+  items.splice(idx, 1);
+  renderReview();
+  toast('Service removed');
+}
+
+function cancelQuote() {
+  if (items.length > 0 || parseFloat(current.area) > 0) {
+    if (!confirm('Cancel this quote? All progress will be lost.')) return;
+  }
+  resetQuote();
 }
 
 // ═══════════════════════════════════════
