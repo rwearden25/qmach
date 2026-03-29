@@ -200,6 +200,46 @@ async function bootApp() {
     mapboxToken = cfg.mapboxToken || '';
   } catch {}
 
+  // Browser back button → navigate wizard steps instead of leaving the app
+  history.replaceState({ step: 0 }, '', '');
+  window.addEventListener('popstate', e => {
+    // If map overlay is open, close it instead of navigating
+    if (!el('map-overlay').classList.contains('hidden')) {
+      closeMapOverlay();
+      history.pushState({ step: step }, '', '');
+      return;
+    }
+    // If share sheet is open, close it
+    if (el('share-sheet').classList.contains('open')) {
+      closeSheet();
+      history.pushState({ step: step }, '', '');
+      return;
+    }
+    // If AI panel is open, close it
+    if (el('ai-panel').classList.contains('open')) {
+      closeChat();
+      history.pushState({ step: step }, '', '');
+      return;
+    }
+    // If any modal is open, close it
+    const openModal = document.querySelector('.modal-overlay.open');
+    if (openModal) {
+      openModal.classList.remove('open');
+      history.pushState({ step: step }, '', '');
+      return;
+    }
+    // Navigate wizard steps
+    if (e.state && typeof e.state.step === 'number') {
+      goStep(e.state.step, true);
+    } else if (step > 0) {
+      goStep(step - 1, true);
+    }
+    // If already at step 0, push state to prevent leaving
+    if (step === 0) {
+      history.pushState({ step: 0 }, '', '');
+    }
+  });
+
   goStep(0);
 }
 
@@ -314,9 +354,14 @@ function resetMapDraw() { redoMapDraw(); }
 // ═══════════════════════════════════════
 //  WIZARD NAVIGATION
 // ═══════════════════════════════════════
-function goStep(s) {
+function goStep(s, fromPopState) {
   if (s < 0 || s >= 5) return;
   step = s;
+
+  // Push browser history so back button navigates steps, not away from app
+  if (!fromPopState) {
+    history.pushState({ step: s }, '', '');
+  }
 
   // Show/hide step panels
   document.querySelectorAll('.step').forEach((el, i) => {
