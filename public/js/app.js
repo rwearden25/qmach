@@ -275,10 +275,10 @@ function initMap() {
   map.on('load', () => {
     mapReady = true;
     map.addSource('draw-poly', { type: 'geojson', data: emptyFC() });
-    map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw-poly', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#E8A020', 'fill-opacity': 0.2 } });
-    map.addLayer({ id: 'draw-line', type: 'line', source: 'draw-poly', paint: { 'line-color': '#E8A020', 'line-width': 3, 'line-dasharray': [3, 2] } });
+    map.addLayer({ id: 'draw-fill', type: 'fill', source: 'draw-poly', filter: ['==', '$type', 'Polygon'], paint: { 'fill-color': '#3A5E30', 'fill-opacity': 0.2 } });
+    map.addLayer({ id: 'draw-line', type: 'line', source: 'draw-poly', paint: { 'line-color': '#3A5E30', 'line-width': 3, 'line-dasharray': [3, 2] } });
     map.addSource('draw-pts', { type: 'geojson', data: emptyFC() });
-    map.addLayer({ id: 'draw-vertices', type: 'circle', source: 'draw-pts', paint: { 'circle-radius': 7, 'circle-color': '#E8A020', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    map.addLayer({ id: 'draw-vertices', type: 'circle', source: 'draw-pts', paint: { 'circle-radius': 7, 'circle-color': '#3A5E30', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
     if (lastLat && lastLng) map.flyTo({ center: [lastLng, lastLat], zoom: 19 });
   });
 
@@ -1063,36 +1063,37 @@ function generatePDF() {
   const rows = all.map(i => {
     const l = JOB_TYPES.find(j => j.id === i.service)?.label || i.service;
     const sub = (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0);
-    return `<tr><td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;font-weight:600">${l}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:right">${fmtNum(i.area)} ${UNIT_LABELS[i.unit]}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:right">$${parseFloat(i.price).toFixed(2)}</td>
-      <td style="padding:10px 8px;border-bottom:1px solid #E8EEF4;text-align:right;font-weight:700">$${fmtMoney(sub)}</td></tr>`;
+    return `<tr><td style="padding:10px 8px;border-bottom:1px solid #E4E2DA;font-weight:600">${l}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #E4E2DA;text-align:right">${fmtNum(i.area)} ${UNIT_LABELS[i.unit]}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #E4E2DA;text-align:right">$${parseFloat(i.price).toFixed(2)}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid #E4E2DA;text-align:right;font-weight:700">$${fmtMoney(sub)}</td></tr>`;
   }).join('');
 
   const win = window.open('', '_blank');
   if (!win) { toast('Allow popups to print'); return; }
   win.document.write(`<!DOCTYPE html><html><head><title>Quote — ${clientName}</title>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-<style>*{box-sizing:border-box}body{font-family:'DM Sans',sans-serif;padding:40px;color:#0D2137;max-width:700px;margin:0 auto}
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Nunito:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box}body{font-family:'Nunito',sans-serif;padding:40px;color:#2A2824;max-width:700px;margin:0 auto;background:#F2F0EB}
 table{width:100%;border-collapse:collapse;margin:16px 0}
-th{text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;border-bottom:2px solid #1C3A5E}
+th{text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#4E4C46;font-weight:500;border-bottom:2px solid #2A2824;font-family:'DM Mono',monospace}
 th:nth-child(n+2){text-align:right}
-.total-box{background:#0D2137;color:white;padding:16px 20px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin:20px 0}
-.total-val{font-family:'Bebas Neue',sans-serif;font-size:42px;color:#E8A020}
-.narr{background:#F4F7FA;border-radius:8px;padding:16px;font-size:13px;line-height:1.8;margin:16px 0;white-space:pre-wrap}
-@media print{.noprint{display:none!important}}</style></head><body>
-<h1 style="font-family:'Bebas Neue',sans-serif;font-size:42px;letter-spacing:4px;color:#1C3A5E;margin:0">QUOTE<span style="color:#E8A020">machine</span></h1>
-<div style="color:#6B8FAD;font-size:13px;margin-bottom:24px">Estimate · ${today}</div>
+.total-box{background:#2A2824;color:white;padding:16px 20px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;margin:20px 0}
+.total-val{font-family:'Playfair Display',serif;font-size:42px;font-weight:800;color:#E0EDDA}
+.narr{background:#E4E2DA;border-radius:8px;padding:16px;font-size:13px;line-height:1.8;margin:16px 0;white-space:pre-wrap}
+.lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#4E4C46;font-weight:500;margin-bottom:3px;font-family:'DM Mono',monospace}
+@media print{.noprint{display:none!important}body{background:white}}</style></head><body>
+<h1 style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:#2A2824;margin:0">QUOTE<span style="color:#3A5E30">machine</span></h1>
+<div style="color:#4E4C46;font-size:13px;margin-bottom:24px;font-family:'DM Mono',monospace">Estimate · ${today}</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
-  <div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:3px">Client</div><div style="font-size:15px;font-weight:600">${clientName}</div></div>
-  ${address ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:3px">Location</div><div style="font-size:13px">${address}</div></div>` : ''}
+  <div><div class="lbl">Client</div><div style="font-size:15px;font-weight:600">${clientName}</div></div>
+  ${address ? `<div><div class="lbl">Location</div><div style="font-size:13px">${address}</div></div>` : ''}
 </div>
 <table><thead><tr><th>Service</th><th>Area</th><th>Rate</th><th>Subtotal</th></tr></thead><tbody>${rows}</tbody></table>
-<div class="total-box"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:rgba(255,255,255,.6);font-weight:700">Estimated Total</div><div class="total-val">$${fmtMoney(gt)}</div></div>
-${notes ? `<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:6px">Notes</div><div style="font-size:13px;line-height:1.6;margin-bottom:16px">${notes}</div>` : ''}
-${narrative && !narrative.includes('Writing') ? `<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#6B8FAD;font-weight:700;margin-bottom:6px">Scope of Work</div><div class="narr">${narrative}</div>` : ''}
-<div style="font-size:11px;color:#9ab;margin-top:28px;text-align:center">Estimate only. Final pricing subject to on-site inspection.</div>
-<br><button class="noprint" onclick="window.print()" style="padding:12px 28px;background:#0D2137;color:white;border:none;border-radius:8px;font-size:15px;cursor:pointer">🖨️ Print / Save as PDF</button></body></html>`);
+<div class="total-box"><div class="lbl" style="color:rgba(255,255,255,.5)">Estimated Total</div><div class="total-val">$${fmtMoney(gt)}</div></div>
+${notes ? `<div class="lbl" style="margin-bottom:6px">Notes</div><div style="font-size:13px;line-height:1.6;margin-bottom:16px">${notes}</div>` : ''}
+${narrative && !narrative.includes('Writing') ? `<div class="lbl" style="margin-bottom:6px">Scope of Work</div><div class="narr">${narrative}</div>` : ''}
+<div style="font-size:11px;color:#A8A49A;margin-top:28px;text-align:center">Estimate only. Final pricing subject to on-site inspection.</div>
+<br><button class="noprint" onclick="window.print()" style="padding:12px 28px;background:#3A5E30;color:white;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-family:'DM Mono',monospace">🖨️ Print / Save as PDF</button></body></html>`);
   win.document.close();
 }
 
@@ -1138,7 +1139,7 @@ async function loadStats() {
     const rows = (s.by_type || []).map(t =>
       `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--surface2)">
         <div style="font-size:13px;font-weight:600;text-transform:capitalize">${(t.project_type || '').replace(/-/g, ' ')}</div>
-        <div style="text-align:right"><div style="font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--accent)">${mu(t.revenue)}</div>
+        <div style="text-align:right"><div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--accent)">${mu(t.revenue)}</div>
         <div style="font-size:10px;color:var(--text-lt)">${t.count} quote${t.count != 1 ? 's' : ''}</div></div></div>`
     ).join('');
     c.innerHTML = `<div class="stat-grid">
