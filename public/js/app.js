@@ -125,7 +125,8 @@ async function bootApp() {
   const addrInput = el('inp-address');
   if (addrInput) {
     addrInput.addEventListener('input', () => {
-      updateContinueBtn(); // <-- THIS WAS MISSING
+      updateContinueBtn();
+      saveDraft();
       clearTimeout(debounceTimer);
       const q = addrInput.value.trim();
       if (q.length < 3) { clearAddrAC(); return; }
@@ -137,8 +138,21 @@ async function bootApp() {
     });
   }
 
-  // ── FIX: Client input also triggers Continue check
-  el('inp-client')?.addEventListener('input', () => updateContinueBtn());
+  // ── FIX: Client input also triggers Continue check + client autocomplete
+  const clientInput = el('inp-client');
+  if (clientInput) {
+    clientInput.addEventListener('input', () => {
+      updateContinueBtn();
+      showClientAC(clientInput.value.trim());
+      saveDraft();
+    });
+    clientInput.addEventListener('keydown', e => { if (e.key === 'Escape') { const l = el('client-autocomplete'); if (l) l.innerHTML = ''; } });
+    document.addEventListener('click', e => {
+      if (!clientInput.contains(e.target) && !el('client-autocomplete')?.contains(e.target)) {
+        const l = el('client-autocomplete'); if (l) l.innerHTML = '';
+      }
+    });
+  }
 
   // Quick buttons
   on('btn-gps', geolocateUser);
@@ -241,7 +255,18 @@ async function bootApp() {
     }
   });
 
-  goStep(0);
+  // Check for saved draft
+  const draft = loadDraft();
+  if (draft && (draft.items?.length > 0 || draft.step > 0 || draft.address || draft.clientName)) {
+    if (confirm('You have an unsaved quote in progress. Resume where you left off?')) {
+      restoreDraft(draft);
+    } else {
+      clearDraft();
+      goStep(0);
+    }
+  } else {
+    goStep(0);
+  }
 }
 
 // ═══════════════════════════════════════
@@ -338,6 +363,7 @@ function finishMapDraw() {
   onMeasureChange();
 
   closeMapOverlay();
+  haptic(20);
   toast(`${fmtNum(sqft)} sq ft measured ✓`);
 }
 
@@ -411,15 +437,21 @@ function goStep(s, fromPopState) {
 
   // Scroll step content to top
   el('step-content')?.scrollTo(0, 0);
+
+  // Auto-save draft
+  saveDraft();
 }
 
 function onContinue() {
   if (step === 3) {
     // Finish current item → push to items → go to review
+    if (current.service && current.price) savePrice(current.service, current.price);
     items.push({ ...current });
     current = { service: null, area: '', unit: 'sqft', price: '' };
+    haptic(15);
     goStep(4);
   } else if (step < 4) {
+    haptic(8);
     goStep(step + 1);
   }
 }
@@ -470,10 +502,17 @@ function renderServiceList() {
     row.addEventListener('click', () => {
       const id = row.dataset.id;
       const job = JOB_TYPES.find(j => j.id === id);
+      const serviceChanged = current.service !== id;
       current.service = id;
       current.unit = job?.unit || 'sqft';
+      // Pre-fill remembered price — but only if service changed or no price set
+      if (serviceChanged || !current.price) {
+        const remembered = getSavedPrice(id);
+        if (remembered) current.price = remembered;
+      }
       list.querySelectorAll('.svc-row').forEach(r => r.classList.remove('selected'));
       row.classList.add('selected');
+      haptic(12);
       setTimeout(() => goStep(2), 280);
     });
   });
@@ -507,6 +546,7 @@ function onMeasureChange() {
       <span class="conv-chip">${(v / 43560).toFixed(4)} acres</span>`;
   } else if (chips) chips.innerHTML = '';
   updateContinueBtn();
+  saveDraft();
 }
 
 // ═══════════════════════════════════════
@@ -532,13 +572,22 @@ function setupPriceStep() {
         el('inp-price').value = current.price;
         qp.querySelectorAll('.qp-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+        haptic(8);
         onPriceChange();
       });
     });
   }
 
   const pi = el('inp-price');
-  if (pi) { pi.value = current.price || ''; pi.focus(); }
+  if (pi) {
+    // Use remembered price if available and no price set yet
+    if (!current.price && current.service) {
+      const remembered = getSavedPrice(current.service);
+      if (remembered) current.price = remembered;
+    }
+    pi.value = current.price || '';
+    pi.focus();
+  }
   onPriceChange();
 }
 
@@ -559,6 +608,7 @@ function onPriceChange() {
     b.classList.toggle('active', b.dataset.price === current.price)
   );
   updateContinueBtn();
+  saveDraft();
 }
 
 // ═══════════════════════════════════════
@@ -793,8 +843,12 @@ async function saveAndShare() {
       throw new Error('Save failed');
     }
     editingQuoteId = null;
-    toast('Saved! 💾');
-    setTimeout(() => openSheet(), 400);
+    // Save client to memory for future autocomplete
+    saveClient(clientName, address, lastLat, lastLng);
+    // Clear draft — quote is saved
+    clearDraft();
+    // Show success animation, then share sheet
+    showSuccess(() => openSheet());
   } catch (err) {
     console.error('Save error:', err);
     toast('Save failed — check connection');
@@ -1137,17 +1191,17 @@ async function loadStats() {
     const s = await authFetch('/api/stats').then(r => r.json());
     const mu = v => '$' + parseFloat(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
     const rows = (s.by_type || []).map(t =>
-      `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--surface2)">
+      `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bg2)">
         <div style="font-size:13px;font-weight:600;text-transform:capitalize">${(t.project_type || '').replace(/-/g, ' ')}</div>
         <div style="text-align:right"><div style="font-family:'Playfair Display',serif;font-size:18px;font-weight:700;color:var(--accent)">${mu(t.revenue)}</div>
-        <div style="font-size:10px;color:var(--text-lt)">${t.count} quote${t.count != 1 ? 's' : ''}</div></div></div>`
+        <div style="font-size:10px;color:var(--muted)">${t.count} quote${t.count != 1 ? 's' : ''}</div></div></div>`
     ).join('');
     c.innerHTML = `<div class="stat-grid">
       <div class="stat-card"><div class="stat-val">${s.total_quotes}</div><div class="stat-lbl">Quotes</div></div>
       <div class="stat-card"><div class="stat-val">${mu(s.total_value)}</div><div class="stat-lbl">Total Value</div></div>
       <div class="stat-card"><div class="stat-val">${mu(s.avg_quote)}</div><div class="stat-lbl">Avg Quote</div></div>
       <div class="stat-card"><div class="stat-val">${s.this_month}</div><div class="stat-lbl">This Month</div></div></div>
-      ${rows ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-lt);margin:12px 0 6px">By Job Type</div><div>${rows}</div>` : ''}`;
+      ${rows ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:12px 0 6px">By Job Type</div><div>${rows}</div>` : ''}`;
   } catch { c.innerHTML = '<div class="empty-state">Failed to load stats.</div>'; }
 }
 
@@ -1164,6 +1218,7 @@ function resetQuote() {
   el('narrative-box').classList.add('hidden'); el('narrative-box').textContent = '';
   el('map-result').classList.add('hidden'); el('btn-open-map').classList.remove('hidden');
   document.querySelectorAll('.svc-row').forEach(r => r.classList.remove('selected'));
+  clearDraft();
   goStep(0);
   toast('New quote started');
 }
@@ -1182,7 +1237,133 @@ function toast(msg) {
 }
 function fmtNum(n) { return parseFloat(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 }); }
 function fmtMoney(n) { return parseFloat(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+// ═══════════════════════════════════════
+//  HAPTIC FEEDBACK
+// ═══════════════════════════════════════
+function haptic(ms) { try { navigator.vibrate(ms || 12); } catch {} }
+
+// ═══════════════════════════════════════
+//  PRICE MEMORY (localStorage)
+// ═══════════════════════════════════════
+function getSavedPrice(serviceId) {
+  try { const d = JSON.parse(localStorage.getItem('pquote_prices') || '{}'); return d[serviceId] || ''; } catch { return ''; }
+}
+function savePrice(serviceId, price) {
+  try {
+    const d = JSON.parse(localStorage.getItem('pquote_prices') || '{}');
+    d[serviceId] = price;
+    localStorage.setItem('pquote_prices', JSON.stringify(d));
+  } catch {}
+}
+
+// ═══════════════════════════════════════
+//  CLIENT MEMORY (localStorage)
+// ═══════════════════════════════════════
+function getRecentClients() {
+  try { return JSON.parse(localStorage.getItem('pquote_clients') || '[]'); } catch { return []; }
+}
+function saveClient(name, addr, lat, lng) {
+  if (!name) return;
+  try {
+    let clients = getRecentClients();
+    // Remove duplicate
+    clients = clients.filter(c => c.name.toLowerCase() !== name.toLowerCase());
+    // Add to front
+    clients.unshift({ name, address: addr || '', lat: lat || null, lng: lng || null });
+    // Keep max 30
+    if (clients.length > 30) clients = clients.slice(0, 30);
+    localStorage.setItem('pquote_clients', JSON.stringify(clients));
+  } catch {}
+}
+function showClientAC(query) {
+  const list = el('client-autocomplete');
+  if (!list) return;
+  if (!query || query.length < 1) { list.innerHTML = ''; return; }
+  const q = query.toLowerCase();
+  const matches = getRecentClients().filter(c => c.name.toLowerCase().includes(q)).slice(0, 5);
+  if (!matches.length) { list.innerHTML = ''; return; }
+  list.innerHTML = matches.map(c =>
+    `<div class="ac-item" data-name="${esc(c.name)}" data-addr="${esc(c.address)}" data-lat="${c.lat || ''}" data-lng="${c.lng || ''}">
+      <strong>${esc(c.name)}</strong>${c.address ? `<br><span style="font-size:12px;color:var(--muted)">${esc(c.address.split(',').slice(0,2).join(','))}</span>` : ''}
+    </div>`
+  ).join('');
+  list.querySelectorAll('.ac-item').forEach(item => {
+    item.addEventListener('click', () => {
+      el('inp-client').value = item.dataset.name;
+      if (item.dataset.addr) {
+        el('inp-address').value = item.dataset.addr;
+        lastLat = parseFloat(item.dataset.lat) || null;
+        lastLng = parseFloat(item.dataset.lng) || null;
+      }
+      list.innerHTML = '';
+      updateContinueBtn();
+      haptic(8);
+      toast(`${item.dataset.name} loaded`);
+    });
+  });
+}
+
+// ═══════════════════════════════════════
+//  AUTO-SAVE DRAFT (localStorage)
+// ═══════════════════════════════════════
+function saveDraft() {
+  try {
+    const draft = {
+      step, items: [...items], current: { ...current },
+      address: el('inp-address')?.value || '',
+      clientName: el('inp-client')?.value || '',
+      lastLat, lastLng, editingQuoteId,
+      notes: el('inp-notes')?.value || '',
+      ts: Date.now()
+    };
+    localStorage.setItem('pquote_draft', JSON.stringify(draft));
+  } catch {}
+}
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem('pquote_draft');
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    // Expire drafts older than 24 hours
+    if (Date.now() - d.ts > 86400000) { clearDraft(); return null; }
+    return d;
+  } catch { return null; }
+}
+function clearDraft() {
+  try { localStorage.removeItem('pquote_draft'); } catch {}
+}
+function restoreDraft(d) {
+  if (!d) return;
+  items = d.items || [];
+  current = d.current || { service: null, area: '', unit: 'sqft', price: '' };
+  lastLat = d.lastLat; lastLng = d.lastLng;
+  editingQuoteId = d.editingQuoteId || null;
+  if (d.address) el('inp-address').value = d.address;
+  if (d.clientName) el('inp-client').value = d.clientName;
+  if (d.notes) el('inp-notes').value = d.notes;
+  goStep(d.step || 0);
+  toast('Draft restored 📝');
+}
+
+// ═══════════════════════════════════════
+//  SUCCESS ANIMATION
+// ═══════════════════════════════════════
+function showSuccess(callback) {
+  const overlay = el('success-overlay');
+  if (!overlay) { if (callback) callback(); return; }
+  overlay.classList.remove('hidden', 'hiding');
+  haptic(30);
+  setTimeout(() => {
+    overlay.classList.add('hiding');
+    setTimeout(() => {
+      overlay.classList.add('hidden');
+      overlay.classList.remove('hiding');
+      if (callback) callback();
+    }, 400);
+  }, 1200);
+}
 
 // ═══════════════════════════════════════
 //  PWA

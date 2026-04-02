@@ -667,6 +667,45 @@ textarea:focus { border-color: var(--accent); box-shadow: var(--shadow-sm), 0 0 
 
 .empty-state { text-align: center; color: var(--muted); padding: 48px 20px; font-size: 14px; }
 
+/* ═══ SUCCESS ANIMATION ═══ */
+.success-overlay {
+  position: fixed; inset: 0; z-index: 5000;
+  background: rgba(42,80,32,.92); backdrop-filter: blur(8px);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  animation: successFadeIn .3s ease;
+}
+.success-overlay.hiding { animation: successFadeOut .4s ease forwards; }
+@keyframes successFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes successFadeOut { from { opacity: 1; } to { opacity: 0; } }
+.success-circle {
+  width: 100px; height: 100px;
+  background: rgba(255,255,255,.15);
+  border-radius: 50%; display: flex;
+  align-items: center; justify-content: center;
+  animation: successPop .4s cubic-bezier(.17,.67,.35,1.5) .1s both;
+}
+@keyframes successPop { from { transform: scale(0); } to { transform: scale(1); } }
+.success-check {
+  width: 52px; height: 52px;
+}
+.success-check circle {
+  stroke: white; stroke-width: 2;
+  stroke-dasharray: 166; stroke-dashoffset: 166;
+  animation: successStroke .6s cubic-bezier(.65,0,.45,1) .3s forwards;
+}
+.success-check path {
+  stroke: white; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 48; stroke-dashoffset: 48;
+  animation: successStroke .4s cubic-bezier(.65,0,.45,1) .6s forwards;
+}
+@keyframes successStroke { to { stroke-dashoffset: 0; } }
+.success-text {
+  color: white; font-family: var(--serif); font-size: 28px;
+  font-weight: 700; margin-top: 16px; letter-spacing: 1px;
+  animation: successPop .3s ease .5s both;
+}
+
 /* ═══ MOBILE ═══ */
 @media (max-width: 767px) {
   input[type="text"], input[type="number"], input[type="password"], select, textarea { font-size: 16px !important; }

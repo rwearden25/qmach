@@ -68,6 +68,7 @@
           <label class="flabel">Client</label>
           <div class="input-row"><span class="input-icon">👤</span>
             <input type="text" id="inp-client" placeholder="Name or company"></div>
+          <div id="client-autocomplete" class="autocomplete-list"></div>
         </div>
         <div class="quick-row">
           <button class="quick-btn" id="btn-gps"><div class="qb-icon">📍</div><div class="qb-label">GPS</div></button>
@@ -229,6 +230,14 @@
   </div>
 </div>
 <div id="ai-overlay" class="overlay"></div>
+
+<!-- SUCCESS ANIMATION -->
+<div id="success-overlay" class="success-overlay hidden">
+  <div class="success-circle">
+    <svg class="success-check" viewBox="0 0 52 52"><circle cx="26" cy="26" r="25" fill="none"/><path fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/></svg>
+  </div>
+  <div class="success-text">Saved!</div>
+</div>
 
 <div id="toast"></div>
 
