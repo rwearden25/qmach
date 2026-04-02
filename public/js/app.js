@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════
-//  QUOTE machine — Phase 1+2 (all bugs fixed)
+//  pquote — Phase 1+2 (all bugs fixed)
 // ═══════════════════════════════════════
 
 const JOB_TYPES = [
@@ -1082,7 +1082,7 @@ th:nth-child(n+2){text-align:right}
 .narr{background:#E4E2DA;border-radius:8px;padding:16px;font-size:13px;line-height:1.8;margin:16px 0;white-space:pre-wrap}
 .lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#4E4C46;font-weight:500;margin-bottom:3px;font-family:'DM Mono',monospace}
 @media print{.noprint{display:none!important}body{background:white}}</style></head><body>
-<h1 style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:#2A2824;margin:0">QUOTE<span style="color:#3A5E30">machine</span></h1>
+<h1 style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:#2A2824;margin:0">p<span style="color:#3A5E30">quote</span></h1>
 <div style="color:#4E4C46;font-size:13px;margin-bottom:24px;font-family:'DM Mono',monospace">Estimate · ${today}</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
   <div><div class="lbl">Client</div><div style="font-size:15px;font-weight:600">${clientName}</div></div>
@@ -1112,7 +1112,7 @@ function buildShareText() {
     const l = JOB_TYPES.find(j => j.id === i.service)?.label || i.service;
     return `  • ${l}: ${fmtNum(i.area)} ${UNIT_LABELS[i.unit]} × $${parseFloat(i.price).toFixed(2)} = $${fmtMoney((parseFloat(i.area) || 0) * (parseFloat(i.price) || 0))}`;
   }).join('\n');
-  return `📋 QUOTE machine\nClient: ${clientName}\n${address ? 'Location: ' + address + '\n' : ''}Items:\n${it}\n──────────\nTOTAL: $${fmtMoney(gt)}\nDate: ${new Date().toLocaleDateString()}`;
+  return `📋 pquote\nClient: ${clientName}\n${address ? 'Location: ' + address + '\n' : ''}Items:\n${it}\n──────────\nTOTAL: $${fmtMoney(gt)}\nDate: ${new Date().toLocaleDateString()}`;
 }
 
 function buildShareTextFromQuote(q) {
@@ -1121,7 +1121,7 @@ function buildShareTextFromQuote(q) {
     const li = JSON.parse(q.line_items || '[]');
     it = li.map(i => `  • ${i.label || i.type}: ${fmtNum(i.area)} ${UNIT_LABELS[i.unit] || i.unit} × $${parseFloat(i.price).toFixed(2)} = $${fmtMoney(i.subtotal || (i.area * i.price))}`).join('\n');
   } catch {}
-  return `📋 QUOTE machine\nClient: ${q.client_name}\n${q.address ? 'Location: ' + q.address + '\n' : ''}Items:\n${it}\n──────────\nTOTAL: $${fmtMoney(q.total)}\nDate: ${new Date(q.created_at).toLocaleDateString()}`;
+  return `📋 pquote\nClient: ${q.client_name}\n${q.address ? 'Location: ' + q.address + '\n' : ''}Items:\n${it}\n──────────\nTOTAL: $${fmtMoney(q.total)}\nDate: ${new Date(q.created_at).toLocaleDateString()}`;
 }
 
 function copyShare() { navigator.clipboard.writeText(buildShareText()).then(() => toast('Copied! 📋')).catch(() => toast('Copy failed')); }
