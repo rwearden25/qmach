@@ -667,6 +667,114 @@ textarea:focus { border-color: var(--accent); box-shadow: var(--shadow-sm), 0 0 
 
 .empty-state { text-align: center; color: var(--muted); padding: 48px 20px; font-size: 14px; }
 
+/* ═══ COLLAPSIBLE SECTIONS ═══ */
+.collapse-section {
+  margin-bottom: 12px;
+  border: 1px solid var(--border-lt);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.collapse-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: background .1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.collapse-header:active { background: var(--bg); }
+.collapse-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dark);
+  letter-spacing: .2px;
+}
+.collapse-chevron {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--border);
+  transition: transform .25s ease;
+  transform: rotate(-90deg);
+  line-height: 1;
+}
+.collapse-section.open .collapse-chevron {
+  transform: rotate(-270deg);
+  color: var(--accent);
+}
+.collapse-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .3s ease, padding .3s ease;
+  padding: 0 16px;
+}
+.collapse-section.open .collapse-body {
+  max-height: 2000px;
+  padding: 0 16px 16px;
+}
+/* Remove card border/shadow when inside a collapse (already has the wrapper) */
+.collapse-body .review-card {
+  border: none;
+  box-shadow: none;
+  margin-bottom: 8px;
+}
+.collapse-body .tax-row {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 0;
+  background: none;
+}
+.collapse-body textarea {
+  margin-bottom: 8px;
+}
+.collapse-body .sec-row {
+  margin-bottom: 4px;
+}
+.collapse-body .btn-secondary {
+  margin-bottom: 0;
+}
+
+/* ═══ TAX ROW ═══ */
+.tax-row {
+  background: var(--white); border: 1px solid var(--border-lt);
+  border-radius: var(--radius); padding: 14px 16px;
+  margin-bottom: 16px; box-shadow: var(--shadow-sm);
+}
+.tax-row .flabel { margin-bottom: 8px; }
+.tax-select {
+  width: 100%; padding: 12px 10px; border-radius: var(--radius-sm);
+  border: 2px solid var(--border-lt); font-size: 16px; font-weight: 600;
+  font-family: var(--sans); color: var(--text); background: var(--bg);
+  appearance: auto; outline: none; transition: all .2s;
+}
+.tax-select:focus { border-color: var(--accent); }
+.tax-summary {
+  margin-top: 10px; font-family: var(--mono); font-size: 13px;
+  color: var(--muted); line-height: 1.8;
+}
+.tax-summary .tax-line {
+  display: flex; justify-content: space-between; padding: 2px 0;
+}
+.tax-summary .tax-line.total {
+  font-weight: 700; color: var(--text); font-size: 15px;
+  border-top: 2px solid var(--border); margin-top: 6px; padding-top: 8px;
+}
+
+/* ═══ DISCLAIMER ═══ */
+.disclaimer {
+  font-size: 10px; line-height: 1.6; color: var(--border);
+  margin: 12px 0 16px; padding: 12px 14px;
+  background: var(--bg2); border-radius: var(--radius-sm);
+  font-family: var(--mono); letter-spacing: .2px;
+}
+
 /* ═══ SUCCESS ANIMATION ═══ */
 .success-overlay {
   position: fixed; inset: 0; z-index: 5000;

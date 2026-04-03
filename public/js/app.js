@@ -189,6 +189,17 @@ async function bootApp() {
   on('btn-new-quote', resetQuote);
   on('btn-cancel', cancelQuote);
 
+  // Tax selector — remember last rate
+  const taxSel = el('inp-tax');
+  if (taxSel) {
+    taxSel.value = getTaxRate();
+    taxSel.addEventListener('change', () => {
+      saveTaxRate(parseFloat(taxSel.value) || 0);
+      updateTaxSummary();
+      haptic(8);
+    });
+  }
+
   // Share sheet
   on('share-sms', () => { closeSheet(); smsShare(); });
   on('share-email', () => { closeSheet(); emailShare(); });
@@ -615,11 +626,24 @@ function onPriceChange() {
 //  STEP 4: REVIEW
 // ═══════════════════════════════════════
 function renderReview() {
-  const all = [...items];
-  const gt = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  // Reset collapse sections — open all except those with data-default="closed"
+  document.querySelectorAll('#step-4 .collapse-section').forEach(s => {
+    if (s.dataset.default !== 'closed') s.classList.add('open');
+  });
 
-  el('review-total').textContent = '$' + fmtMoney(gt);
-  el('review-count').textContent = all.length + ' service' + (all.length !== 1 ? 's' : '');
+  const all = [...items];
+  const subtotal = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+
+  // Set tax select to remembered rate
+  const taxSel = el('inp-tax');
+  if (taxSel) {
+    taxSel.value = getTaxRate();
+  }
+
+  const { rate, taxAmount, total } = calcTax(subtotal);
+
+  el('review-total').textContent = '$' + fmtMoney(total);
+  el('review-count').textContent = all.length + ' service' + (all.length !== 1 ? 's' : '') + (rate > 0 ? ` + ${rate}% tax` : '');
 
   address = el('inp-address')?.value || '';
   clientName = el('inp-client')?.value || '';
@@ -674,6 +698,31 @@ function renderReview() {
   card.querySelectorAll('[data-item-idx]').forEach(row =>
     row.addEventListener('click', () => editItem(parseInt(row.dataset.itemIdx)))
   );
+
+  updateTaxSummary();
+}
+
+function updateTaxSummary() {
+  const all = [...items];
+  const subtotal = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const { rate, taxAmount, total } = calcTax(subtotal);
+
+  // Update hero total
+  el('review-total').textContent = '$' + fmtMoney(total);
+  el('review-count').textContent = all.length + ' service' + (all.length !== 1 ? 's' : '') + (rate > 0 ? ` + ${rate}% tax` : '');
+
+  // Update tax breakdown
+  const summary = el('tax-summary');
+  if (summary) {
+    if (rate > 0) {
+      summary.innerHTML = `
+        <div class="tax-line"><span>Subtotal</span><span>$${fmtMoney(subtotal)}</span></div>
+        <div class="tax-line"><span>Tax (${rate}%)</span><span>$${fmtMoney(taxAmount)}</span></div>
+        <div class="tax-line total"><span>Total</span><span>$${fmtMoney(total)}</span></div>`;
+    } else {
+      summary.innerHTML = '';
+    }
+  }
 }
 
 function rcRow(label, value, stepIdx) {
@@ -789,7 +838,8 @@ async function saveAndShare() {
   const all = [...items];
   if (all.length === 0) { toast('No services to save'); return; }
 
-  const gt = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const subtotal = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const { rate, taxAmount, total: gt } = calcTax(subtotal);
   const primary = all[0] || {};
   const narrative = el('narrative-box')?.textContent || '';
 
@@ -1107,7 +1157,8 @@ function removeMsg(id) { document.getElementById(id)?.remove(); }
 // ═══════════════════════════════════════
 function generatePDF() {
   const all = [...items];
-  const gt = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const subtotal = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const { rate, taxAmount, total: gt } = calcTax(subtotal);
   clientName = el('inp-client')?.value || 'Client';
   address = el('inp-address')?.value || '';
   const notes = el('inp-notes')?.value || '';
@@ -1123,6 +1174,12 @@ function generatePDF() {
       <td style="padding:10px 8px;border-bottom:1px solid #E4E2DA;text-align:right;font-weight:700">$${fmtMoney(sub)}</td></tr>`;
   }).join('');
 
+  const taxHtml = rate > 0 ? `
+    <div style="display:flex;justify-content:space-between;padding:6px 20px;font-size:14px;color:#4E4C46;font-family:'DM Mono',monospace">
+      <span>Subtotal</span><span>$${fmtMoney(subtotal)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 20px;font-size:14px;color:#4E4C46;font-family:'DM Mono',monospace">
+      <span>Tax (${rate}%)</span><span>$${fmtMoney(taxAmount)}</span></div>` : '';
+
   const win = window.open('', '_blank');
   if (!win) { toast('Allow popups to print'); return; }
   win.document.write(`<!DOCTYPE html><html><head><title>Quote — ${clientName}</title>
@@ -1131,10 +1188,11 @@ function generatePDF() {
 table{width:100%;border-collapse:collapse;margin:16px 0}
 th{text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#4E4C46;font-weight:500;border-bottom:2px solid #2A2824;font-family:'DM Mono',monospace}
 th:nth-child(n+2){text-align:right}
-.total-box{background:#2A2824;color:white;padding:16px 20px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;margin:20px 0}
+.total-box{background:#2A2824;color:white;padding:16px 20px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;margin:8px 0 20px}
 .total-val{font-family:'Playfair Display',serif;font-size:42px;font-weight:800;color:#E0EDDA}
 .narr{background:#E4E2DA;border-radius:8px;padding:16px;font-size:13px;line-height:1.8;margin:16px 0;white-space:pre-wrap}
 .lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#4E4C46;font-weight:500;margin-bottom:3px;font-family:'DM Mono',monospace}
+.disc{font-size:9px;color:#A8A49A;line-height:1.5;margin-top:20px;padding:10px 12px;background:#E4E2DA;border-radius:6px;font-family:'DM Mono',monospace}
 @media print{.noprint{display:none!important}body{background:white}}</style></head><body>
 <h1 style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:#2A2824;margin:0">p<span style="color:#3A5E30">quote</span></h1>
 <div style="color:#4E4C46;font-size:13px;margin-bottom:24px;font-family:'DM Mono',monospace">Estimate · ${today}</div>
@@ -1143,10 +1201,11 @@ th:nth-child(n+2){text-align:right}
   ${address ? `<div><div class="lbl">Location</div><div style="font-size:13px">${address}</div></div>` : ''}
 </div>
 <table><thead><tr><th>Service</th><th>Area</th><th>Rate</th><th>Subtotal</th></tr></thead><tbody>${rows}</tbody></table>
-<div class="total-box"><div class="lbl" style="color:rgba(255,255,255,.5)">Estimated Total</div><div class="total-val">$${fmtMoney(gt)}</div></div>
+${taxHtml}
+<div class="total-box"><div class="lbl" style="color:rgba(255,255,255,.5)">Estimated Total${rate > 0 ? ' (incl. tax)' : ''}</div><div class="total-val">$${fmtMoney(gt)}</div></div>
 ${notes ? `<div class="lbl" style="margin-bottom:6px">Notes</div><div style="font-size:13px;line-height:1.6;margin-bottom:16px">${notes}</div>` : ''}
 ${narrative && !narrative.includes('Writing') ? `<div class="lbl" style="margin-bottom:6px">Scope of Work</div><div class="narr">${narrative}</div>` : ''}
-<div style="font-size:11px;color:#A8A49A;margin-top:28px;text-align:center">Estimate only. Final pricing subject to on-site inspection.</div>
+<div class="disc">${DISCLAIMER}</div>
 <br><button class="noprint" onclick="window.print()" style="padding:12px 28px;background:#3A5E30;color:white;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-family:'DM Mono',monospace">🖨️ Print / Save as PDF</button></body></html>`);
   win.document.close();
 }
@@ -1159,14 +1218,16 @@ function closeSheet() { el('share-sheet')?.classList.remove('open'); }
 
 function buildShareText() {
   const all = [...items];
-  const gt = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const subtotal = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
+  const { rate, taxAmount, total: gt } = calcTax(subtotal);
   clientName = el('inp-client')?.value || 'Client';
   address = el('inp-address')?.value || '';
   const it = all.map(i => {
     const l = JOB_TYPES.find(j => j.id === i.service)?.label || i.service;
     return `  • ${l}: ${fmtNum(i.area)} ${UNIT_LABELS[i.unit]} × $${parseFloat(i.price).toFixed(2)} = $${fmtMoney((parseFloat(i.area) || 0) * (parseFloat(i.price) || 0))}`;
   }).join('\n');
-  return `📋 pquote\nClient: ${clientName}\n${address ? 'Location: ' + address + '\n' : ''}Items:\n${it}\n──────────\nTOTAL: $${fmtMoney(gt)}\nDate: ${new Date().toLocaleDateString()}`;
+  const taxLine = rate > 0 ? `Subtotal: $${fmtMoney(subtotal)}\nTax (${rate}%): $${fmtMoney(taxAmount)}\n` : '';
+  return `📋 pquote\nClient: ${clientName}\n${address ? 'Location: ' + address + '\n' : ''}Items:\n${it}\n──────────\n${taxLine}TOTAL: $${fmtMoney(gt)}\nDate: ${new Date().toLocaleDateString()}\n\n⚠️ ${DISCLAIMER}`;
 }
 
 function buildShareTextFromQuote(q) {
@@ -1175,7 +1236,7 @@ function buildShareTextFromQuote(q) {
     const li = JSON.parse(q.line_items || '[]');
     it = li.map(i => `  • ${i.label || i.type}: ${fmtNum(i.area)} ${UNIT_LABELS[i.unit] || i.unit} × $${parseFloat(i.price).toFixed(2)} = $${fmtMoney(i.subtotal || (i.area * i.price))}`).join('\n');
   } catch {}
-  return `📋 pquote\nClient: ${q.client_name}\n${q.address ? 'Location: ' + q.address + '\n' : ''}Items:\n${it}\n──────────\nTOTAL: $${fmtMoney(q.total)}\nDate: ${new Date(q.created_at).toLocaleDateString()}`;
+  return `📋 pquote\nClient: ${q.client_name}\n${q.address ? 'Location: ' + q.address + '\n' : ''}Items:\n${it}\n──────────\nTOTAL: $${fmtMoney(q.total)}\nDate: ${new Date(q.created_at).toLocaleDateString()}\n\n⚠️ ${DISCLAIMER}`;
 }
 
 function copyShare() { navigator.clipboard.writeText(buildShareText()).then(() => toast('Copied! 📋')).catch(() => toast('Copy failed')); }
@@ -1230,6 +1291,10 @@ function el(id) { return document.getElementById(id); }
 function on(id, fn) { el(id)?.addEventListener('click', fn); }
 function openModal(id) { el(id)?.classList.add('open'); }
 function closeModal(id) { el(id)?.classList.remove('open'); }
+function toggleSection(headerBtn) {
+  const section = headerBtn.closest('.collapse-section');
+  if (section) { section.classList.toggle('open'); haptic(6); }
+}
 function toast(msg) {
   const t = el('toast'); if (!t) return;
   t.textContent = msg; t.classList.add('show');
@@ -1257,6 +1322,25 @@ function savePrice(serviceId, price) {
     localStorage.setItem('pquote_prices', JSON.stringify(d));
   } catch {}
 }
+
+// ═══════════════════════════════════════
+//  TAX MEMORY (localStorage)
+// ═══════════════════════════════════════
+function getTaxRate() {
+  try { return parseFloat(localStorage.getItem('pquote_tax') || '0') || 0; } catch { return 0; }
+}
+function saveTaxRate(rate) {
+  try { localStorage.setItem('pquote_tax', String(rate)); } catch {}
+}
+function calcTax(subtotal) {
+  const rate = parseFloat(el('inp-tax')?.value) || 0;
+  return { rate, taxAmount: subtotal * rate / 100, total: subtotal * (1 + rate / 100) };
+}
+
+// ═══════════════════════════════════════
+//  DISCLAIMER
+// ═══════════════════════════════════════
+const DISCLAIMER = 'This quote is an estimate only and does not constitute a contract or guarantee of final pricing. Actual costs may vary based on site conditions, material availability, and scope changes. Tax calculations are approximate. pquote and its operators are not liable for pricing errors, tax miscalculations, or damages arising from reliance on this estimate.';
 
 // ═══════════════════════════════════════
 //  CLIENT MEMORY (localStorage)

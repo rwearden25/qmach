@@ -136,15 +136,75 @@
           <div class="th-amount" id="review-total">$0.00</div>
           <div class="th-count" id="review-count">1 service</div>
         </div>
-        <button id="btn-add-another" class="btn-add-another">＋ Add another service</button>
-        <div id="review-card" class="review-card"></div>
-        <textarea id="inp-notes" placeholder="Notes (optional)"></textarea>
-        <button id="btn-save-share" class="btn-primary">Save & Share</button>
-        <div class="sec-row">
-          <button id="btn-pdf" class="btn-secondary">📄 PDF</button>
-          <button id="btn-ai-narrative" class="btn-secondary">✍️ AI Scope</button>
+
+        <!-- SERVICES -->
+        <div class="collapse-section open">
+          <button class="collapse-header" onclick="toggleSection(this)">
+            <span class="collapse-title">📋 Services</span>
+            <span class="collapse-chevron">‹</span>
+          </button>
+          <div class="collapse-body">
+            <div id="review-card" class="review-card"></div>
+            <button id="btn-add-another" class="btn-add-another">＋ Add another service</button>
+          </div>
         </div>
-        <div id="narrative-box" class="narrative-box hidden"></div>
+
+        <!-- TAX & PRICING -->
+        <div class="collapse-section open">
+          <button class="collapse-header" onclick="toggleSection(this)">
+            <span class="collapse-title">💰 Tax & Pricing</span>
+            <span class="collapse-chevron">‹</span>
+          </button>
+          <div class="collapse-body">
+            <div class="tax-row">
+              <label class="flabel">Sales Tax Rate</label>
+              <select id="inp-tax" class="tax-select">
+                <option value="0">No Tax (0%)</option>
+                <option value="6.25">6.25%</option>
+                <option value="7">7%</option>
+                <option value="7.5">7.5%</option>
+                <option value="8">8%</option>
+                <option value="8.25">8.25%</option>
+                <option value="8.5">8.5%</option>
+                <option value="9">9%</option>
+                <option value="9.5">9.5%</option>
+                <option value="10">10%</option>
+              </select>
+              <div id="tax-summary" class="tax-summary"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NOTES -->
+        <div class="collapse-section open">
+          <button class="collapse-header" onclick="toggleSection(this)">
+            <span class="collapse-title">📝 Notes & Details</span>
+            <span class="collapse-chevron">‹</span>
+          </button>
+          <div class="collapse-body">
+            <textarea id="inp-notes" placeholder="Special instructions, scope details, conditions..."></textarea>
+            <div class="sec-row">
+              <button id="btn-ai-narrative" class="btn-secondary">✍️ AI Scope of Work</button>
+            </div>
+            <div id="narrative-box" class="narrative-box hidden"></div>
+          </div>
+        </div>
+
+        <!-- ACTIONS — always visible -->
+        <button id="btn-save-share" class="btn-primary">Save & Share</button>
+        <button id="btn-pdf" class="btn-secondary" style="margin-top:8px">📄 Generate PDF</button>
+
+        <!-- DISCLAIMER -->
+        <div class="collapse-section" data-default="closed">
+          <button class="collapse-header" onclick="toggleSection(this)">
+            <span class="collapse-title">⚖️ Legal Disclaimer</span>
+            <span class="collapse-chevron">‹</span>
+          </button>
+          <div class="collapse-body">
+            <div class="disclaimer">This quote is an estimate only and does not constitute a contract or guarantee of final pricing. Actual costs may vary based on site conditions, material availability, and scope changes discovered during the project. Tax calculations are approximate — consult your tax professional for exact obligations. pquote and its operators are not liable for pricing errors, tax miscalculations, or any damages arising from reliance on this estimate.</div>
+          </div>
+        </div>
+
         <button id="btn-new-quote" class="btn-primary" style="margin-top:12px">＋ Start New Quote</button>
       </div>
     </div>
