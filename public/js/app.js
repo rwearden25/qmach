@@ -37,15 +37,22 @@ let drawnPolygonGeoJSON = null, drawnAreaSqMeters = 0;
 // ═══════════════════════════════════════
 const SUPABASE_URL = 'https://ywqidkugtavzqqhehppg.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cWlka3VndGF2enFxaGVocHBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MDI2NjMsImV4cCI6MjA5MDM3ODY2M30.ULTGwCFcukaU2SuKeM9OtdOI5pFV3wln_mz1zvRVQiQ';
-let supabase = null;
-try { supabase = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON); } catch {}
+let supabaseClient = null;
+
+function getSupabase() {
+  if (!supabaseClient && window.supabase?.createClient) {
+    try { supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON); } catch {}
+  }
+  return supabaseClient;
+}
 
 async function googleSignIn() {
-  if (!supabase) { toast('Google sign-in unavailable'); return; }
+  const sb = getSupabase();
+  if (!sb) { toast('Google sign-in unavailable — try refreshing'); return; }
   const btn = el('btn-google');
   if (btn) { btn.disabled = true; btn.textContent = 'Redirecting...'; }
   try {
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin + '/app' }
     });
@@ -58,11 +65,15 @@ async function googleSignIn() {
 }
 
 async function handleOAuthCallback() {
-  if (!supabase) return false;
+  const sb = getSupabase();
+  if (!sb) return false;
   try {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    if (error || !session) return false;
-    // Send Supabase token to our backend for session creation
+    // Race against a 8-second timeout
+    const sessionPromise = sb.auth.getSession();
+    const timeoutPromise = new Promise(r => setTimeout(() => r({ data: { session: null } }), 8000));
+    const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]);
+    if (!session) return false;
+
     const res = await fetch('/api/auth/google', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -76,7 +87,6 @@ async function handleOAuthCallback() {
     if (data.success) {
       authToken = data.token;
       sessionStorage.setItem('qmach_token', authToken);
-      // Clean URL hash from OAuth redirect
       if (window.location.hash) history.replaceState(null, '', window.location.pathname);
       return true;
     }
@@ -158,9 +168,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   on('btn-google', googleSignIn);
   el('login-password')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
-  // Check if returning from Google OAuth redirect
-  const oauthSuccess = await handleOAuthCallback();
-  if (oauthSuccess) { hideLogin(); bootApp(); return; }
+  // Only check for OAuth callback when URL has auth tokens (returning from Google)
+  const hasOAuthTokens = window.location.hash && window.location.hash.includes('access_token');
+  if (hasOAuthTokens) {
+    const oauthSuccess = await handleOAuthCallback();
+    if (oauthSuccess) { hideLogin(); bootApp(); return; }
+  }
 
   if (await checkAuth()) bootApp();
 });

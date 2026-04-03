@@ -69,8 +69,8 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "api.mapbox.com", "cdnjs.cloudflare.com", "cdn.jsdelivr.net"],
       styleSrc: ["'self'", "'unsafe-inline'", "api.mapbox.com", "fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:", "*.mapbox.com", "api.mapbox.com"],
-      connectSrc: ["'self'", "api.mapbox.com", "events.mapbox.com", "*.tiles.mapbox.com", "*.supabase.co"],
-      workerSrc: ["blob:"],
+      connectSrc: ["'self'", "api.mapbox.com", "events.mapbox.com", "*.tiles.mapbox.com", "*.supabase.co", "cdn.jsdelivr.net"],
+      workerSrc: ["'self'", "blob:"],
       fontSrc: ["'self'", "fonts.gstatic.com", "fonts.googleapis.com"],
       frameSrc: ["'none'"]
     }
