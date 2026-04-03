@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="pquote — Field quoting tool for contractors. Measure, price, and send professional quotes from your phone in under 60 seconds.">
+<title>pquote — Field Quotes in 60 Seconds</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800;900&family=Nunito:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════
+   pquote Landing — Rugged Precision
+═══════════════════════════════════════ */
+:root {
+  --bg:          #F2F0EB;
+  --bg2:         #E4E2DA;
+  --dark:        #2A2824;
+  --text:        #2A2824;
+  --muted:       #4E4C46;
+  --light:       #F2F0EB;
+  --accent:      #3A5E30;
+  --accent-hover:#2E4E24;
+  --accent-pale: #E0EDDA;
+  --border:      #C4C0B6;
+  --white:       #FFFFFF;
+  --serif:       'Playfair Display', Georgia, serif;
+  --sans:        'Nunito', system-ui, sans-serif;
+  --mono:        'DM Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--sans); color: var(--text); background: var(--bg);
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+
+/* ═══ NAV ═══ */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+  background: rgba(42,40,36,.92); backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.nav-logo {
+  font-family: var(--serif); font-size: 22px; font-weight: 700;
+  color: var(--light); text-decoration: none;
+}
+.nav-logo span { color: var(--accent-pale); font-weight: 400; }
+.nav-links { display: flex; gap: 8px; align-items: center; }
+.nav-link {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .8px; padding: 8px 16px; border-radius: 6px;
+  text-decoration: none; transition: all .15s; font-weight: 500;
+  color: rgba(255,255,255,.5); border: 1px solid transparent;
+}
+.nav-link:hover { color: rgba(255,255,255,.8); }
+.nav-link.cta {
+  background: var(--accent); color: white; border-color: var(--accent);
+  box-shadow: 0 2px 12px rgba(58,94,48,.3);
+}
+.nav-link.cta:hover { background: var(--accent-hover); transform: translateY(-1px); }
+
+/* ═══ HERO ═══ */
+.hero {
+  min-height: 100vh; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  padding: 100px 24px 60px; position: relative; overflow: hidden;
+  background: linear-gradient(160deg, #1a1816 0%, var(--dark) 40%, #323028 100%);
+}
+.hero::before {
+  content: ''; position: absolute; inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.015'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  opacity: .6;
+}
+.hero::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 200px;
+  background: linear-gradient(transparent, var(--bg));
+}
+.hero-badge {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  color: var(--accent-pale); background: rgba(58,94,48,.15);
+  border: 1px solid rgba(58,94,48,.3); border-radius: 50px;
+  padding: 6px 20px; margin-bottom: 32px; letter-spacing: 1px;
+  text-transform: uppercase; position: relative; z-index: 1;
+  animation: fadeUp .6s ease both;
+}
+.hero h1 {
+  font-family: var(--serif); font-size: clamp(40px, 8vw, 72px);
+  font-weight: 900; color: var(--light); line-height: 1.05;
+  max-width: 700px; margin-bottom: 20px; position: relative; z-index: 1;
+  letter-spacing: -1px; animation: fadeUp .6s ease .1s both;
+}
+.hero h1 em {
+  font-style: normal; color: var(--accent-pale);
+  text-decoration: underline; text-decoration-color: var(--accent);
+  text-underline-offset: 6px; text-decoration-thickness: 3px;
+}
+.hero-sub {
+  font-size: 18px; color: rgba(255,255,255,.45); max-width: 520px;
+  line-height: 1.7; margin-bottom: 36px; position: relative; z-index: 1;
+  animation: fadeUp .6s ease .2s both;
+}
+.hero-cta {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 14px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 1px;
+  background: var(--accent); color: white;
+  padding: 18px 40px; border-radius: 8px; border: none;
+  cursor: pointer; text-decoration: none; position: relative; z-index: 1;
+  box-shadow: 0 6px 24px rgba(58,94,48,.35);
+  transition: all .2s; animation: fadeUp .6s ease .3s both;
+}
+.hero-cta:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 10px 36px rgba(58,94,48,.4); }
+.hero-cta:active { transform: translateY(0); }
+.hero-note {
+  font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,.25);
+  margin-top: 14px; position: relative; z-index: 1;
+  animation: fadeUp .6s ease .4s both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══ SECTION SHARED ═══ */
+.section { padding: 80px 24px; }
+.section-label {
+  font-family: var(--mono); font-size: 11px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 2px; color: var(--accent);
+  margin-bottom: 12px;
+}
+.section-title {
+  font-family: var(--serif); font-size: clamp(28px, 5vw, 42px);
+  font-weight: 800; color: var(--dark); line-height: 1.15;
+  margin-bottom: 16px; letter-spacing: -0.5px;
+}
+.section-sub {
+  font-size: 16px; color: var(--muted); max-width: 560px;
+  line-height: 1.7; margin-bottom: 48px;
+}
+.container { max-width: 1040px; margin: 0 auto; }
+
+/* ═══ HOW IT WORKS ═══ */
+.steps-section { background: var(--white); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.steps-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 0;
+  position: relative;
+}
+.steps-grid::before {
+  content: ''; position: absolute; top: 38px;
+  left: calc(10% + 20px); right: calc(10% + 20px);
+  height: 3px; background: var(--border);
+  border-radius: 2px;
+}
+.step-card {
+  text-align: center; padding: 0 12px; position: relative; z-index: 1;
+}
+.step-num {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--accent); color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 16px; font-weight: 500;
+  margin: 16px auto; box-shadow: 0 4px 16px rgba(58,94,48,.25);
+}
+.step-icon { font-size: 28px; margin-bottom: 8px; }
+.step-name {
+  font-family: var(--serif); font-size: 16px; font-weight: 700;
+  color: var(--dark); margin-bottom: 4px;
+}
+.step-desc {
+  font-size: 13px; color: var(--muted); line-height: 1.5;
+  font-family: var(--sans);
+}
+
+/* ═══ FEATURES ═══ */
+.features-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.feat-card {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 12px; padding: 32px 28px;
+  transition: all .2s; position: relative; overflow: hidden;
+}
+.feat-card:hover { transform: translateY(-3px); box-shadow: 0 12px 36px rgba(42,40,36,.1); }
+.feat-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--accent); opacity: 0; transition: opacity .2s;
+}
+.feat-card:hover::before { opacity: 1; }
+.feat-icon { font-size: 32px; margin-bottom: 16px; }
+.feat-title {
+  font-family: var(--serif); font-size: 18px; font-weight: 700;
+  color: var(--dark); margin-bottom: 8px;
+}
+.feat-desc { font-size: 14px; color: var(--muted); line-height: 1.7; }
+.feat-card.wide { grid-column: span 2; }
+
+/* ═══ FIELD SECTION ═══ */
+.field-section {
+  background: linear-gradient(160deg, #1a1816, var(--dark), #323028);
+  color: var(--light); position: relative; overflow: hidden;
+}
+.field-section::before {
+  content: ''; position: absolute; inset: 0;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.field-section .section-label { color: var(--accent-pale); }
+.field-section .section-title { color: var(--light); }
+.field-section .section-sub { color: rgba(255,255,255,.4); }
+.field-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; position: relative; z-index: 1; }
+.field-stat {
+  text-align: center; padding: 28px 16px;
+  background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px;
+}
+.field-stat-num {
+  font-family: var(--serif); font-size: 44px; font-weight: 800;
+  color: var(--accent-pale); line-height: 1;
+}
+.field-stat-label {
+  font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,.4);
+  text-transform: uppercase; letter-spacing: 1px; margin-top: 6px;
+}
+.field-quote {
+  margin-top: 48px; padding: 28px 32px;
+  background: rgba(255,255,255,.03); border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0; position: relative; z-index: 1;
+}
+.field-quote p {
+  font-size: 16px; color: rgba(255,255,255,.6); line-height: 1.8;
+  font-style: italic; margin-bottom: 12px;
+}
+.field-quote cite {
+  font-family: var(--mono); font-size: 12px; color: rgba(255,255,255,.3);
+  font-style: normal; letter-spacing: .5px;
+}
+
+/* ═══ PRICING ═══ */
+.pricing-section { background: var(--white); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.price-card {
+  max-width: 420px; margin: 0 auto;
+  background: var(--bg); border: 2px solid var(--accent);
+  border-radius: 14px; padding: 36px 32px; text-align: center;
+  position: relative; overflow: hidden;
+}
+.price-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, var(--accent), #4A7E40, var(--accent));
+}
+.price-badge {
+  display: inline-block; background: var(--accent); color: white;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 1.2px;
+  padding: 5px 16px; border-radius: 50px; margin-bottom: 20px;
+}
+.price-amount {
+  font-family: var(--serif); font-size: 56px; font-weight: 800;
+  color: var(--dark); line-height: 1;
+}
+.price-amount span { font-size: 20px; font-weight: 600; color: var(--muted); }
+.price-period { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 4px; }
+.price-desc { font-size: 15px; color: var(--muted); margin: 16px 0 24px; line-height: 1.6; }
+.price-features { text-align: left; margin-bottom: 28px; }
+.price-feat {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px 0; font-size: 14px; color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.price-feat:last-child { border-bottom: none; }
+.price-feat .check { color: var(--accent); font-weight: 700; flex-shrink: 0; font-size: 16px; }
+.price-cta {
+  display: block; width: 100%; padding: 18px; border: none;
+  background: var(--accent); color: white; border-radius: 8px;
+  font-family: var(--mono); font-size: 14px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 1px; cursor: pointer;
+  text-decoration: none; text-align: center;
+  box-shadow: 0 6px 24px rgba(58,94,48,.3); transition: all .2s;
+}
+.price-cta:hover { background: var(--accent-hover); transform: translateY(-2px); }
+
+/* ═══ FAQ ═══ */
+.faq-list { max-width: 680px; margin: 0 auto; }
+.faq-item {
+  border-bottom: 1px solid var(--border);
+}
+.faq-q {
+  display: flex; justify-content: space-between; align-items: center;
+  width: 100%; padding: 20px 0; background: none; border: none;
+  cursor: pointer; font-family: var(--sans); font-size: 16px;
+  font-weight: 700; color: var(--dark); text-align: left;
+  transition: color .15s;
+}
+.faq-q:hover { color: var(--accent); }
+.faq-chevron {
+  font-size: 20px; color: var(--border); transition: transform .3s, color .15s;
+  flex-shrink: 0; margin-left: 16px;
+}
+.faq-item.open .faq-chevron { transform: rotate(90deg); color: var(--accent); }
+.faq-a {
+  max-height: 0; overflow: hidden;
+  transition: max-height .35s ease, padding .35s ease;
+}
+.faq-item.open .faq-a { max-height: 300px; padding-bottom: 20px; }
+.faq-a p { font-size: 14px; color: var(--muted); line-height: 1.8; }
+
+/* ═══ FOOTER ═══ */
+.footer {
+  background: var(--dark); color: rgba(255,255,255,.3);
+  padding: 40px 24px; text-align: center;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .5px;
+}
+.footer a { color: var(--accent-pale); text-decoration: none; }
+.footer-logo {
+  font-family: var(--serif); font-size: 20px; font-weight: 700;
+  color: var(--light); margin-bottom: 8px;
+}
+.footer-logo span { color: var(--accent-pale); font-weight: 400; }
+.footer-links { display: flex; gap: 24px; justify-content: center; margin: 16px 0; }
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 768px) {
+  .nav { padding: 12px 16px; }
+  .nav-link.hide-mobile { display: none; }
+  .section { padding: 56px 20px; }
+  .steps-grid { grid-template-columns: 1fr; gap: 20px; }
+  .steps-grid::before { display: none; }
+  .step-card { display: flex; align-items: center; gap: 16px; text-align: left; padding: 0; }
+  .step-num { margin: 0; flex-shrink: 0; }
+  .step-icon { display: none; }
+  .features-grid { grid-template-columns: 1fr; }
+  .feat-card.wide { grid-column: span 1; }
+  .field-grid { grid-template-columns: 1fr; gap: 12px; }
+  .field-stat { display: flex; align-items: center; gap: 16px; text-align: left; padding: 16px 20px; }
+  .field-stat-num { font-size: 32px; }
+  .hero h1 { letter-spacing: -0.5px; }
+  .hero-sub { font-size: 16px; }
+}
+@media (max-width: 480px) {
+  .hero { padding: 80px 20px 48px; }
+  .hero-cta { width: 100%; justify-content: center; padding: 16px 24px; font-size: 13px; }
+  .price-card { padding: 28px 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <a href="/" class="nav-logo">p<span>quote</span></a>
+  <div class="nav-links">
+    <a href="#how" class="nav-link hide-mobile">How It Works</a>
+    <a href="#pricing" class="nav-link hide-mobile">Pricing</a>
+    <a href="#faq" class="nav-link hide-mobile">FAQ</a>
+    <a href="/app" class="nav-link cta">Login</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">Built for the field</div>
+  <h1>Measure. Price. Send. <em>60 seconds.</em></h1>
+  <p class="hero-sub">Professional quotes from your phone — on the job site, in the truck, at the kitchen table. No office needed. No spreadsheets. Just pull up, quote, and go.</p>
+  <a href="/app" class="hero-cta">Start Quoting Free →</a>
+  <p class="hero-note">No credit card · Works on any phone</p>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="section steps-section" id="how">
+  <div class="container">
+    <div class="section-label">How It Works</div>
+    <div class="section-title">Five taps. Done.</div>
+    <p class="section-sub">From truck to quote in under a minute. Every step is built for gloves, sunlight, and zero patience for complicated software.</p>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-icon">📍</div>
+        <div class="step-num">1</div>
+        <div class="step-name">Address</div>
+        <div class="step-desc">Search or GPS. Auto-fills from your client list.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-icon">💦</div>
+        <div class="step-num">2</div>
+        <div class="step-name">Service</div>
+        <div class="step-desc">Tap the job type. Pressure washing, striping, roofing — one tap.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-icon">🛰️</div>
+        <div class="step-num">3</div>
+        <div class="step-name">Measure</div>
+        <div class="step-desc">Draw on satellite or type it. Converts sq ft, sq yd, acres automatically.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-icon">💰</div>
+        <div class="step-num">4</div>
+        <div class="step-name">Price</div>
+        <div class="step-desc">Quick-tap your rate or let AI suggest. Remembers your last price per service.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-icon">📤</div>
+        <div class="step-num">5</div>
+        <div class="step-name">Send</div>
+        <div class="step-desc">Text, email, PDF, or copy. Tax calculated. Disclaimer included. Professional.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-label">Features</div>
+    <div class="section-title">Everything you need. Nothing you don't.</div>
+    <p class="section-sub">No training manuals. No onboarding calls. Open it and start quoting.</p>
+    <div class="features-grid">
+      <div class="feat-card">
+        <div class="feat-icon">🛰️</div>
+        <div class="feat-title">Satellite Drawing</div>
+        <div class="feat-desc">Full-screen Mapbox satellite view. Tap the corners of the work area. Area calculated instantly using real-world geometry — no turf.js, no dependencies, no broken CSP.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🧠</div>
+        <div class="feat-title">AI Price Suggestions</div>
+        <div class="feat-desc">Not sure what to charge? AI analyzes your service type, area, and location to suggest low, market, and premium rates. One tap to apply.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">💾</div>
+        <div class="feat-title">Remembers Everything</div>
+        <div class="feat-desc">Your last price per service. Your clients and their addresses. Your tax rate. Even your in-progress quote if the app closes. Zero retyping.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">📄</div>
+        <div class="feat-title">Professional PDFs</div>
+        <div class="feat-desc">Branded estimates with line items, tax breakdown, scope of work, and legal disclaimer. Print or save as PDF. Looks like you hired a designer.</div>
+      </div>
+      <div class="feat-card wide">
+        <div class="feat-icon">📱</div>
+        <div class="feat-title">Built for Phones, Not Desktops</div>
+        <div class="feat-desc">Big touch targets. 16px inputs (no iOS zoom). Haptic feedback. Works in direct sunlight with high-contrast Outdoor Pro colors. Install as a PWA and it feels native. No app store. No updates. Just works.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BUILT FOR THE FIELD -->
+<section class="section field-section">
+  <div class="container">
+    <div class="section-label">Built for the field</div>
+    <div class="section-title">By a contractor, for contractors.</div>
+    <p class="section-sub">pquote was built by someone who got tired of quoting from a truck with a calculator and a notepad. Now it's a phone and 60 seconds.</p>
+    <div class="field-grid">
+      <div class="field-stat">
+        <div class="field-stat-num">&lt;60s</div>
+        <div class="field-stat-label">Average quote time</div>
+      </div>
+      <div class="field-stat">
+        <div class="field-stat-num">8</div>
+        <div class="field-stat-label">Service types built in</div>
+      </div>
+      <div class="field-stat">
+        <div class="field-stat-num">0</div>
+        <div class="field-stat-label">Training required</div>
+      </div>
+    </div>
+    <div class="field-quote">
+      <p>"I built pquote because quoting software was either $200/month enterprise garbage or a glorified spreadsheet. My crew needed something simple and hard-working — like us."</p>
+      <cite>— Ross Wearden, Standard Power Washing</cite>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section pricing-section" id="pricing">
+  <div class="container" style="text-align:center">
+    <div class="section-label">Pricing</div>
+    <div class="section-title">Simple. No surprises.</div>
+    <p class="section-sub" style="margin-left:auto;margin-right:auto">Start free. Upgrade when you're ready. No contracts, no cancellation fees.</p>
+    <div class="price-card">
+      <div class="price-badge">Everything included</div>
+      <div class="price-amount">Free<span> beta</span></div>
+      <div class="price-period">While in early access</div>
+      <div class="price-desc">Full access to every feature. We're building this with our users — your feedback shapes what comes next.</div>
+      <div class="price-features">
+        <div class="price-feat"><span class="check">✓</span> Unlimited quotes</div>
+        <div class="price-feat"><span class="check">✓</span> Satellite map drawing</div>
+        <div class="price-feat"><span class="check">✓</span> AI price suggestions</div>
+        <div class="price-feat"><span class="check">✓</span> Professional PDF generation</div>
+        <div class="price-feat"><span class="check">✓</span> Client memory & auto-fill</div>
+        <div class="price-feat"><span class="check">✓</span> SMS, email & clipboard sharing</div>
+        <div class="price-feat"><span class="check">✓</span> Tax calculation & legal disclaimer</div>
+        <div class="price-feat"><span class="check">✓</span> Auto-save drafts</div>
+      </div>
+      <a href="/app" class="price-cta">Start Quoting Free →</a>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" id="faq">
+  <div class="container">
+    <div class="section-label">FAQ</div>
+    <div class="section-title">Questions?</div>
+    <p class="section-sub">Everything you need to know.</p>
+    <div class="faq-list">
+      <div class="faq-item">
+        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">What is pquote? <span class="faq-chevron">›</span></button>
+        <div class="faq-a"><p>pquote is a field quoting tool built for contractors and trade crews. It lets you measure areas using satellite maps, set prices per service type, and send professional quotes via text, email, or PDF — all from your phone in under 60 seconds.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">What devices does it work on? <span class="faq-chevron">›</span></button>
+        <div class="faq-a"><p>Any device with a web browser — iPhone, Android, iPad, laptop, desktop. It's a Progressive Web App (PWA), so you can install it to your home screen for an app-like experience. No app store needed.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Is it really free? <span class="faq-chevron">›</span></button>
+        <div class="faq-a"><p>Yes — pquote is in early access beta. Every feature is free while we're building and refining the product with real users. When we introduce pricing, early users will get the best deal.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">What service types are supported? <span class="faq-chevron">›</span></button>
+        <div class="faq-a"><p>Pressure washing, parking lot striping, sealcoating, painting, roofing, concrete, landscaping, and a custom/other option. Each service type has its own quick-price buttons and remembers your last-used rate.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">How does the satellite measuring work? <span class="faq-chevron">›</span></button>
+        <div class="faq-a"><p>Tap "Open Map & Draw" on the measurement step. You'll see a full-screen satellite view centered on the job address. Tap the corners of the work area to draw a polygon. pquote calculates the area using real-world geometry (haversine + shoelace formula) and converts it to sq ft, sq yd, and acres automatically.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Is my data secure? <span class="faq-chevron">›</span></button>
+        <div class="faq-a"><p>All connections use HTTPS encryption. Your quotes are stored on our servers and password-protected. Client names, prices, and tax rates are cached locally on your device for speed — never shared with third parties.</p></div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Can I use it for multiple service types in one quote? <span class="faq-chevron">›</span></button>
+        <div class="faq-a"><p>Yes. On the review step, tap "Add another service" to add as many line items as you need. Each can have a different service type, area, unit, and price. The total calculates automatically with optional tax.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-logo">p<span>quote</span></div>
+    <div style="margin-bottom:8px">Field quotes in 60 seconds.</div>
+    <div class="footer-links">
+      <a href="https://psupp.ai">psupp.ai</a>
+      <a href="https://pzip.ai">pzip.ai</a>
+      <a href="https://pquote.ai">pquote.ai</a>
+    </div>
+    <div style="margin-top:16px">© 2026 Standard Power Washing · Simple and hard working is the standard.</div>
+  </div>
+</footer>
+
+</body>
+</html>

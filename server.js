@@ -81,7 +81,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // ── Rate limiters
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
@@ -515,14 +515,25 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ── Catch-all SPA
+// ── Landing page (public — no auth)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+// ── App entry point
+app.get('/app', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ── Catch-all SPA (serves app for any deep link)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // ── Start
 app.listen(PORT, () => {
-  console.log(`QUOTE machine running on port ${PORT}`);
+  console.log(`pquote running on port ${PORT}`);
+  console.log(`Routes: / → landing.html, /app → index.html`);
   if (USERS.length > 1) {
     console.log(`Auth: ✓ Multi-user (${USERS.length} users: ${USERS.map(u => u.name || u.id).join(', ')})`);
   } else if (USERS.length === 1) {

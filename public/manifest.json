@@ -2,7 +2,7 @@
   "name": "pquote",
   "short_name": "pquote",
   "description": "Professional field quoting tool for trades and contracting",
-  "start_url": "/",
+  "start_url": "/app",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#2A2824",
