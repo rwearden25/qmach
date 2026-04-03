@@ -160,6 +160,17 @@ async function doLogin() {
   btn.disabled = false; btn.textContent = 'Sign In';
 }
 
+async function doLogout() {
+  sessionStorage.removeItem('qmach_token');
+  authToken = '';
+  const sb = getSupabase();
+  if (sb) { try { await sb.auth.signOut(); } catch {} }
+  try { clearDraft(); } catch {}
+  el('app-shell').classList.add('hidden');
+  showLogin();
+  toast('Signed out');
+}
+
 // ═══════════════════════════════════════
 //  BOOT
 // ═══════════════════════════════════════
@@ -186,6 +197,7 @@ async function bootApp() {
   document.querySelectorAll('.htab').forEach(btn =>
     btn.addEventListener('click', () => switchView(btn.dataset.view))
   );
+  on('btn-logout', doLogout);
 
   // Wizard nav
   on('btn-continue', onContinue);
