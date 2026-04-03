@@ -96,6 +96,29 @@ body { display: flex; flex-direction: column; }
 #login-btn:disabled { opacity: .5; transform: none; box-shadow: none; }
 .login-error { color: var(--red); font-size: 13px; font-weight: 600; margin-top: 12px; min-height: 18px; }
 
+/* Google Sign-In button */
+.btn-google {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 15px; background: var(--white); color: var(--dark);
+  border: 2px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 15px; font-weight: 600; font-family: var(--sans);
+  cursor: pointer; transition: all .15s; margin-bottom: 0;
+}
+.btn-google:hover { border-color: var(--dark); box-shadow: var(--shadow); transform: translateY(-1px); }
+.btn-google:active { transform: translateY(0); }
+.btn-google svg { flex-shrink: 0; }
+
+.login-divider {
+  display: flex; align-items: center; gap: 14px; margin: 16px 0;
+}
+.login-divider::before, .login-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.login-divider span {
+  font-size: 11px; color: var(--border); font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
 /* ═══ HEADER ═══ */
 header {
   background: linear-gradient(180deg, #323028 0%, var(--dark) 100%);

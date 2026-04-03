@@ -66,10 +66,10 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "api.mapbox.com", "cdnjs.cloudflare.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "api.mapbox.com", "cdnjs.cloudflare.com", "cdn.jsdelivr.net"],
       styleSrc: ["'self'", "'unsafe-inline'", "api.mapbox.com", "fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:", "*.mapbox.com", "api.mapbox.com"],
-      connectSrc: ["'self'", "api.mapbox.com", "events.mapbox.com", "*.tiles.mapbox.com"],
+      connectSrc: ["'self'", "api.mapbox.com", "events.mapbox.com", "*.tiles.mapbox.com", "*.supabase.co"],
       workerSrc: ["blob:"],
       fontSrc: ["'self'", "fonts.gstatic.com", "fonts.googleapis.com"],
       frameSrc: ["'none'"]
@@ -190,11 +190,67 @@ app.get('/api/auth/check', (req, res) => {
   res.status(401).json({ valid: false });
 });
 
+// ── Google OAuth — validate Supabase token and create pquote session
+app.post('/api/auth/google', async (req, res) => {
+  const { access_token, email, name } = req.body;
+  if (!access_token || !email) {
+    return res.status(400).json({ success: false, error: 'Missing token or email' });
+  }
+
+  // Validate the Supabase access token by calling Supabase's user endpoint
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL || 'https://ywqidkugtavzqqhehppg.supabase.co';
+    const supabaseAnon = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cWlka3VndGF2enFxaGVocHBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4MDI2NjMsImV4cCI6MjA5MDM3ODY2M30.ULTGwCFcukaU2SuKeM9OtdOI5pFV3wln_mz1zvRVQiQ';
+
+    const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        'Authorization': `Bearer ${access_token}`,
+        'apikey': supabaseAnon
+      }
+    });
+
+    if (!userRes.ok) {
+      console.log('[Auth] Google token validation failed:', userRes.status);
+      return res.status(401).json({ success: false, error: 'Invalid Google token' });
+    }
+
+    const userData = await userRes.json();
+    const userEmail = userData.email || email;
+    const userName = userData.user_metadata?.full_name || name || userEmail;
+
+    // Use email as user_id for Google users (prefix with 'g:' to distinguish from password users)
+    const userId = 'g:' + userEmail;
+
+    // Evict oldest session if at capacity
+    if (sessions.size >= MAX_SESSIONS) {
+      let oldest = null;
+      for (const [tok, sess] of sessions) {
+        if (!oldest || sess.created < oldest.created) oldest = { tok, ...sess };
+      }
+      if (oldest) sessions.delete(oldest.tok);
+    }
+
+    const token = uuidv4();
+    sessions.set(token, {
+      userId,
+      userName,
+      created: Date.now(),
+      expires: Date.now() + SESSION_TTL
+    });
+
+    console.log(`[Auth] Google login: ${userName} (${userEmail}), sessions active: ${sessions.size}`);
+    res.json({ success: true, token, userId, userName });
+  } catch (err) {
+    console.error('[Auth] Google auth error:', err.message);
+    res.status(500).json({ success: false, error: 'Google auth failed' });
+  }
+});
+
 // ── Auth middleware — protect all /api/ routes except auth + config + health
 //    Attaches req.userId for downstream route handlers
 app.use('/api/', (req, res, next) => {
   // Skip auth for these paths
-  if (req.path === '/auth' || req.path === '/auth/check' || req.path === '/config') return next();
+  if (req.path === '/auth' || req.path === '/auth/check' || req.path === '/auth/google' || req.path === '/config') return next();
 
   // No users configured — open access, default user
   if (USERS.length === 0) {
