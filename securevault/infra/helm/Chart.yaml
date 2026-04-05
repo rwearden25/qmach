@@ -1,0 +1,23 @@
+apiVersion: v2
+name: securevault
+description: >
+  SecureVault — end-to-end encrypted credential & secrets management platform.
+  Includes the React frontend, Node.js API, background worker, PostgreSQL,
+  Redis, and MinIO-compatible object storage.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - securevault
+  - secrets
+  - credentials
+  - vault
+home: https://github.com/your-org/securevault
+sources:
+  - https://github.com/your-org/securevault
+maintainers:
+  - name: SecureVault Team
+    email: platform@securevault.io
+dependencies: []
+annotations:
+  category: Security

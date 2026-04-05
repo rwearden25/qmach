@@ -1,0 +1,165 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  passwordHash     String
+  totpSecret       String?
+  mfaEnabled       Boolean   @default(false)
+  backupCodes      String[]
+  recoveryKeyHash  String?
+  wrappedMasterKey String?
+  storageUsed      BigInt    @default(0)
+  storageLimit     BigInt    @default(5368709120)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  files          File[]
+  folders        Folder[]
+  sessions       Session[]
+  webauthnCreds  WebAuthnCredential[]
+  auditLogs      AuditLog[]
+}
+
+model File {
+  id                String    @id @default(cuid())
+  userId            String
+  folderId          String?
+  encryptedName     String
+  encryptedMimeType String
+  encryptedSize     String
+  blobKey           String
+  wrappedFileKey    String
+  plaintextHash     String
+  ciphertextHash    String
+  sizeBytes         BigInt
+  version           Int       @default(1)
+  isDeleted         Boolean   @default(false)
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder          Folder?           @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  versions        FileVersion[]
+  shares          FileShare[]
+  integrityChecks IntegrityCheck[]
+
+  @@index([userId, folderId])
+  @@index([userId, isDeleted])
+}
+
+model FileVersion {
+  id             String   @id @default(cuid())
+  fileId         String
+  version        Int
+  blobKey        String
+  wrappedFileKey String
+  plaintextHash  String
+  ciphertextHash String
+  sizeBytes      BigInt
+  createdAt      DateTime @default(now())
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId, version])
+}
+
+model Folder {
+  id            String   @id @default(cuid())
+  userId        String
+  parentId      String?
+  encryptedName String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent   Folder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Folder[] @relation("FolderTree")
+  files    File[]
+
+  @@index([userId, parentId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  deviceInfo   String?
+  ipAddress    String?
+  mfaVerified  Boolean  @default(false)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model WebAuthnCredential {
+  id           String   @id @default(cuid())
+  userId       String
+  credentialId String   @unique
+  publicKey    String
+  counter      BigInt
+  deviceName   String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model FileShare {
+  id              String    @id @default(cuid())
+  fileId          String
+  sharedByUserId  String
+  sharedWithEmail String?
+  wrappedFileKey  String
+  accessLevel     String    @default("view")
+  expiresAt       DateTime?
+  accessCount     Int       @default(0)
+  maxAccesses     Int?
+  createdAt       DateTime  @default(now())
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model IntegrityCheck {
+  id           String   @id @default(cuid())
+  fileId       String
+  status       String
+  expectedHash String
+  actualHash   String?
+  checkedAt    DateTime @default(now())
+
+  file File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId])
+  @@index([status])
+}

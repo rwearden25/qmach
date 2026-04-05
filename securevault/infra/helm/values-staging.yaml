@@ -1,0 +1,77 @@
+# ─── Staging overrides ────────────────────────────────────────────────────────
+# Lower replica counts and smaller resource allocations to reduce cost in
+# staging environments while still exercising the full application stack.
+
+replicaCount:
+  api: 1
+  web: 1
+  worker: 1
+
+images:
+  api:
+    tag: staging
+  web:
+    tag: staging
+  worker:
+    tag: staging
+
+ingress:
+  host: staging.securevault.io
+  tls:
+    enabled: true
+    secretName: staging-securevault-tls
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+
+resources:
+  api:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  web:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  worker:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+autoscaling:
+  api:
+    enabled: false
+  web:
+    enabled: false
+
+pdb:
+  api:
+    enabled: false
+  web:
+    enabled: false
+  worker:
+    enabled: false
+
+storage:
+  postgres:
+    size: 10Gi
+  redis:
+    size: 2Gi
+  minio:
+    size: 20Gi
+
+config:
+  appUrl: https://staging.securevault.io
+  apiUrl: https://staging.securevault.io/api
+  nodeEnv: staging
+
+secrets:
+  remoteRefPrefix: securevault/staging/

@@ -1,0 +1,108 @@
+# ─── Production overrides — AWS EKS with ALB Ingress Controller ───────────────
+
+replicaCount:
+  api: 3
+  web: 3
+  worker: 2
+
+# ECR image registry (replace 123456789012 and region as appropriate)
+images:
+  api:
+    repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/securevault-api
+    tag: "1.0.0"
+    pullPolicy: Always
+  web:
+    repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/securevault-web
+    tag: "1.0.0"
+    pullPolicy: Always
+  worker:
+    repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/securevault-worker
+    tag: "1.0.0"
+    pullPolicy: Always
+
+ingress:
+  className: alb
+  host: securevault.io
+  tls:
+    enabled: true
+    secretName: production-securevault-tls
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:123456789012:certificate/REPLACE_ME
+    alb.ingress.kubernetes.io/healthcheck-path: /health
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=60
+
+resources:
+  api:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  web:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  worker:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+autoscaling:
+  api:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 65
+    targetMemoryUtilizationPercentage: 75
+  web:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 65
+    targetMemoryUtilizationPercentage: 75
+
+pdb:
+  api:
+    enabled: true
+    minAvailable: 2
+  web:
+    enabled: true
+    minAvailable: 2
+  worker:
+    enabled: true
+    minAvailable: 1
+
+storage:
+  postgres:
+    storageClass: gp3
+    size: 100Gi
+  redis:
+    storageClass: gp3
+    size: 20Gi
+  minio:
+    storageClass: gp3
+    size: 500Gi
+
+config:
+  appUrl: https://securevault.io
+  apiUrl: https://securevault.io/api
+  s3ForcePathStyle: "false"
+  nodeEnv: production
+
+secrets:
+  storeName: aws-secrets-manager
+  storeKind: ClusterSecretStore
+  remoteRefPrefix: securevault/production/
+  secretName: securevault-secrets

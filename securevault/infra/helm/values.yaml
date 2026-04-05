@@ -1,0 +1,128 @@
+# ─── Replica counts ───────────────────────────────────────────────────────────
+replicaCount:
+  api: 2
+  web: 2
+  worker: 1
+
+# ─── Container images ─────────────────────────────────────────────────────────
+images:
+  api:
+    repository: securevault/api
+    tag: latest
+    pullPolicy: IfNotPresent
+  web:
+    repository: securevault/web
+    tag: latest
+    pullPolicy: IfNotPresent
+  worker:
+    repository: securevault/worker
+    tag: latest
+    pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# ─── Ingress ──────────────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  host: securevault.local
+  tls:
+    enabled: false
+    secretName: securevault-tls
+
+# ─── Resource requests & limits ───────────────────────────────────────────────
+resources:
+  api:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  web:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  worker:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# ─── Horizontal Pod Autoscaler ────────────────────────────────────────────────
+autoscaling:
+  api:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  web:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# ─── Pod Disruption Budgets ───────────────────────────────────────────────────
+pdb:
+  api:
+    enabled: true
+    minAvailable: 1
+  web:
+    enabled: true
+    minAvailable: 1
+  worker:
+    enabled: true
+    minAvailable: 1
+
+# ─── Persistent storage ───────────────────────────────────────────────────────
+storage:
+  postgres:
+    storageClass: standard
+    size: 20Gi
+  redis:
+    storageClass: standard
+    size: 5Gi
+  minio:
+    storageClass: standard
+    size: 50Gi
+
+# ─── Database (external or in-cluster) ───────────────────────────────────────
+database:
+  host: postgres
+  port: 5432
+  name: securevault
+  user: vault
+  # password is sourced from the ExternalSecret / secrets.yaml
+
+# ─── Redis (external or in-cluster) ──────────────────────────────────────────
+redis:
+  host: redis
+  port: 6379
+
+# ─── Application secrets (sourced from ExternalSecret) ───────────────────────
+secrets:
+  # Name of the ExternalSecret store configured in the cluster
+  storeName: aws-secrets-manager
+  storeKind: ClusterSecretStore
+  # Path / prefix in the secrets backend
+  remoteRefPrefix: securevault/
+  # Name of the Kubernetes secret that will be created
+  secretName: securevault-secrets
+
+# ─── Non-sensitive application config ────────────────────────────────────────
+config:
+  appUrl: https://securevault.local
+  apiUrl: https://securevault.local/api
+  s3Bucket: vault-files
+  s3Region: us-east-1
+  s3ForcePathStyle: "false"
+  totpIssuer: SecureVault
+  nodeEnv: production

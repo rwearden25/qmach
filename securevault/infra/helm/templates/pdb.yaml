@@ -1,0 +1,53 @@
+{{- if .Values.pdb.api.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-api-pdb
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-api
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: api
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  minAvailable: {{ .Values.pdb.api.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}-api
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+---
+{{- if .Values.pdb.web.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-web-pdb
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-web
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: web
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  minAvailable: {{ .Values.pdb.web.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}-web
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+---
+{{- if .Values.pdb.worker.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-worker-pdb
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-worker
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  minAvailable: {{ .Values.pdb.worker.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

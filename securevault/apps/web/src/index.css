@@ -1,0 +1,320 @@
+/* ============================================================
+   Tailwind directives
+   ============================================================ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Font faces — Cabinet Grotesk (Fontshare) + General Sans (Fontshare)
+   ============================================================ */
+@import url('https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@100,200,300,400,500,600,700,800,900&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=general-sans@200,300,400,500,600,700&display=swap');
+
+/* Fallback @font-face declarations so the app works offline / in
+   environments that cannot reach the CDN. Place actual woff2 assets
+   in /public/fonts/ to activate them. */
+@font-face {
+  font-family: 'Cabinet Grotesk';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/CabinetGrotesk-Variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'General Sans';
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: swap;
+  src: url('/fonts/GeneralSans-Variable.woff2') format('woff2');
+}
+
+/* ============================================================
+   CSS custom properties (design tokens)
+   ============================================================ */
+:root {
+  --color-background:    #0A0A0B;
+  --color-surface:       #141416;
+  --color-border:        #1F1F23;
+  --color-primary:       #00FF88;
+  --color-secondary:     #6366F1;
+  --color-text-primary:  #FAFAFA;
+  --color-text-secondary:#71717A;
+  --color-danger:        #EF4444;
+  --color-warning:       #F59E0B;
+
+  --radius-card:  12px;
+  --radius-input:  8px;
+  --radius-pill: 9999px;
+}
+
+/* ============================================================
+   Base layer
+   ============================================================ */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
+    font-family: 'General Sans', system-ui, sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100dvh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Cabinet Grotesk', system-ui, sans-serif;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--color-text-primary);
+  }
+
+  a {
+    color: var(--color-primary);
+    text-decoration: none;
+  }
+
+  a:hover {
+    text-decoration: underline;
+  }
+
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  button {
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  input,
+  textarea,
+  select {
+    font-family: inherit;
+    font-size: inherit;
+  }
+}
+
+/* ============================================================
+   Focus-visible — console / gamepad / keyboard navigation
+   A thick, high-contrast green outline that is impossible to miss
+   on any background, designed for TV / 10-foot UI.
+   ============================================================ */
+@layer base {
+  :focus-visible {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 4px;
+    border-radius: 4px;
+    /* Extra thick shadow for TV / low-vision environments */
+    box-shadow:
+      0 0 0 6px rgba(0, 255, 136, 0.20),
+      0 0 16px rgba(0, 255, 136, 0.35);
+    transition: box-shadow 0.15s ease;
+  }
+
+  /* Remove default focus ring — we provide our own */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+}
+
+/* ============================================================
+   TV safe area — apply generous padding at 1920 px+
+   ============================================================ */
+@media (min-width: 1920px) {
+  .tv-safe {
+    padding-left:  5vw;
+    padding-right: 5vw;
+    padding-top:   3vh;
+    padding-bottom: 3vh;
+  }
+
+  /* Scale focus ring further for 10-foot UI */
+  :focus-visible {
+    outline-width: 5px;
+    outline-offset: 6px;
+    box-shadow:
+      0 0 0 10px rgba(0, 255, 136, 0.18),
+      0 0 28px  rgba(0, 255, 136, 0.40);
+  }
+}
+
+/* ============================================================
+   Skeleton loader
+   ============================================================ */
+@layer components {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface)    25%,
+      var(--color-border)     50%,
+      var(--color-surface)    75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: var(--radius-input);
+  }
+
+  @keyframes skeleton-shimmer {
+    0%   { background-position:  200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Convenience size helpers */
+  .skeleton-text  { height: 0.875rem; width: 60%;   margin-block: 0.25rem; }
+  .skeleton-title { height: 1.25rem;  width: 40%;   margin-block: 0.5rem;  }
+  .skeleton-card  {
+    height: 120px;
+    width: 100%;
+    border-radius: var(--radius-card);
+  }
+}
+
+/* ============================================================
+   Custom scrollbar (dark theme, Webkit + Firefox)
+   ============================================================ */
+@layer base {
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+
+  /* Webkit */
+  ::-webkit-scrollbar {
+    width:  6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: var(--radius-pill);
+    border: 1px solid transparent;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-text-secondary);
+  }
+}
+
+/* ============================================================
+   Utility component classes (shared across pages)
+   ============================================================ */
+@layer components {
+  /* Card surface */
+  .card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    padding: 1.5rem;
+  }
+
+  /* Primary action button */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    background-color: var(--color-primary);
+    color: #0A0A0B;
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    border: none;
+    transition: opacity 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    opacity: 0.9;
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.35);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Ghost button */
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    background-color: transparent;
+    color: var(--color-text-primary);
+    font-weight: 500;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--color-border);
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    background-color: rgba(0, 255, 136, 0.05);
+  }
+
+  /* Form input */
+  .input {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-input);
+    transition: border-color 0.15s ease;
+  }
+
+  .input::placeholder {
+    color: var(--color-text-secondary);
+  }
+
+  .input:hover {
+    border-color: var(--color-text-secondary);
+  }
+
+  .input:focus-visible {
+    border-color: var(--color-primary);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.20);
+  }
+
+  .input.error {
+    border-color: var(--color-danger);
+  }
+
+  /* Badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    border: 1px solid transparent;
+  }
+}
