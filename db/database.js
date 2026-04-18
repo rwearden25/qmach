@@ -45,6 +45,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_quotes_client ON quotes(client_name);
   CREATE INDEX IF NOT EXISTS idx_quotes_type   ON quotes(project_type);
   CREATE INDEX IF NOT EXISTS idx_quotes_date   ON quotes(created_at DESC);
+
+  -- Auth sessions. Persisted to SQLite so deploys/restarts don't force
+  -- every signed-in user to re-authenticate. TTL + cap enforced in server.js.
+  CREATE TABLE IF NOT EXISTS sessions (
+    token      TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    user_name  TEXT,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 `);
 
 console.log(`SQLite database initialized at: ${DB_PATH}`);

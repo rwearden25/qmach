@@ -53,16 +53,37 @@ if (USERS.length === 0 && process.env.QMACH_PASSWORD) {
   console.log('[Auth] Single-user mode (QMACH_PASSWORD)');
 }
 
-const sessions = new Map(); // token → { userId, userName, created, expires }
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_SESSIONS = 1000; // prevent session DoS
 
-// Clean expired sessions every 30 min
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, sess] of sessions) {
-    if (now > sess.expires) sessions.delete(token);
+// Sessions live in SQLite (table defined in db/database.js) so a deploy/restart
+// doesn't force every signed-in user to re-authenticate.
+const insertSessionStmt = db.prepare('INSERT INTO sessions (token, user_id, user_name, created_at, expires_at) VALUES (?, ?, ?, ?, ?)');
+const getSessionStmt    = db.prepare('SELECT user_id, user_name, created_at, expires_at FROM sessions WHERE token = ?');
+const deleteSessionStmt = db.prepare('DELETE FROM sessions WHERE token = ?');
+const pruneSessionsStmt = db.prepare('DELETE FROM sessions WHERE expires_at < ?');
+const countSessionsStmt = db.prepare('SELECT COUNT(*) AS n FROM sessions');
+const oldestSessionStmt = db.prepare('SELECT token FROM sessions ORDER BY created_at ASC LIMIT 1');
+
+function createSession(userId, userName) {
+  // Evict oldest if at capacity (DoS prevention).
+  if (countSessionsStmt.get().n >= MAX_SESSIONS) {
+    const oldest = oldestSessionStmt.get();
+    if (oldest) deleteSessionStmt.run(oldest.token);
   }
+  const token = uuidv4();
+  const now = Date.now();
+  insertSessionStmt.run(token, userId, userName || userId, now, now + SESSION_TTL);
+  return token;
+}
+
+function sessionCount() { return countSessionsStmt.get().n; }
+
+// Prune expired rows every 30 min. Also runs once at boot to clear anything
+// left over from a previous deploy.
+pruneSessionsStmt.run(Date.now());
+setInterval(() => {
+  try { pruneSessionsStmt.run(Date.now()); } catch {}
 }, 30 * 60 * 1000);
 
 // ── Middleware
@@ -140,9 +161,13 @@ function findUserByPassword(password) {
 function getSession(req) {
   const token = req.headers['x-auth-token'];
   if (!token) return null;
-  const sess = sessions.get(token);
-  if (!sess || Date.now() > sess.expires) return null;
-  return sess;
+  const row = getSessionStmt.get(token);
+  if (!row) return null;
+  if (Date.now() > row.expires_at) {
+    try { deleteSessionStmt.run(token); } catch {}
+    return null;
+  }
+  return { userId: row.user_id, userName: row.user_name, created: row.created_at, expires: row.expires_at };
 }
 
 // ══════════════════════════════════════════
@@ -161,22 +186,8 @@ app.post('/api/auth', (req, res) => {
   // Find matching user
   const user = findUserByPassword(password);
   if (user) {
-    // Evict oldest session if at capacity
-    if (sessions.size >= MAX_SESSIONS) {
-      let oldest = null;
-      for (const [tok, sess] of sessions) {
-        if (!oldest || sess.created < oldest.created) oldest = { tok, ...sess };
-      }
-      if (oldest) sessions.delete(oldest.tok);
-    }
-    const token = uuidv4();
-    sessions.set(token, {
-      userId: user.id,
-      userName: user.name || user.id,
-      created: Date.now(),
-      expires: Date.now() + SESSION_TTL
-    });
-    console.log(`[Auth] Login: ${user.name || user.id} (${user.id}), sessions active: ${sessions.size}`);
+    const token = createSession(user.id, user.name || user.id);
+    console.log(`[Auth] Login: ${user.name || user.id} (${user.id}), sessions active: ${sessionCount()}`);
     return res.json({
       success: true,
       token,
@@ -234,24 +245,8 @@ app.post('/api/auth/google', async (req, res) => {
     // Use email as user_id for Google users (prefix with 'g:' to distinguish from password users)
     const userId = 'g:' + userEmail;
 
-    // Evict oldest session if at capacity
-    if (sessions.size >= MAX_SESSIONS) {
-      let oldest = null;
-      for (const [tok, sess] of sessions) {
-        if (!oldest || sess.created < oldest.created) oldest = { tok, ...sess };
-      }
-      if (oldest) sessions.delete(oldest.tok);
-    }
-
-    const token = uuidv4();
-    sessions.set(token, {
-      userId,
-      userName,
-      created: Date.now(),
-      expires: Date.now() + SESSION_TTL
-    });
-
-    console.log(`[Auth] Google login: ${userName} (${userEmail}), sessions active: ${sessions.size}`);
+    const token = createSession(userId, userName);
+    console.log(`[Auth] Google login: ${userName} (${userEmail}), sessions active: ${sessionCount()}`);
     res.json({ success: true, token, userId, userName });
   } catch (err) {
     console.error('[Auth] Google auth error:', err.message);
@@ -417,7 +412,31 @@ app.get('/api/stats', (req, res) => {
       total_value: db.prepare('SELECT SUM(total) as s FROM quotes WHERE user_id = ?').get(userId).s || 0,
       avg_quote: db.prepare('SELECT AVG(total) as a FROM quotes WHERE user_id = ?').get(userId).a || 0,
       this_month: db.prepare(`SELECT COUNT(*) as c FROM quotes WHERE user_id = ? AND created_at >= date('now','start of month')`).get(userId).c,
-      by_type: db.prepare(`SELECT project_type, COUNT(*) as count, SUM(total) as revenue FROM quotes WHERE user_id = ? GROUP BY project_type ORDER BY revenue DESC`).all(userId)
+      // Revenue by type attributes each service to its actual project_type
+      // (multi-service quotes used to dump everything onto items[0]'s type).
+      // Legacy quotes without line_items fall back to the top-level columns.
+      by_type: db.prepare(`
+        WITH expanded AS (
+          SELECT
+            json_extract(li.value, '$.type') AS project_type,
+            CAST(COALESCE(json_extract(li.value, '$.subtotal'), 0) AS REAL) AS revenue
+          FROM quotes q, json_each(q.line_items) li
+          WHERE q.user_id = ?
+            AND q.line_items IS NOT NULL
+            AND q.line_items != ''
+            AND q.line_items != '[]'
+          UNION ALL
+          SELECT project_type, total AS revenue
+          FROM quotes
+          WHERE user_id = ?
+            AND (line_items IS NULL OR line_items = '' OR line_items = '[]')
+        )
+        SELECT project_type, COUNT(*) AS count, SUM(revenue) AS revenue
+        FROM expanded
+        WHERE project_type IS NOT NULL
+        GROUP BY project_type
+        ORDER BY revenue DESC
+      `).all(userId, userId)
     };
     res.json(stats);
   } catch (err) {
