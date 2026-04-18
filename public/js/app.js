@@ -23,6 +23,7 @@ const QUICK_PRICES = {
 
 // ── State
 let authToken = sessionStorage.getItem('qmach_token') || '';
+let currentUserId = '';
 let mapboxToken = '';
 let step = 0;
 let items = [];                // completed line items [{service, area, unit, price}]
@@ -86,6 +87,7 @@ async function handleOAuthCallback() {
     const data = await res.json();
     if (data.success) {
       authToken = data.token;
+      currentUserId = data.userId || '';
       sessionStorage.setItem('qmach_token', authToken);
       if (window.location.hash) history.replaceState(null, '', window.location.pathname);
       return true;
@@ -137,7 +139,7 @@ async function checkAuth() {
   try {
     const r = await fetch('/api/auth/check', { headers: authToken ? { 'x-auth-token': authToken } : {} });
     const d = await r.json();
-    if (d.valid) { hideLogin(); return true; }
+    if (d.valid) { currentUserId = d.userId || ''; hideLogin(); return true; }
   } catch {}
   showLogin(); return false;
 }
@@ -153,7 +155,9 @@ async function doLogin() {
     });
     const d = await r.json();
     if (d.success) {
-      authToken = d.token; sessionStorage.setItem('qmach_token', authToken);
+      authToken = d.token;
+      currentUserId = d.userId || '';
+      sessionStorage.setItem('qmach_token', authToken);
       hideLogin(); bootApp();
     } else { err.textContent = 'Wrong password'; pw.value = ''; pw.focus(); }
   } catch { err.textContent = 'Connection error'; }
@@ -161,11 +165,13 @@ async function doLogin() {
 }
 
 async function doLogout() {
-  sessionStorage.removeItem('qmach_token');
-  authToken = '';
   const sb = getSupabase();
   if (sb) { try { await sb.auth.signOut(); } catch {} }
   try { clearDraft(); } catch {}
+  sessionStorage.removeItem('qmach_token');
+  authToken = '';
+  currentUserId = '';
+  chatHistory = [];
   el('app-shell').classList.add('hidden');
   showLogin();
   toast('Signed out');
@@ -1358,6 +1364,7 @@ function resetQuote() {
   step = 0; items = [];
   current = { service: null, area: '', unit: 'sqft', price: '' };
   editingQuoteId = null;
+  chatHistory = [];
   drawnAreaSqMeters = 0; drawnPolygonGeoJSON = null; drawPoints = [];
   el('inp-address').value = ''; el('inp-client').value = '';
   el('inp-notes').value = ''; el('inp-area').value = ''; el('inp-price').value = '';
@@ -1475,9 +1482,15 @@ function showClientAC(query) {
 }
 
 // ═══════════════════════════════════════
-//  AUTO-SAVE DRAFT (localStorage)
+//  AUTO-SAVE DRAFT (localStorage, per-user)
 // ═══════════════════════════════════════
+function draftKey() {
+  // Scope drafts to the signed-in user so a shared device doesn't
+  // offer one user's in-progress quote to the next one who signs in.
+  return 'pquote_draft_' + (currentUserId || 'anon');
+}
 function saveDraft() {
+  if (!currentUserId) return;
   try {
     const draft = {
       step, items: [...items], current: { ...current },
@@ -1487,12 +1500,12 @@ function saveDraft() {
       notes: el('inp-notes')?.value || '',
       ts: Date.now()
     };
-    localStorage.setItem('pquote_draft', JSON.stringify(draft));
+    localStorage.setItem(draftKey(), JSON.stringify(draft));
   } catch {}
 }
 function loadDraft() {
   try {
-    const raw = localStorage.getItem('pquote_draft');
+    const raw = localStorage.getItem(draftKey());
     if (!raw) return null;
     const d = JSON.parse(raw);
     // Expire drafts older than 24 hours
@@ -1501,7 +1514,7 @@ function loadDraft() {
   } catch { return null; }
 }
 function clearDraft() {
-  try { localStorage.removeItem('pquote_draft'); } catch {}
+  try { localStorage.removeItem(draftKey()); } catch {}
 }
 function restoreDraft(d) {
   if (!d) return;

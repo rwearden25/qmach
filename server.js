@@ -12,6 +12,10 @@ const db = require('./db/database');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Railway / any reverse proxy terminates TLS and forwards X-Forwarded-For.
+// Required so express-rate-limit sees the real client IP instead of the proxy.
+app.set('trust proxy', 1);
+
 // ── Anthropic client
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -215,7 +219,11 @@ app.post('/api/auth/google', async (req, res) => {
     }
 
     const userData = await userRes.json();
-    const userEmail = userData.email || email;
+    const userEmail = userData.email;
+    if (!userEmail) {
+      console.log('[Auth] Google token validated but no email on user record');
+      return res.status(401).json({ success: false, error: 'No email on Google account' });
+    }
     const userName = userData.user_metadata?.full_name || name || userEmail;
 
     // Use email as user_id for Google users (prefix with 'g:' to distinguish from password users)
