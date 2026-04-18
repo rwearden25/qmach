@@ -143,6 +143,39 @@ body {
 }
 .container { max-width: 1040px; margin: 0 auto; }
 
+/* ═══ EXAMPLES STRIP ═══ */
+.examples-section { padding: 80px 24px 64px; background: var(--bg); }
+.examples-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  margin-top: 24px;
+}
+.ex-tile {
+  background: var(--white); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px; min-height: 200px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  transition: opacity .3s ease, transform .3s ease;
+  position: relative; overflow: hidden;
+}
+.ex-tile::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--accent); opacity: .5;
+}
+.ex-tile.fading { opacity: 0; transform: translateY(6px); }
+.ex-tile-head { display: flex; align-items: center; gap: 12px; }
+.ex-icon { font-size: 28px; }
+.ex-svc {
+  font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--dark);
+}
+.ex-meta {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 1px; margin-top: 12px;
+}
+.ex-client { font-size: 13px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+.ex-total {
+  font-family: var(--serif); font-size: 32px; font-weight: 800;
+  color: var(--accent); margin-top: 16px; line-height: 1;
+}
+
 /* ═══ HOW IT WORKS ═══ */
 .steps-section { background: var(--white); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .steps-grid {
@@ -337,6 +370,8 @@ body {
   .field-stat-num { font-size: 32px; }
   .hero h1 { letter-spacing: -0.5px; }
   .hero-sub { font-size: 16px; }
+  .examples-grid { grid-template-columns: 1fr; }
+  .examples-section { padding: 48px 20px; }
 }
 @media (max-width: 480px) {
   .hero { padding: 80px 20px 48px; }
@@ -360,11 +395,25 @@ body {
 
 <!-- HERO -->
 <section class="hero">
-  <div class="hero-badge">Built for the field</div>
+  <div class="hero-badge">Satellite measurement for trades</div>
   <h1>Measure. Price. Send. <em>60 seconds.</em></h1>
-  <p class="hero-sub">Professional quotes from your phone — on the job site, in the truck, at the kitchen table. No office needed. No spreadsheets. Just pull up, quote, and go.</p>
+  <p class="hero-sub">Tap the corners of any parking lot, roof, or driveway on satellite imagery. Get sq ft, AI pricing, and a polished PDF — without leaving the truck.</p>
   <a href="/app" class="hero-cta">Start Quoting Free →</a>
   <p class="hero-note">No credit card · Works on any phone</p>
+</section>
+
+<!-- EXAMPLES STRIP -->
+<section class="examples-section">
+  <div class="container">
+    <div class="section-label">A day in the field</div>
+    <div class="section-title">Real shapes. Real numbers.</div>
+    <p class="section-sub">Typical jobs contractors quote with pquote. Draw the area, pick a rate, send it — refreshing every few seconds.</p>
+    <div class="examples-grid">
+      <div class="ex-tile" data-slot="0"></div>
+      <div class="ex-tile" data-slot="1"></div>
+      <div class="ex-tile" data-slot="2"></div>
+    </div>
+  </div>
 </section>
 
 <!-- HOW IT WORKS -->
@@ -549,6 +598,49 @@ body {
     <div style="margin-top:16px">© 2026 Standard Power Washing · Simple and hard working is the standard.</div>
   </div>
 </footer>
+
+<script>
+(function () {
+  const EXAMPLES = [
+    { icon: '💦', svc: 'Pressure Washing',   meta: '12,400 sq ft',              client: 'Restaurant parking lot',  total: '$1,488' },
+    { icon: '🅿️', svc: 'Lot Striping',        meta: '2,100 lin ft · 48 stalls',  client: 'Retail center re-stripe',  total: '$528'   },
+    { icon: '🛣️', svc: 'Sealcoating',         meta: '8,900 sq ft',               client: 'Coffee shop drive aisle',  total: '$1,068' },
+    { icon: '🎨', svc: 'Exterior Painting',  meta: '3,200 sq ft',               client: 'Strip mall facade',        total: '$7,680' },
+    { icon: '🏠', svc: 'Roof Replacement',   meta: '24.5 squares',              client: 'Residential tear-off',     total: '$15,925'},
+    { icon: '🧱', svc: 'Concrete Flatwork',  meta: '1,100 sq ft',               client: 'HOA common area',          total: '$7,700' },
+    { icon: '🌿', svc: 'Sod Install',        meta: '4,500 sq ft',               client: 'Townhome front yard',      total: '$11,250'},
+    { icon: '💦', svc: 'Pressure Washing',   meta: '6,800 sq ft',               client: 'Restaurant dumpster pad',  total: '$816'   },
+    { icon: '🛣️', svc: 'Driveway Sealcoat',  meta: '3,200 sq ft',               client: 'Single-family home',       total: '$640'   },
+    { icon: '🎨', svc: 'Interior Painting',  meta: '2,800 sq ft',               client: 'Office turnover',          total: '$4,480' },
+    { icon: '🅿️', svc: 'New Lot Layout',      meta: '1,450 lin ft · 32 stalls',  client: 'Office park',              total: '$385'   },
+    { icon: '🏠', svc: 'Flat Roof Recoat',   meta: '32 squares',                client: 'Commercial warehouse',     total: '$28,800'}
+  ];
+  const tiles = document.querySelectorAll('.ex-tile');
+  if (!tiles.length) return;
+  let offset = 0;
+  function paint(tile, ex) {
+    tile.innerHTML =
+      '<div>' +
+        '<div class="ex-tile-head"><span class="ex-icon">' + ex.icon + '</span><span class="ex-svc">' + ex.svc + '</span></div>' +
+        '<div class="ex-meta">' + ex.meta + '</div>' +
+        '<div class="ex-client">' + ex.client + '</div>' +
+      '</div>' +
+      '<div class="ex-total">' + ex.total + '</div>';
+  }
+  // Initial render — no fade, just populate
+  tiles.forEach((tile, i) => paint(tile, EXAMPLES[i % EXAMPLES.length]));
+  offset = tiles.length;
+  // Rotate every 5s with a short fade
+  setInterval(() => {
+    tiles.forEach(t => t.classList.add('fading'));
+    setTimeout(() => {
+      tiles.forEach((tile, i) => paint(tile, EXAMPLES[(offset + i) % EXAMPLES.length]));
+      tiles.forEach(t => t.classList.remove('fading'));
+      offset = (offset + tiles.length) % EXAMPLES.length;
+    }, 320);
+  }, 5000);
+})();
+</script>
 
 </body>
 </html>

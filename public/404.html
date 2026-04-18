@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pquote — Not Found</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;800;900&family=Nunito:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#F2F0EB; --dark:#2A2824; --muted:#4E4C46;
+    --accent:#3A5E30; --accent-pale:#E0EDDA; --light:#F2F0EB;
+    --serif:'Playfair Display',Georgia,serif;
+    --sans:'Nunito',system-ui,sans-serif;
+    --mono:'DM Mono',monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: linear-gradient(160deg, #1a1816 0%, var(--dark) 40%, #323028 100%);
+    color: var(--light); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 40px 24px;
+  }
+  .logo {
+    font-family: var(--serif); font-size: 32px; font-weight: 700;
+    color: var(--light); margin-bottom: 48px; text-decoration: none;
+  }
+  .logo span { color: var(--accent-pale); font-weight: 400; }
+  .code {
+    font-family: var(--serif); font-size: clamp(96px, 20vw, 180px);
+    font-weight: 900; color: var(--accent-pale); line-height: 1;
+    letter-spacing: -4px; margin-bottom: 16px;
+  }
+  h1 {
+    font-family: var(--serif); font-size: clamp(24px, 4vw, 36px);
+    font-weight: 800; color: var(--light);
+    max-width: 520px; margin-bottom: 12px;
+  }
+  p {
+    font-size: 15px; color: rgba(255,255,255,.5);
+    max-width: 440px; line-height: 1.7; margin-bottom: 36px;
+  }
+  .cta {
+    display: inline-block; font-family: var(--mono); font-size: 13px;
+    font-weight: 500; text-transform: uppercase; letter-spacing: 1px;
+    background: var(--accent); color: white;
+    padding: 16px 32px; border-radius: 8px; text-decoration: none;
+    box-shadow: 0 6px 24px rgba(58,94,48,.35); transition: all .2s;
+  }
+  .cta:hover { background: #2E4E24; transform: translateY(-2px); }
+  .hint {
+    font-family: var(--mono); font-size: 11px;
+    color: rgba(255,255,255,.25); margin-top: 20px;
+  }
+</style>
+</head>
+<body>
+  <a href="/" class="logo">p<span>quote</span></a>
+  <div class="code">404</div>
+  <h1>That page wandered off the job site.</h1>
+  <p>The URL you tried doesn't match anything here. Head back to the landing page or jump straight into a new quote.</p>
+  <a href="/app" class="cta">Open pquote →</a>
+  <p class="hint">Or go <a href="/" style="color:var(--accent-pale);text-decoration:underline">home</a>.</p>
+</body>
+</html>

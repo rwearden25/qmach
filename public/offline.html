@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pquote — Offline</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;800;900&family=Nunito:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#F2F0EB; --dark:#2A2824; --accent:#3A5E30;
+    --accent-pale:#E0EDDA; --light:#F2F0EB;
+    --serif:'Playfair Display',Georgia,serif;
+    --sans:'Nunito',system-ui,sans-serif;
+    --mono:'DM Mono',monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: linear-gradient(160deg, #1a1816 0%, var(--dark) 40%, #323028 100%);
+    color: var(--light); min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 40px 24px;
+  }
+  .logo {
+    font-family: var(--serif); font-size: 32px; font-weight: 700;
+    color: var(--light); margin-bottom: 48px; text-decoration: none;
+  }
+  .logo span { color: var(--accent-pale); font-weight: 400; }
+  .icon {
+    font-size: 72px; margin-bottom: 24px; opacity: .8;
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: .55; transform: scale(1); }
+    50%      { opacity: .9;  transform: scale(1.05); }
+  }
+  h1 {
+    font-family: var(--serif); font-size: clamp(26px, 4.5vw, 40px);
+    font-weight: 800; color: var(--light);
+    max-width: 520px; margin-bottom: 14px;
+  }
+  p {
+    font-size: 15px; color: rgba(255,255,255,.5);
+    max-width: 440px; line-height: 1.75; margin-bottom: 8px;
+  }
+  .hint {
+    font-family: var(--mono); font-size: 11px;
+    color: rgba(255,255,255,.3); margin-top: 36px;
+    letter-spacing: .5px; text-transform: uppercase;
+  }
+  .cta {
+    display: inline-block; font-family: var(--mono); font-size: 13px;
+    font-weight: 500; text-transform: uppercase; letter-spacing: 1px;
+    background: var(--accent); color: white;
+    padding: 16px 32px; border-radius: 8px; text-decoration: none;
+    margin-top: 28px; cursor: pointer; border: none;
+    box-shadow: 0 6px 24px rgba(58,94,48,.35); transition: all .2s;
+  }
+  .cta:hover { background: #2E4E24; transform: translateY(-2px); }
+</style>
+</head>
+<body>
+  <a href="/" class="logo">p<span>quote</span></a>
+  <div class="icon">📡</div>
+  <h1>You're offline.</h1>
+  <p>Your draft is saved locally on this device. Finish the quote if you want — we'll sync it up the next time you're connected.</p>
+  <p>Signal dropped while you were working? No data lost.</p>
+  <button class="cta" onclick="location.reload()">Try again →</button>
+  <div class="hint">Connection check happens automatically</div>
+
+  <script>
+    // Auto-reload the moment the browser reports we're back online.
+    window.addEventListener('online', () => location.reload());
+  </script>
+</body>
+</html>

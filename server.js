@@ -618,8 +618,13 @@ app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ── Catch-all SPA (serves app for any deep link)
+// ── Catch-all: serve the SPA for page navigations, 404 for missed asset paths.
+// Paths that look like files (have an extension) didn't match express.static,
+// so they're genuine missing assets — send the branded 404 instead of HTML.
 app.get('*', (req, res) => {
+  if (/\.[a-z0-9]{2,5}$/i.test(req.path)) {
+    return res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+  }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
