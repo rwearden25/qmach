@@ -116,6 +116,11 @@ try {
       console.log(`[DB] Migrated ${migrated.changes} existing quotes to user: ${firstUserId}`);
     }
   }
+  // Per-quote tax rate. Existing rows backfilled to 0 — users can re-save to correct.
+  if (!cols.includes('tax_rate')) {
+    db.exec('ALTER TABLE quotes ADD COLUMN tax_rate REAL NOT NULL DEFAULT 0');
+    console.log('[DB] Added tax_rate column');
+  }
 } catch (err) {
   console.error('[DB] Migration error:', err.message);
 }
@@ -286,15 +291,19 @@ app.get('/api/quotes', (req, res) => {
     const { search, limit = 50, offset = 0 } = req.query;
     const userId = req.userId;
     let quotes;
+    // Project only what the list + export consumers use. Drops polygon_geojson
+    // and ai_narrative (the two heaviest blobs) — loadQuote uses /api/quotes/:id
+    // for the full row.
+    const LIST_COLS = 'id, client_name, project_type, total, created_at, address, line_items';
     if (search) {
       quotes = db.prepare(`
-        SELECT * FROM quotes
+        SELECT ${LIST_COLS} FROM quotes
         WHERE user_id = ? AND (client_name LIKE ? OR project_type LIKE ? OR address LIKE ? OR notes LIKE ?)
         ORDER BY created_at DESC LIMIT ? OFFSET ?
       `).all(userId, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, parseInt(limit), parseInt(offset));
     } else {
       quotes = db.prepare(`
-        SELECT * FROM quotes WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
+        SELECT ${LIST_COLS} FROM quotes WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
       `).all(userId, parseInt(limit), parseInt(offset));
     }
     const total = db.prepare('SELECT COUNT(*) as count FROM quotes WHERE user_id = ?').get(userId);
@@ -322,7 +331,7 @@ app.post('/api/quotes', (req, res) => {
     const {
       client_name, project_type, area, unit, price_per_unit,
       total, notes, address, lat, lng, polygon_geojson, qty,
-      ai_narrative, line_items, markup
+      ai_narrative, line_items, markup, tax_rate
     } = req.body;
 
     if (!client_name) {
@@ -333,8 +342,8 @@ app.post('/api/quotes', (req, res) => {
     db.prepare(`
       INSERT INTO quotes
         (id, client_name, project_type, area, unit, price_per_unit, total, notes,
-         address, lat, lng, polygon_geojson, qty, ai_narrative, line_items, markup, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         address, lat, lng, polygon_geojson, qty, ai_narrative, line_items, markup, user_id, tax_rate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, client_name, project_type || 'custom',
       parseFloat(area) || 0, unit || 'sqft',
@@ -347,7 +356,8 @@ app.post('/api/quotes', (req, res) => {
       ai_narrative || '',
       line_items ? JSON.stringify(line_items) : null,
       parseFloat(markup) || 0,
-      req.userId
+      req.userId,
+      parseFloat(tax_rate) || 0
     );
 
     const created = db.prepare('SELECT * FROM quotes WHERE id = ?').get(id);
@@ -364,7 +374,7 @@ app.put('/api/quotes/:id', (req, res) => {
     const existing = db.prepare('SELECT id FROM quotes WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
     if (!existing) return res.status(404).json({ error: 'Quote not found' });
 
-    const fields = ['client_name','project_type','area','unit','price_per_unit','total','notes','address','lat','lng','polygon_geojson','qty','ai_narrative','line_items','markup'];
+    const fields = ['client_name','project_type','area','unit','price_per_unit','total','notes','address','lat','lng','polygon_geojson','qty','ai_narrative','line_items','markup','tax_rate'];
     const updates = [];
     const values = [];
 

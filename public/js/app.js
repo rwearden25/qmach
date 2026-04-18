@@ -548,8 +548,12 @@ function onContinue() {
   if (step === 3) {
     // Finish current item → push to items → go to review
     if (current.service && current.price) savePrice(current.service, current.price);
-    items.push({ ...current });
+    // Bundle the drawn polygon (if any) with the line item so multi-service
+    // quotes don't all share one polygon from whichever service drew last.
+    items.push({ ...current, polygon: drawnPolygonGeoJSON });
     current = { service: null, area: '', unit: 'sqft', price: '' };
+    drawnPolygonGeoJSON = null;
+    drawnAreaSqMeters = 0;
     haptic(15);
     goStep(4);
   } else if (step < 4) {
@@ -725,12 +729,8 @@ function renderReview() {
   const all = [...items];
   const subtotal = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
 
-  // Set tax select to remembered rate
-  const taxSel = el('inp-tax');
-  if (taxSel) {
-    taxSel.value = getTaxRate();
-  }
-
+  // Tax rate on the select is authoritative here — set by resetQuote (user default)
+  // on new quotes and by loadQuote (saved rate) on loads. Do not overwrite it.
   const { rate, taxAmount, total } = calcTax(subtotal);
 
   el('review-total').textContent = '$' + fmtMoney(total);
@@ -825,11 +825,32 @@ function rcRow(label, value, stepIdx) {
 
 function editItem(idx) {
   if (idx < 0 || idx >= items.length) return;
-  // Pull item out of items array and into current for editing
-  current = { ...items[idx] };
+  const item = items[idx];
+  // Pull scalar fields into current (strip polygon so it doesn't get
+  // re-pushed on top of the explicit bundling in onContinue).
+  current = { service: item.service, area: item.area, unit: item.unit, price: item.price };
+  drawnPolygonGeoJSON = item.polygon || null;
+  drawnAreaSqMeters = drawnPolygonGeoJSON ? polygonToSqm(drawnPolygonGeoJSON) : 0;
   items.splice(idx, 1);
-  // Go to service step — user can change service, area, or price
+  // Refresh the measure-result display so Step 2 shows the restored polygon
+  // instead of whatever the previous edit left behind.
+  if (drawnAreaSqMeters > 0) {
+    const sqft = drawnAreaSqMeters * 10.7639;
+    el('mr-value').textContent = fmtNum(sqft);
+    el('mr-unit').textContent = 'sq ft';
+  }
   goStep(1);
+}
+
+function polygonToSqm(poly) {
+  if (!poly?.coordinates?.[0]) return 0;
+  try { return polygonAreaSqMeters(poly.coordinates[0]); } catch { return 0; }
+}
+
+function parseGeoJSON(v) {
+  if (!v) return null;
+  if (typeof v !== 'string') return v;
+  try { return JSON.parse(v); } catch { return null; }
 }
 
 function removeItem(idx) {
@@ -950,8 +971,9 @@ async function saveAndShare() {
     notes: el('inp-notes')?.value || '',
     address: address,
     lat: lastLat, lng: lastLng,
-    // Backend stringifies polygon_geojson and line_items — send as raw objects
-    polygon_geojson: drawnPolygonGeoJSON || null,
+    // Top-level polygon kept for legacy single-service reads; mirrors the
+    // first line item's polygon. The per-item polygon below is the truth.
+    polygon_geojson: all[0]?.polygon || null,
     ai_narrative: (narrative && !narrative.includes('Writing')) ? narrative : '',
     line_items: all.map(i => ({
       type: i.service,
@@ -960,9 +982,11 @@ async function saveAndShare() {
       price: parseFloat(i.price) || 0,
       qty: 1,
       label: JOB_TYPES.find(j => j.id === i.service)?.label || i.service,
-      subtotal: (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0)
+      subtotal: (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0),
+      polygon: i.polygon || null
     })),
-    markup: 0
+    markup: 0,
+    tax_rate: rate
   };
 
   try {
@@ -1070,28 +1094,35 @@ async function loadQuote(id) {
     let lineItems = [];
     try { lineItems = JSON.parse(q.line_items || '[]'); } catch {}
 
+    // Legacy quotes carry polygon at the top level; attribute it to item 0.
+    const legacyPoly = parseGeoJSON(q.polygon_geojson);
+
     if (lineItems.length > 0) {
-      lineItems.forEach(li => {
+      lineItems.forEach((li, idx) => {
         items.push({
           service: li.type, area: String(li.area || 0),
-          unit: li.unit || 'sqft', price: String(li.price || 0)
+          unit: li.unit || 'sqft', price: String(li.price || 0),
+          polygon: li.polygon || (idx === 0 ? legacyPoly : null)
         });
       });
     } else {
       items.push({
         service: q.project_type || 'custom', area: String(q.area || 0),
-        unit: q.unit || 'sqft', price: String(q.price_per_unit || 0)
+        unit: q.unit || 'sqft', price: String(q.price_per_unit || 0),
+        polygon: legacyPoly
       });
     }
 
     current = { service: null, area: '', unit: 'sqft', price: '' };
+    drawnPolygonGeoJSON = null;
+    drawnAreaSqMeters = 0;
+
+    // Restore the tax rate this quote was saved with (not the user's current default).
+    el('inp-tax').value = q.tax_rate != null ? String(q.tax_rate) : '0';
 
     if (q.ai_narrative) {
       el('narrative-box').textContent = q.ai_narrative;
       el('narrative-box').classList.remove('hidden');
-    }
-    if (q.polygon_geojson) {
-      try { drawnPolygonGeoJSON = typeof q.polygon_geojson === 'string' ? JSON.parse(q.polygon_geojson) : q.polygon_geojson; } catch {}
     }
 
     switchView('quote');
@@ -1368,6 +1399,7 @@ function resetQuote() {
   drawnAreaSqMeters = 0; drawnPolygonGeoJSON = null; drawPoints = [];
   el('inp-address').value = ''; el('inp-client').value = '';
   el('inp-notes').value = ''; el('inp-area').value = ''; el('inp-price').value = '';
+  el('inp-tax').value = String(getTaxRate());
   el('narrative-box').classList.add('hidden'); el('narrative-box').textContent = '';
   el('map-result').classList.add('hidden'); el('btn-open-map').classList.remove('hidden');
   document.querySelectorAll('.svc-row').forEach(r => r.classList.remove('selected'));

@@ -37,6 +37,7 @@ db.exec(`
     polygon_geojson TEXT,
     ai_narrative    TEXT DEFAULT '',
     line_items      TEXT,
+    tax_rate        REAL NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
   );
