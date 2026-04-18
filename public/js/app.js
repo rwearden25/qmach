@@ -227,6 +227,17 @@ async function bootApp() {
     document.addEventListener('click', e => {
       if (!addrInput.contains(e.target) && !el('addr-autocomplete')?.contains(e.target)) clearAddrAC();
     });
+    // Geocode on blur if the user typed an address but never clicked a
+    // suggestion — otherwise lastLat/lng stay stale from a previous query
+    // and the quote gets saved with the wrong coordinates.
+    addrInput.addEventListener('blur', () => {
+      const q = addrInput.value.trim();
+      if (q.length < 5) return;
+      // If we already have coords and the input hasn't changed substantively,
+      // no need to re-geocode.
+      if (lastLat && lastLng && addrInput.dataset.geocodedFor === q) return;
+      geocodeAddressToCoords(q);
+    });
   }
 
   // ── FIX: Client input also triggers Continue check + client autocomplete
@@ -884,7 +895,9 @@ async function fetchAddrSuggestions(q) {
       item.className = 'ac-item';
       item.textContent = f.place_name;
       item.addEventListener('click', () => {
-        el('inp-address').value = f.place_name;
+        const input = el('inp-address');
+        input.value = f.place_name;
+        input.dataset.geocodedFor = f.place_name;
         lastLat = f.center[1]; lastLng = f.center[0];
         clearAddrAC();
         updateContinueBtn();
@@ -895,6 +908,21 @@ async function fetchAddrSuggestions(q) {
 }
 
 function clearAddrAC() { const l = el('addr-autocomplete'); if (l) l.innerHTML = ''; }
+
+async function geocodeAddressToCoords(q) {
+  if (!mapboxToken || !q) return;
+  try {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxToken}&limit=1&country=US`;
+    const data = await fetch(url).then(r => r.json());
+    const f = data.features?.[0];
+    if (f && Array.isArray(f.center)) {
+      lastLng = f.center[0];
+      lastLat = f.center[1];
+      const input = el('inp-address');
+      if (input) input.dataset.geocodedFor = q;
+    }
+  } catch {}
+}
 
 function geolocateUser() {
   if (!navigator.geolocation) { toast('GPS not available'); return; }

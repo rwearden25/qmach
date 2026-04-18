@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const Anthropic = require('@anthropic-ai/sdk');
 const { v4: uuidv4 } = require('uuid');
 const db = require('./db/database');
+const backup = require('./db/backup');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -101,8 +102,16 @@ app.use(helmet({
     }
   }
 }));
+// Pin CORS to known origins by default. `CORS_ORIGIN` (comma-separated) can
+// override. Same-origin requests (no Origin header) are always allowed.
+const CORS_ORIGINS = (process.env.CORS_ORIGIN ||
+  'https://pquote.ai,https://www.pquote.ai,http://localhost:3000')
+  .split(',').map(s => s.trim()).filter(Boolean);
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || true,
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // curl, same-origin, server-to-server
+    cb(null, CORS_ORIGINS.includes(origin) || CORS_ORIGINS.includes('*'));
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '2mb' }));
@@ -442,6 +451,35 @@ app.get('/api/stats', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch stats' });
   }
+});
+
+// ══════════════════════════════════════════
+//  BACKUP — admin-only database download
+// ══════════════════════════════════════════
+// Endpoint is disabled unless BACKUP_ADMIN_ID is set. Value must match
+// req.userId exactly. Returns the latest on-volume snapshot (see db/backup.js).
+// Pull it regularly from a second machine for offsite safety.
+app.get('/api/backup/download', (req, res) => {
+  const adminId = process.env.BACKUP_ADMIN_ID;
+  if (!adminId) return res.status(403).json({ error: 'Backup endpoint disabled (BACKUP_ADMIN_ID not set)' });
+  if (req.userId !== adminId) return res.status(403).json({ error: 'Forbidden' });
+  const file = backup.latestBackup();
+  if (!file) {
+    // If no snapshot exists yet (e.g. fresh deploy, first-run window),
+    // take one on-demand so the caller gets something useful.
+    const r = backup.runDailyBackup();
+    if (r.error) return res.status(500).json({ error: 'Backup generation failed' });
+  }
+  const latest = backup.latestBackup();
+  if (!latest) return res.status(404).json({ error: 'No backup available' });
+  res.download(latest);
+});
+
+app.get('/api/backup/list', (req, res) => {
+  const adminId = process.env.BACKUP_ADMIN_ID;
+  if (!adminId) return res.status(403).json({ error: 'Backup endpoint disabled (BACKUP_ADMIN_ID not set)' });
+  if (req.userId !== adminId) return res.status(403).json({ error: 'Forbidden' });
+  res.json({ backups: backup.listBackups() });
 });
 
 // ══════════════════════════════════════════
