@@ -505,19 +505,22 @@ app.get('/api/stats', (req, res) => {
 });
 
 // ══════════════════════════════════════════
-//  BACKUP — admin-only database download
+//  ADMIN — gated by ADMIN_USER_ID (or legacy BACKUP_ADMIN_ID)
 // ══════════════════════════════════════════
-// Endpoint is disabled unless BACKUP_ADMIN_ID is set. Value must match
-// req.userId exactly. Returns the latest on-volume snapshot (see db/backup.js).
-// Pull it regularly from a second machine for offsite safety.
-app.get('/api/backup/download', (req, res) => {
-  const adminId = process.env.BACKUP_ADMIN_ID;
-  if (!adminId) return res.status(403).json({ error: 'Backup endpoint disabled (BACKUP_ADMIN_ID not set)' });
-  if (req.userId !== adminId) return res.status(403).json({ error: 'Forbidden' });
-  const file = backup.latestBackup();
-  if (!file) {
-    // If no snapshot exists yet (e.g. fresh deploy, first-run window),
-    // take one on-demand so the caller gets something useful.
+// All admin endpoints (backup + user mgmt) require an authenticated user
+// whose req.userId matches the configured admin id. If neither env var is
+// set, every admin endpoint is disabled — explicit opt-in.
+const ADMIN_ID = process.env.ADMIN_USER_ID || process.env.BACKUP_ADMIN_ID;
+
+function adminGate(req, res, next) {
+  if (!ADMIN_ID) return res.status(403).json({ error: 'Admin endpoints disabled (set ADMIN_USER_ID)' });
+  if (req.userId !== ADMIN_ID) return res.status(403).json({ error: 'Forbidden' });
+  next();
+}
+
+// ── Backup download/list (existing, now uses the shared gate).
+app.get('/api/backup/download', adminGate, (req, res) => {
+  if (!backup.latestBackup()) {
     const r = backup.runDailyBackup();
     if (r.error) return res.status(500).json({ error: 'Backup generation failed' });
   }
@@ -526,11 +529,110 @@ app.get('/api/backup/download', (req, res) => {
   res.download(latest);
 });
 
-app.get('/api/backup/list', (req, res) => {
-  const adminId = process.env.BACKUP_ADMIN_ID;
-  if (!adminId) return res.status(403).json({ error: 'Backup endpoint disabled (BACKUP_ADMIN_ID not set)' });
-  if (req.userId !== adminId) return res.status(403).json({ error: 'Forbidden' });
+app.get('/api/backup/list', adminGate, (req, res) => {
   res.json({ backups: backup.listBackups() });
+});
+
+app.post('/api/admin/backup/run', adminGate, (req, res) => {
+  const r = backup.runDailyBackup();
+  if (r.error) return res.status(500).json({ error: r.error });
+  res.json(r);
+});
+
+// ── Users: merges three sources — configured password users (QMACH_USERS),
+// distinct user_ids that have saved quotes, and user_ids with live sessions.
+app.get('/api/admin/users', adminGate, (req, res) => {
+  try {
+    const now = Date.now();
+    const quoteStats = db.prepare(`
+      SELECT user_id, COUNT(*) AS quote_count, SUM(total) AS total_value, MAX(created_at) AS last_quote_at
+      FROM quotes GROUP BY user_id
+    `).all();
+    const sessionStats = db.prepare(`
+      SELECT user_id, COUNT(*) AS active_sessions, MAX(created_at) AS last_session_at
+      FROM sessions WHERE expires_at > ? GROUP BY user_id
+    `).all(now);
+
+    const byId = new Map();
+    const ensure = (id) => {
+      if (!byId.has(id)) {
+        byId.set(id, {
+          id,
+          name: id.startsWith('g:') ? id.slice(2) : id,
+          source: id.startsWith('g:') ? 'google_oauth' : 'unknown',
+          quote_count: 0, total_value: 0, last_quote_at: null,
+          active_sessions: 0, last_session_at: null
+        });
+      }
+      return byId.get(id);
+    };
+    for (const u of USERS) {
+      const e = ensure(u.id);
+      e.name = u.name || u.id;
+      e.source = 'qmach_users';
+    }
+    for (const q of quoteStats) {
+      const e = ensure(q.user_id);
+      e.quote_count = q.quote_count;
+      e.total_value = q.total_value || 0;
+      e.last_quote_at = q.last_quote_at;
+    }
+    for (const s of sessionStats) {
+      const e = ensure(s.user_id);
+      e.active_sessions = s.active_sessions;
+      e.last_session_at = s.last_session_at;
+    }
+    const users = [...byId.values()].sort((a, b) =>
+      (b.quote_count - a.quote_count) || (a.id > b.id ? 1 : -1)
+    );
+    res.json({ users, total: users.length, admin_id: ADMIN_ID });
+  } catch (err) {
+    console.error('admin/users error:', err);
+    res.status(500).json({ error: 'Failed to load users' });
+  }
+});
+
+// ── Sessions: live (non-expired) sessions across all users.
+app.get('/api/admin/sessions', adminGate, (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT token, user_id, user_name, created_at, expires_at
+      FROM sessions WHERE expires_at > ? ORDER BY created_at DESC
+    `).all(Date.now());
+    // Redact the token — admin should see sessions exist, not steal them.
+    const safe = rows.map(r => ({
+      token_prefix: r.token.slice(0, 8) + '…',
+      token_hash: r.token, // kept server-side for the revoke call
+      user_id: r.user_id,
+      user_name: r.user_name,
+      created_at: r.created_at,
+      expires_at: r.expires_at
+    }));
+    res.json({ sessions: safe, total: safe.length });
+  } catch (err) {
+    console.error('admin/sessions error:', err);
+    res.status(500).json({ error: 'Failed to load sessions' });
+  }
+});
+
+// ── Revoke all sessions for a given user_id.
+app.delete('/api/admin/sessions/user/:userId', adminGate, (req, res) => {
+  try {
+    const r = db.prepare('DELETE FROM sessions WHERE user_id = ?').run(req.params.userId);
+    res.json({ revoked: r.changes });
+  } catch (err) {
+    res.status(500).json({ error: 'Revoke failed' });
+  }
+});
+
+// ── Revoke a specific session token.
+app.delete('/api/admin/sessions/:token', adminGate, (req, res) => {
+  try {
+    const r = db.prepare('DELETE FROM sessions WHERE token = ?').run(req.params.token);
+    res.json({ revoked: r.changes });
+  } catch (err) {
+    res.status(500).json({ error: 'Revoke failed' });
+  }
 });
 
 // ══════════════════════════════════════════
@@ -705,6 +807,13 @@ app.get('/', (req, res) => {
 // ── App entry point
 app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ── Admin UI (the page itself is public HTML; the API endpoints below
+// enforce ADMIN_USER_ID. Non-admins loading the page see a "not authorized"
+// message rendered by the page's client-side auth check.)
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 // ── Catch-all: serve the SPA for page navigations, 404 for missed asset paths.

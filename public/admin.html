@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2A2824">
+<title>pquote admin</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;800;900&family=Nunito:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#F2F0EB; --bg2:#E4E2DA; --dark:#2A2824; --muted:#4E4C46;
+    --accent:#3A5E30; --accent-pale:#E0EDDA; --border:#C4C0B6;
+    --border-lt:#D8D4CC; --white:#FFFFFF;
+    --red:#8E2E32; --red-pale:#F2E6E6;
+    --serif:'Playfair Display',Georgia,serif;
+    --sans:'Nunito',system-ui,sans-serif;
+    --mono:'DM Mono',monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans); background: var(--bg); color: var(--dark);
+    min-height: 100vh; padding: 24px 20px 60px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; }
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 18px; border-bottom: 1px solid var(--border); margin-bottom: 24px;
+  }
+  .logo {
+    font-family: var(--serif); font-size: 26px; font-weight: 700;
+    color: var(--dark); text-decoration: none;
+  }
+  .logo span { color: var(--accent); font-weight: 400; }
+  .logo::after {
+    content: 'admin';
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    margin-left: 10px; padding: 3px 8px; border-radius: 4px;
+    background: var(--accent); color: white;
+    text-transform: uppercase; letter-spacing: 1px; vertical-align: middle;
+  }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+  .btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: .8px;
+    padding: 8px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--white);
+    color: var(--dark); text-decoration: none; display: inline-block;
+    transition: all .15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary {
+    background: var(--accent); color: white; border-color: var(--accent);
+  }
+  .btn.primary:hover { background: #2E4E24; color: white; }
+  .btn.danger { color: var(--red); border-color: var(--red-pale); }
+  .btn.danger:hover { background: var(--red-pale); border-color: var(--red); color: var(--red); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .section {
+    background: var(--white); border: 1px solid var(--border-lt);
+    border-radius: 12px; margin-bottom: 20px; overflow: hidden;
+  }
+  .section-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid var(--border-lt);
+  }
+  .section-title {
+    font-family: var(--serif); font-size: 18px; font-weight: 700;
+  }
+  .section-meta {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    padding: 12px 20px; text-align: left; font-size: 13px;
+    border-bottom: 1px solid var(--border-lt);
+  }
+  th {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  td.id { font-family: var(--mono); font-size: 12px; color: var(--dark); }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-family: var(--mono); font-size: 9px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .pill.qmach_users { background: var(--accent-pale); color: var(--accent); }
+  .pill.google_oauth { background: #E6EEFB; color: #2B5EA8; }
+  .pill.unknown { background: var(--bg2); color: var(--muted); }
+  .pill.admin { background: var(--dark); color: var(--accent-pale); margin-left: 6px; }
+
+  .empty {
+    padding: 40px 20px; text-align: center;
+    color: var(--muted); font-size: 14px;
+  }
+  .loading { padding: 40px; text-align: center; color: var(--muted); }
+  .gate {
+    padding: 60px 20px; text-align: center;
+  }
+  .gate h2 { font-family: var(--serif); font-size: 24px; margin-bottom: 12px; }
+  .gate p { color: var(--muted); margin-bottom: 20px; max-width: 440px; margin-left: auto; margin-right: auto; line-height: 1.6; }
+
+  .stats-row {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    background: var(--white); border: 1px solid var(--border-lt);
+    border-radius: 10px; padding: 16px;
+  }
+  .stat-num {
+    font-family: var(--serif); font-size: 26px; font-weight: 800;
+    color: var(--accent); line-height: 1;
+  }
+  .stat-lbl {
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+    letter-spacing: .8px; color: var(--muted); margin-top: 6px;
+  }
+  .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--dark); color: var(--accent-pale);
+    padding: 10px 20px; border-radius: 8px; font-size: 13px;
+    box-shadow: 0 4px 16px rgba(42,40,36,.2);
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+    font-family: var(--mono); font-size: 12px; letter-spacing: .5px;
+  }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 720px) {
+    body { padding: 16px 12px 60px; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    th, td { padding: 10px 12px; font-size: 12px; }
+    .section-head { padding: 12px 16px; flex-direction: column; align-items: flex-start; gap: 6px; }
+    .row-actions { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <a href="/" class="logo">p<span>quote</span></a>
+    <div class="header-actions">
+      <a href="/app" class="btn">← Back to app</a>
+      <button class="btn" id="refresh-btn">Refresh</button>
+    </div>
+  </header>
+
+  <div id="content"><div class="loading">Loading…</div></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const $  = (sel, ctx) => (ctx || document).querySelector(sel);
+  const $$ = (sel, ctx) => Array.from((ctx || document).querySelectorAll(sel));
+  const token = sessionStorage.getItem('qmach_token') || '';
+
+  function authFetch(url, opts = {}) {
+    opts.headers = opts.headers || {};
+    if (token) opts.headers['x-auth-token'] = token;
+    return fetch(url, opts);
+  }
+
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2400);
+  }
+
+  function renderGate(status, message) {
+    const c = $('#content');
+    if (status === 401) {
+      c.innerHTML = `<div class="gate">
+        <h2>Sign in required</h2>
+        <p>You need to be signed in to pquote before visiting /admin. Head to the app, log in, then come back.</p>
+        <a href="/app" class="btn primary">Open pquote →</a>
+      </div>`;
+      return;
+    }
+    if (status === 403) {
+      c.innerHTML = `<div class="gate">
+        <h2>Not authorized</h2>
+        <p>${message || 'This account is not the configured admin. Set ADMIN_USER_ID on Railway to your user_id to enable admin access.'}</p>
+        <a href="/app" class="btn">← Back to app</a>
+      </div>`;
+      return;
+    }
+    c.innerHTML = `<div class="gate">
+      <h2>Something went wrong</h2>
+      <p>${message || 'Failed to load admin data.'}</p>
+    </div>`;
+  }
+
+  function formatDate(ts) {
+    if (!ts) return '—';
+    // quotes created_at is an ISO string; sessions expires_at is a Unix ms.
+    const d = typeof ts === 'number' ? new Date(ts) : new Date(ts);
+    if (isNaN(d.getTime())) return '—';
+    const diff = Date.now() - d.getTime();
+    if (diff < 60_000) return 'just now';
+    if (diff < 3_600_000) return Math.floor(diff / 60_000) + 'm ago';
+    if (diff < 86_400_000) return Math.floor(diff / 3_600_000) + 'h ago';
+    if (diff < 30 * 86_400_000) return Math.floor(diff / 86_400_000) + 'd ago';
+    return d.toLocaleDateString();
+  }
+
+  function formatMoney(n) {
+    return '$' + (parseFloat(n || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
+  function formatRemaining(ts) {
+    const ms = ts - Date.now();
+    if (ms < 0) return 'expired';
+    if (ms < 3_600_000) return Math.floor(ms / 60_000) + 'm left';
+    return Math.floor(ms / 3_600_000) + 'h left';
+  }
+
+  async function load() {
+    $('#content').innerHTML = '<div class="loading">Loading…</div>';
+    try {
+      const [uRes, sRes, bRes] = await Promise.all([
+        authFetch('/api/admin/users'),
+        authFetch('/api/admin/sessions'),
+        authFetch('/api/backup/list')
+      ]);
+      if (uRes.status === 401) return renderGate(401);
+      if (uRes.status === 403) {
+        const j = await uRes.json().catch(() => ({}));
+        return renderGate(403, j.error);
+      }
+      if (!uRes.ok) {
+        return renderGate(uRes.status, 'Admin API returned ' + uRes.status);
+      }
+      const usersData = await uRes.json();
+      const users    = usersData.users || [];
+      const adminId  = usersData.admin_id;
+      const sessions = (await sRes.json().catch(() => ({}))).sessions || [];
+      const backups  = (await bRes.json().catch(() => ({}))).backups || [];
+      render(users, sessions, backups, adminId);
+    } catch (err) {
+      console.error(err);
+      renderGate(0, 'Network error loading admin data.');
+    }
+  }
+
+  function render(users, sessions, backups, adminId) {
+    const totalQuotes = users.reduce((a, u) => a + u.quote_count, 0);
+    const totalValue  = users.reduce((a, u) => a + (parseFloat(u.total_value) || 0), 0);
+    const activeSessions = sessions.length;
+    const withQuotes = users.filter(u => u.quote_count > 0).length;
+
+    const html = `
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-num">${users.length}</div><div class="stat-lbl">Total users</div></div>
+        <div class="stat-card"><div class="stat-num">${withQuotes}</div><div class="stat-lbl">With quotes</div></div>
+        <div class="stat-card"><div class="stat-num">${activeSessions}</div><div class="stat-lbl">Live sessions</div></div>
+        <div class="stat-card"><div class="stat-num">${formatMoney(totalValue)}</div><div class="stat-lbl">Gross quoted (all)</div></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <div class="section-title">Users</div>
+          <div class="section-meta">${users.length} total</div>
+        </div>
+        ${users.length === 0 ? '<div class="empty">No users yet.</div>' : `
+          <table>
+            <thead><tr><th>ID</th><th>Source</th><th style="text-align:right">Quotes</th><th style="text-align:right">Value</th><th>Last quote</th><th>Sessions</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody>
+              ${users.map(u => `
+                <tr>
+                  <td class="id">${escapeHtml(u.id)}${u.id === adminId ? '<span class="pill admin">admin</span>' : ''}<div style="font-size:11px;color:var(--muted);margin-top:2px">${escapeHtml(u.name || '')}</div></td>
+                  <td><span class="pill ${u.source}">${u.source.replace('_',' ')}</span></td>
+                  <td class="num" style="text-align:right">${u.quote_count}</td>
+                  <td class="num" style="text-align:right">${formatMoney(u.total_value)}</td>
+                  <td>${formatDate(u.last_quote_at)}</td>
+                  <td class="num">${u.active_sessions}</td>
+                  <td><div class="row-actions">${u.active_sessions > 0 ? `<button class="btn danger" data-revoke-user="${escapeAttr(u.id)}">Revoke sessions</button>` : ''}</div></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`}
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <div class="section-title">Live sessions</div>
+          <div class="section-meta">${sessions.length} active</div>
+        </div>
+        ${sessions.length === 0 ? '<div class="empty">No active sessions.</div>' : `
+          <table>
+            <thead><tr><th>User</th><th>Token</th><th>Age</th><th>Expires</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody>
+              ${sessions.map(s => `
+                <tr>
+                  <td class="id">${escapeHtml(s.user_id)}<div style="font-size:11px;color:var(--muted);margin-top:2px">${escapeHtml(s.user_name || '')}</div></td>
+                  <td class="id" style="font-size:11px">${escapeHtml(s.token_prefix)}</td>
+                  <td>${formatDate(s.created_at)}</td>
+                  <td>${formatRemaining(s.expires_at)}</td>
+                  <td style="text-align:right"><button class="btn danger" data-revoke-token="${escapeAttr(s.token_hash)}">Revoke</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`}
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <div class="section-title">Backups</div>
+          <div class="section-meta">${backups.length} snapshots · 14-day rolling</div>
+        </div>
+        <div style="padding:16px 20px">
+          <div style="display:flex;gap:10px;margin-bottom:${backups.length ? '12px' : '0'}">
+            <a href="/api/backup/download" class="btn primary" id="backup-download-btn">Download latest</a>
+            <button class="btn" id="backup-run-btn">Force new snapshot</button>
+          </div>
+          ${backups.length > 0 ? `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.8">${backups.map(b => escapeHtml(b)).reverse().join('<br>')}</div>` : ''}
+        </div>
+      </div>
+    `;
+    $('#content').innerHTML = html;
+
+    // Wire row actions (CSP-safe: no inline onclicks).
+    $$('[data-revoke-user]').forEach(btn => btn.addEventListener('click', () => revokeUserSessions(btn.dataset.revokeUser)));
+    $$('[data-revoke-token]').forEach(btn => btn.addEventListener('click', () => revokeToken(btn.dataset.revokeToken)));
+    $('#backup-run-btn')?.addEventListener('click', runBackup);
+    // The download link needs auth header → intercept the click and stream.
+    $('#backup-download-btn')?.addEventListener('click', downloadBackup);
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+
+  async function revokeUserSessions(userId) {
+    if (!confirm('Revoke ALL active sessions for ' + userId + '? They\'ll be forced to sign in again.')) return;
+    try {
+      const r = await authFetch('/api/admin/sessions/user/' + encodeURIComponent(userId), { method: 'DELETE' });
+      const j = await r.json();
+      toast('Revoked ' + (j.revoked || 0) + ' session(s)');
+      load();
+    } catch { toast('Revoke failed'); }
+  }
+
+  async function revokeToken(token) {
+    if (!confirm('Revoke this single session? The user stays signed in on other devices.')) return;
+    try {
+      const r = await authFetch('/api/admin/sessions/' + encodeURIComponent(token), { method: 'DELETE' });
+      const j = await r.json();
+      toast('Revoked ' + (j.revoked || 0) + ' session');
+      load();
+    } catch { toast('Revoke failed'); }
+  }
+
+  async function runBackup() {
+    try {
+      const r = await authFetch('/api/admin/backup/run', { method: 'POST' });
+      const j = await r.json();
+      if (j.skipped) toast("Today's snapshot already exists");
+      else if (j.created) toast('Snapshot created');
+      else toast('Backup run completed');
+      load();
+    } catch { toast('Backup failed'); }
+  }
+
+  async function downloadBackup(e) {
+    e.preventDefault();
+    try {
+      const r = await authFetch('/api/backup/download');
+      if (!r.ok) { toast('Download failed (' + r.status + ')'); return; }
+      const blob = await r.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'pquote-' + new Date().toISOString().slice(0,10) + '.db';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch { toast('Download failed'); }
+  }
+
+  $('#refresh-btn').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>
