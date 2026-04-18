@@ -328,6 +328,7 @@ async function bootApp() {
   });
 
   setupInstallBanner();
+  setupTipsStrip();
 
   try {
     const cfg = await authFetch('/api/config').then(r => r.json());
@@ -1620,6 +1621,24 @@ function showSuccess(callback) {
       if (callback) callback();
     }, 400);
   }, 1200);
+}
+
+// ═══════════════════════════════════════
+//  ONBOARDING TIPS (first-run, per-user)
+// ═══════════════════════════════════════
+function tipsKey() { return 'pquote_tips_dismissed_' + (currentUserId || 'anon'); }
+
+function setupTipsStrip() {
+  const strip = el('tips-strip');
+  if (!strip) return;
+  // Hide if this user has already dismissed it.
+  if (currentUserId && localStorage.getItem(tipsKey())) return;
+  strip.classList.remove('hidden');
+  el('tips-close')?.addEventListener('click', () => {
+    strip.classList.add('hidden');
+    try { if (currentUserId) localStorage.setItem(tipsKey(), '1'); } catch {}
+    haptic(8);
+  });
 }
 
 // ═══════════════════════════════════════

@@ -864,3 +864,63 @@ textarea:focus { border-color: var(--accent); box-shadow: var(--shadow-sm), 0 0 
   .view-pad { max-width: 520px; margin: 0 auto; }
   .bottom-action { max-width: 520px; left: 50%; transform: translateX(-50%); }
 }
+
+/* ═══ ONBOARDING TIPS (first-run, dismissible) ═══ */
+.tips-strip {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 14px 12px;
+  margin-bottom: 18px;
+  animation: tipsIn .35s ease both;
+}
+.tips-strip.hidden { display: none; }
+@keyframes tipsIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.tips-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+.tips-label {
+  font-family: var(--mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--muted); font-weight: 500;
+}
+.tips-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 16px; color: var(--muted); padding: 4px 8px;
+  border-radius: var(--radius-sm); line-height: 1;
+  transition: background .15s, color .15s;
+}
+.tips-close:hover { background: var(--border-lt); color: var(--dark); }
+.tips-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;
+}
+.tip {
+  background: var(--white); border: 1px solid var(--border-lt);
+  border-radius: var(--radius-sm); padding: 10px;
+  display: flex; gap: 10px; align-items: flex-start;
+  transition: border-color .15s, box-shadow .15s;
+}
+.tip:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+.tip-icon {
+  font-size: 20px; line-height: 1; flex-shrink: 0;
+  width: 28px; text-align: center;
+}
+.tip-body { flex: 1; min-width: 0; }
+.tip-title {
+  font-family: var(--serif); font-size: 13px; font-weight: 700;
+  color: var(--dark); margin-bottom: 3px; line-height: 1.2;
+}
+.tip-desc {
+  font-size: 11px; color: var(--muted); line-height: 1.45;
+}
+.tip-desc b { color: var(--dark); font-weight: 700; }
+
+@media (min-width: 640px) {
+  .tips-grid { grid-template-columns: repeat(4, 1fr); }
+  .tip { flex-direction: column; align-items: flex-start; }
+  .tip-icon { width: auto; }
+}

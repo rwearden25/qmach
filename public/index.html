@@ -65,6 +65,43 @@
 
       <!-- STEP 0: ADDRESS -->
       <div class="step" id="step-0">
+        <!-- First-run tips — shown once per user, dismissible -->
+        <div class="tips-strip hidden" id="tips-strip">
+          <div class="tips-head">
+            <span class="tips-label">👋 Quick tips for your first quote</span>
+            <button type="button" class="tips-close" id="tips-close" aria-label="Dismiss tips">✕</button>
+          </div>
+          <div class="tips-grid">
+            <div class="tip">
+              <div class="tip-icon">🛰️</div>
+              <div class="tip-body">
+                <div class="tip-title">Draw on satellite</div>
+                <div class="tip-desc">On the Measure step, tap <b>Open Map &amp; Draw</b>. Tap the corners of the work area — sq ft updates live.</div>
+              </div>
+            </div>
+            <div class="tip">
+              <div class="tip-icon">✨</div>
+              <div class="tip-body">
+                <div class="tip-title">AI price suggest</div>
+                <div class="tip-desc">Not sure what to charge? <b>AI Suggest Price</b> gives low / market / premium ranges by job type.</div>
+              </div>
+            </div>
+            <div class="tip">
+              <div class="tip-icon">＋</div>
+              <div class="tip-body">
+                <div class="tip-title">Multi-service quotes</div>
+                <div class="tip-desc">On the Review step, tap <b>Add another service</b> to bundle striping + washing + sealcoat into one quote.</div>
+              </div>
+            </div>
+            <div class="tip">
+              <div class="tip-icon">📤</div>
+              <div class="tip-body">
+                <div class="tip-title">Send it fast</div>
+                <div class="tip-desc">SMS, email, or a branded PDF. Tax &amp; disclaimer included automatically.</div>
+              </div>
+            </div>
+          </div>
+        </div>
         <h1 class="step-title">Where's the job?</h1>
         <div class="field-group">
           <label class="flabel">Job address</label>
