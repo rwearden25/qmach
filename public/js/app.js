@@ -1362,8 +1362,11 @@ function buildShareTextFromQuote(q) {
 }
 
 function copyShare() { navigator.clipboard.writeText(buildShareText()).then(() => toast('Copied! 📋')).catch(() => toast('Copy failed')); }
-function smsShare() { window.open('sms:?body=' + encodeURIComponent(buildShareText())); }
-function emailShare() { window.open(`mailto:?subject=${encodeURIComponent('Quote Estimate')}&body=${encodeURIComponent(buildShareText())}`); }
+// Same-window navigation (not window.open) so the OS handler is invoked
+// directly — window.open on sms:/mailto: URIs spawns a blank popup on
+// desktop and sometimes on mobile.
+function smsShare()   { window.location.href = 'sms:?body=' + encodeURIComponent(buildShareText()); }
+function emailShare() { window.location.href = `mailto:?subject=${encodeURIComponent('Quote Estimate')}&body=${encodeURIComponent(buildShareText())}`; }
 
 // ═══════════════════════════════════════
 //  STATS
