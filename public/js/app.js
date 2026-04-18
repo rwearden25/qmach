@@ -321,6 +321,12 @@ async function bootApp() {
   on('chat-send', sendChat);
   el('chat-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
 
+  // Collapsible headers on the review step — inline onclick= is blocked by
+  // Helmet's script-src-attr 'none', so wire listeners here instead.
+  document.querySelectorAll('.collapse-header').forEach(h => {
+    h.addEventListener('click', () => toggleSection(h));
+  });
+
   setupInstallBanner();
 
   try {
@@ -1356,8 +1362,14 @@ ${taxHtml}
 ${notes ? `<div class="lbl" style="margin-bottom:6px">Notes</div><div style="font-size:13px;line-height:1.6;margin-bottom:16px">${notes}</div>` : ''}
 ${narrative && !narrative.includes('Writing') ? `<div class="lbl" style="margin-bottom:6px">Scope of Work</div><div class="narr">${narrative}</div>` : ''}
 <div class="disc">${DISCLAIMER}</div>
-<br><button class="noprint" onclick="window.print()" style="padding:12px 28px;background:#3A5E30;color:white;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-family:'DM Mono',monospace">🖨️ Print / Save as PDF</button></body></html>`);
+<br><button class="noprint" id="print-btn" style="padding:12px 28px;background:#3A5E30;color:white;border:none;border-radius:6px;font-size:15px;cursor:pointer;font-family:'DM Mono',monospace">🖨️ Print / Save as PDF</button></body></html>`);
   win.document.close();
+  // Inline onclick="" would be blocked by the opener's CSP (script-src-attr 'none').
+  // Attach the listener from the parent frame instead — same-origin so this works.
+  try {
+    const printBtn = win.document.getElementById('print-btn');
+    if (printBtn) printBtn.addEventListener('click', () => win.print());
+  } catch {}
 }
 
 // ═══════════════════════════════════════

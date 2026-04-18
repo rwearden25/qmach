@@ -555,31 +555,31 @@ body {
     <p class="section-sub">Everything you need to know.</p>
     <div class="faq-list">
       <div class="faq-item">
-        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">What is pquote? <span class="faq-chevron">›</span></button>
+        <button class="faq-q">What is pquote? <span class="faq-chevron">›</span></button>
         <div class="faq-a"><p>pquote is a field quoting tool built for contractors and trade crews. It lets you measure areas using satellite maps, set prices per service type, and send professional quotes via text, email, or PDF — all from your phone in under 60 seconds.</p></div>
       </div>
       <div class="faq-item">
-        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">What devices does it work on? <span class="faq-chevron">›</span></button>
+        <button class="faq-q">What devices does it work on? <span class="faq-chevron">›</span></button>
         <div class="faq-a"><p>Any device with a web browser — iPhone, Android, iPad, laptop, desktop. It's a Progressive Web App (PWA), so you can install it to your home screen for an app-like experience. No app store needed.</p></div>
       </div>
       <div class="faq-item">
-        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Is it really free? <span class="faq-chevron">›</span></button>
+        <button class="faq-q">Is it really free? <span class="faq-chevron">›</span></button>
         <div class="faq-a"><p>Yes — pquote is in early access beta. Every feature is free while we're building and refining the product with real users. When we introduce pricing, early users will get the best deal.</p></div>
       </div>
       <div class="faq-item">
-        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">What service types are supported? <span class="faq-chevron">›</span></button>
+        <button class="faq-q">What service types are supported? <span class="faq-chevron">›</span></button>
         <div class="faq-a"><p>Pressure washing, parking lot striping, sealcoating, painting, roofing, concrete, landscaping, and a custom/other option. Each service type has its own quick-price buttons and remembers your last-used rate.</p></div>
       </div>
       <div class="faq-item">
-        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">How does the satellite measuring work? <span class="faq-chevron">›</span></button>
+        <button class="faq-q">How does the satellite measuring work? <span class="faq-chevron">›</span></button>
         <div class="faq-a"><p>Tap "Open Map & Draw" on the measurement step. You'll see a full-screen satellite view centered on the job address. Tap the corners of the work area to draw a polygon. pquote calculates the area using real-world geometry (haversine + shoelace formula) and converts it to sq ft, sq yd, and acres automatically.</p></div>
       </div>
       <div class="faq-item">
-        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Is my data secure? <span class="faq-chevron">›</span></button>
+        <button class="faq-q">Is my data secure? <span class="faq-chevron">›</span></button>
         <div class="faq-a"><p>All connections use HTTPS encryption. Your quotes are stored on our servers and password-protected. Client names, prices, and tax rates are cached locally on your device for speed — never shared with third parties.</p></div>
       </div>
       <div class="faq-item">
-        <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">Can I use it for multiple service types in one quote? <span class="faq-chevron">›</span></button>
+        <button class="faq-q">Can I use it for multiple service types in one quote? <span class="faq-chevron">›</span></button>
         <div class="faq-a"><p>Yes. On the review step, tap "Add another service" to add as many line items as you need. Each can have a different service type, area, unit, and price. The total calculates automatically with optional tax.</p></div>
       </div>
     </div>
@@ -631,6 +631,11 @@ body {
   // Initial render — no fade, just populate
   tiles.forEach((tile, i) => paint(tile, EXAMPLES[i % EXAMPLES.length]));
   offset = tiles.length;
+  // FAQ toggles — inline onclick="" is blocked by Helmet's default
+  // script-src-attr 'none', so we attach listeners properly.
+  document.querySelectorAll('.faq-q').forEach(q => {
+    q.addEventListener('click', () => q.parentElement.classList.toggle('open'));
+  });
   // Rotate every 5s with a short fade
   setInterval(() => {
     tiles.forEach(t => t.classList.add('fading'));

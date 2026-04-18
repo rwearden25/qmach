@@ -67,10 +67,11 @@
   <h1>You're offline.</h1>
   <p>Your draft is saved locally on this device. Finish the quote if you want — we'll sync it up the next time you're connected.</p>
   <p>Signal dropped while you were working? No data lost.</p>
-  <button class="cta" onclick="location.reload()">Try again →</button>
+  <button class="cta" id="retry-btn">Try again →</button>
   <div class="hint">Connection check happens automatically</div>
 
   <script>
+    document.getElementById('retry-btn').addEventListener('click', () => location.reload());
     // Auto-reload the moment the browser reports we're back online.
     window.addEventListener('online', () => location.reload());
   </script>
