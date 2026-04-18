@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const Anthropic = require('@anthropic-ai/sdk');
 const { v4: uuidv4 } = require('uuid');
+const bcrypt = require('bcryptjs');
 const db = require('./db/database');
 const backup = require('./db/backup');
 
@@ -52,6 +53,15 @@ if (process.env.QMACH_USERS) {
 if (USERS.length === 0 && process.env.QMACH_PASSWORD) {
   USERS = [{ id: 'default', password: process.env.QMACH_PASSWORD, name: 'Admin' }];
   console.log('[Auth] Single-user mode (QMACH_PASSWORD)');
+}
+
+// Warn once at boot if any user still has a plaintext password. Not fatal —
+// we keep supporting plaintext for migration — but visible in logs so it
+// doesn't become a forgotten gap.
+const plaintextUsers = USERS.filter(u => u.password && !/^\$2[aby]\$/.test(u.password));
+if (plaintextUsers.length > 0) {
+  console.warn(`[Auth] ⚠️  ${plaintextUsers.length} user(s) have plaintext passwords: ${plaintextUsers.map(u => u.id).join(', ')}`);
+  console.warn('[Auth] ⚠️  Run `npm run hash-password -- <password>` and replace the plaintext values in QMACH_USERS.');
 }
 
 const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 hours
@@ -155,15 +165,50 @@ try {
   console.error('[DB] Migration error:', err.message);
 }
 
-// ── Helper: find user by password (timing-safe)
+// ── Helper: find user by password — supports bcrypt hashes AND legacy plaintext.
+// Bcrypt hashes are detected by the $2a$ / $2b$ / $2y$ prefix. Run
+// `npm run hash-password -- <password>` to generate one, then paste into
+// the `password` field of QMACH_USERS. Plaintext entries still work (for
+// migration), but emit a boot-time warning (see further down).
+function isBcryptHash(s) { return typeof s === 'string' && /^\$2[aby]\$/.test(s); }
+
+// Google OAuth allowlist. GOOGLE_ALLOWED_EMAILS is a comma-separated list.
+// Entries that start with '@' are treated as domain suffixes ('@spwinc.com'
+// matches any email from that domain). Empty/unset list = open signup
+// (matches pre-allowlist behavior).
+const GOOGLE_ALLOWED = (process.env.GOOGLE_ALLOWED_EMAILS || '')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+
+function isAllowedGoogleEmail(email) {
+  if (GOOGLE_ALLOWED.length === 0) return true;
+  const e = (email || '').toLowerCase();
+  return GOOGLE_ALLOWED.some(entry =>
+    entry.startsWith('@') ? e.endsWith(entry) : e === entry
+  );
+}
+
+if (GOOGLE_ALLOWED.length > 0) {
+  console.log(`[Auth] Google OAuth restricted to: ${GOOGLE_ALLOWED.join(', ')}`);
+} else {
+  console.log('[Auth] Google OAuth open to any Gmail account (set GOOGLE_ALLOWED_EMAILS to restrict)');
+}
+
 function findUserByPassword(password) {
   if (!password) return null;
-  return USERS.find(u => {
-    if (password.length !== u.password.length) return false;
-    try {
-      return crypto.timingSafeEqual(Buffer.from(password), Buffer.from(u.password));
-    } catch { return false; }
-  }) || null;
+  for (const u of USERS) {
+    const stored = u.password || '';
+    if (!stored) continue;
+    if (isBcryptHash(stored)) {
+      try { if (bcrypt.compareSync(password, stored)) return u; } catch {}
+    } else {
+      // Legacy plaintext — constant-time compare
+      if (password.length !== stored.length) continue;
+      try {
+        if (crypto.timingSafeEqual(Buffer.from(password), Buffer.from(stored))) return u;
+      } catch {}
+    }
+  }
+  return null;
 }
 
 // ── Helper: get session from request
@@ -249,6 +294,12 @@ app.post('/api/auth/google', async (req, res) => {
       console.log('[Auth] Google token validated but no email on user record');
       return res.status(401).json({ success: false, error: 'No email on Google account' });
     }
+
+    if (!isAllowedGoogleEmail(userEmail)) {
+      console.log('[Auth] Google email not in allowlist:', userEmail);
+      return res.status(403).json({ success: false, error: 'This Google account is not authorized for pquote. Contact the admin to be added.' });
+    }
+
     const userName = userData.user_metadata?.full_name || name || userEmail;
 
     // Use email as user_id for Google users (prefix with 'g:' to distinguish from password users)
