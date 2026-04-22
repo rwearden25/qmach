@@ -75,25 +75,36 @@ body { display: flex; flex-direction: column; }
 }
 .login-logo span { color: var(--accent); }
 .login-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
-#login-password {
-  width: 100%; padding: 15px 16px;
+.auth-input {
+  width: 100%; padding: 13px 14px; margin-top: 10px;
   border: 2px solid var(--border-lt); border-radius: var(--radius-sm);
   font-size: 16px; font-family: var(--sans);
-  outline: none; text-align: center; letter-spacing: 3px;
-  background: var(--bg); transition: all .2s;
+  outline: none; background: var(--bg); transition: all .2s;
+  color: var(--text);
 }
-#login-password:focus { border-color: var(--accent); background: var(--white); box-shadow: 0 0 0 3px rgba(58,94,48,.12); }
-#login-btn {
-  width: 100%; margin-top: 16px; padding: 15px;
+.auth-input:focus { border-color: var(--accent); background: var(--white); box-shadow: 0 0 0 3px rgba(58,94,48,.12); }
+.auth-row { display: flex; gap: 10px; }
+.auth-row .auth-input { flex: 1; }
+.auth-submit {
+  width: 100%; margin-top: 14px; padding: 15px;
   background: var(--accent); color: white; border: none;
   border-radius: var(--radius-sm); font-size: 14px; font-weight: 700;
   font-family: var(--mono); cursor: pointer; letter-spacing: .8px;
   text-transform: uppercase; transition: all .15s;
   box-shadow: var(--shadow-accent);
 }
-#login-btn:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(58,94,48,.3); }
-#login-btn:active { transform: translateY(0); }
-#login-btn:disabled { opacity: .5; transform: none; box-shadow: none; }
+.auth-submit:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(58,94,48,.3); }
+.auth-submit:active { transform: translateY(0); }
+.auth-submit:disabled { opacity: .5; transform: none; box-shadow: none; cursor: default; }
+.auth-toggle {
+  font-size: 13px; color: var(--muted); margin-top: 18px;
+}
+.auth-toggle a {
+  color: var(--accent); font-weight: 600; text-decoration: none;
+  border-bottom: 1px dashed rgba(58,94,48,.4);
+}
+.auth-toggle a:hover { color: var(--accent-hover); border-bottom-color: var(--accent); }
+.auth-panel.hidden { display: none; }
 .login-error { color: var(--red); font-size: 13px; font-weight: 600; margin-top: 12px; min-height: 18px; }
 
 /* Google Sign-In button */

@@ -1,14 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="pquote">
   <title>pquote</title>
-  <!-- Rounded-square background — matches brand --dark (#2A2824) -->
-  <rect width="64" height="64" rx="12" ry="12" fill="#2A2824"/>
-  <!-- Cream serif "p" — matches the nav/footer logo 'p' styling -->
-  <text x="32" y="44"
-        font-family="'Playfair Display', Georgia, 'Times New Roman', serif"
-        font-size="48"
-        font-weight="900"
-        fill="#F2F0EB"
-        text-anchor="middle">p</text>
-  <!-- Green accent bar (#3A5E30) — echoes the underline beneath hero H1 em -->
-  <rect x="16" y="57" width="32" height="3" rx="1.5" fill="#3A5E30"/>
+  <!-- Dark rounded-square background — brand --dark (#2A2824) -->
+  <rect width="64" height="64" rx="14" ry="14" fill="#2A2824"/>
+  <!-- Lowercase "p": cream bowl + stem, with an accent-green counter that
+       doubles as a map-pin dot (ties to the satellite-measurement product).
+       Drawn as geometry instead of <text> so it stays crisp at 16×16. -->
+  <circle cx="37" cy="26" r="14" fill="#F2F0EB"/>
+  <rect x="14" y="12" width="9" height="42" rx="1.5" fill="#F2F0EB"/>
+  <circle cx="37" cy="26" r="5.5" fill="#3A5E30"/>
 </svg>

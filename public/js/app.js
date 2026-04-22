@@ -146,23 +146,73 @@ async function checkAuth() {
 }
 
 async function doLogin() {
-  const btn = el('login-btn'), pw = el('login-password'), err = el('login-error');
-  if (!pw.value.trim()) { err.textContent = 'Enter a password'; return; }
+  const btn = el('login-btn'), emailInput = el('login-email'), pw = el('login-password'), err = el('login-error');
+  const email = (emailInput?.value || '').trim();
+  const password = pw?.value || '';
+  if (!email) { err.textContent = 'Enter your email'; emailInput?.focus(); return; }
+  if (!password) { err.textContent = 'Enter your password'; pw?.focus(); return; }
   btn.disabled = true; btn.textContent = 'Signing in...'; err.textContent = '';
   try {
-    const r = await fetch('/api/auth', {
+    const r = await fetch('/api/auth/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw.value.trim() })
+      body: JSON.stringify({ email, password })
     });
-    const d = await r.json();
-    if (d.success) {
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.success) {
       authToken = d.token;
       currentUserId = d.userId || '';
       sessionStorage.setItem('qmach_token', authToken);
       hideLogin(); bootApp();
-    } else { err.textContent = 'Wrong password'; pw.value = ''; pw.focus(); }
+    } else {
+      err.textContent = d.error || 'Wrong email or password';
+      pw.value = ''; pw.focus();
+    }
   } catch { err.textContent = 'Connection error'; }
   btn.disabled = false; btn.textContent = 'Sign In';
+}
+
+async function doSignup() {
+  const btn = el('signup-btn');
+  const first = el('signup-first'), last = el('signup-last');
+  const emailInput = el('signup-email'), pw = el('signup-password'), err = el('signup-error');
+  const firstName = (first?.value || '').trim();
+  const lastName  = (last?.value  || '').trim();
+  const email     = (emailInput?.value || '').trim();
+  const password  = pw?.value || '';
+
+  if (!firstName) { err.textContent = 'Enter your first name'; first?.focus(); return; }
+  if (!lastName)  { err.textContent = 'Enter your last name';  last?.focus();  return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = 'Enter a valid email'; emailInput?.focus(); return; }
+  if (password.length < 8) { err.textContent = 'Password must be at least 8 characters'; pw?.focus(); return; }
+
+  btn.disabled = true; btn.textContent = 'Creating...'; err.textContent = '';
+  try {
+    const r = await fetch('/api/auth/signup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ first_name: firstName, last_name: lastName, email, password })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.success) {
+      authToken = d.token;
+      currentUserId = d.userId || '';
+      sessionStorage.setItem('qmach_token', authToken);
+      hideLogin(); bootApp();
+    } else {
+      err.textContent = d.error || 'Signup failed';
+    }
+  } catch { err.textContent = 'Connection error'; }
+  btn.disabled = false; btn.textContent = 'Create Account';
+}
+
+function showSignup() {
+  el('auth-signin')?.classList.add('hidden');
+  el('auth-signup')?.classList.remove('hidden');
+  el('signup-first')?.focus();
+}
+function showSignin() {
+  el('auth-signup')?.classList.add('hidden');
+  el('auth-signin')?.classList.remove('hidden');
+  el('login-email')?.focus();
 }
 
 async function doLogout() {
@@ -184,7 +234,15 @@ async function doLogout() {
 document.addEventListener('DOMContentLoaded', async () => {
   on('login-btn', doLogin);
   on('btn-google', googleSignIn);
+  on('signup-btn', doSignup);
+  el('show-signup')?.addEventListener('click', e => { e.preventDefault(); showSignup(); });
+  el('show-signin')?.addEventListener('click', e => { e.preventDefault(); showSignin(); });
+  el('login-email')?.addEventListener('keydown', e => { if (e.key === 'Enter') el('login-password')?.focus(); });
   el('login-password')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+  ['signup-first','signup-last','signup-email'].forEach(id =>
+    el(id)?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const order=['signup-first','signup-last','signup-email','signup-password']; const next=order[order.indexOf(id)+1]; el(next)?.focus(); } })
+  );
+  el('signup-password')?.addEventListener('keydown', e => { if (e.key === 'Enter') doSignup(); });
 
   // Only check for OAuth callback when URL has auth tokens (returning from Google)
   const hasOAuthTokens = window.location.hash && window.location.hash.includes('access_token');

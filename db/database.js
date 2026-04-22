@@ -56,6 +56,19 @@ db.exec(`
     expires_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+  -- Registered users (email + bcrypt password). The older env-based
+  -- QMACH_USERS flow is still honored in server.js as a fallback; new
+  -- signups land here. user_id in quotes/sessions = the user's email.
+  CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    email         TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    first_name    TEXT NOT NULL,
+    last_name     TEXT NOT NULL,
+    created_at    INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 `);
 
 console.log(`SQLite database initialized at: ${DB_PATH}`);

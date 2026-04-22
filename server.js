@@ -76,6 +76,10 @@ const pruneSessionsStmt = db.prepare('DELETE FROM sessions WHERE expires_at < ?'
 const countSessionsStmt = db.prepare('SELECT COUNT(*) AS n FROM sessions');
 const oldestSessionStmt = db.prepare('SELECT token FROM sessions ORDER BY created_at ASC LIMIT 1');
 
+// DB-backed users (new email+password signup flow).
+const insertUserStmt   = db.prepare('INSERT INTO users (id, email, password_hash, first_name, last_name, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+const getUserByEmailStmt = db.prepare('SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = ?');
+
 function createSession(userId, userName) {
   // Evict oldest if at capacity (DoS prevention).
   if (countSessionsStmt.get().n >= MAX_SESSIONS) {
@@ -228,30 +232,82 @@ function getSession(req) {
 //  AUTH ENDPOINTS
 // ══════════════════════════════════════════
 
-// ── Login
-app.post('/api/auth', (req, res) => {
-  const { password } = req.body;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  // No users configured — open access
-  if (USERS.length === 0) {
+// ── Signup — first name, last name, email, password. Creates a DB user,
+// hashes the password with bcrypt, and returns a session token.
+app.post('/api/auth/signup', (req, res) => {
+  try {
+    const firstName = String(req.body?.first_name || '').trim();
+    const lastName  = String(req.body?.last_name  || '').trim();
+    const email     = String(req.body?.email      || '').trim().toLowerCase();
+    const password  = String(req.body?.password   || '');
+
+    if (!firstName || !lastName) return res.status(400).json({ success: false, error: 'First and last name required' });
+    if (!EMAIL_RE.test(email))   return res.status(400).json({ success: false, error: 'Valid email required' });
+    if (password.length < 8)     return res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
+
+    if (getUserByEmailStmt.get(email)) {
+      return res.status(409).json({ success: false, error: 'An account with that email already exists' });
+    }
+
+    const hash = bcrypt.hashSync(password, 10);
+    const userName = `${firstName} ${lastName}`.trim();
+    insertUserStmt.run(email, email, hash, firstName, lastName, Date.now());
+
+    const token = createSession(email, userName);
+    console.log(`[Auth] Signup: ${userName} (${email}), sessions active: ${sessionCount()}`);
+    res.status(201).json({ success: true, token, userId: email, userName });
+  } catch (err) {
+    console.error('[Auth] Signup error:', err);
+    res.status(500).json({ success: false, error: 'Signup failed' });
+  }
+});
+
+// ── Login — primary path is email + password (DB users). We also keep the
+// legacy env-configured QMACH_USERS path alive: if no email is supplied, or
+// the email isn't in the DB, we fall through to the password-only check.
+app.post('/api/auth/login', (req, res) => {
+  const email    = String(req.body?.email || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
+
+  // DB user — email + password
+  if (email) {
+    const u = getUserByEmailStmt.get(email);
+    if (u && bcrypt.compareSync(password, u.password_hash)) {
+      const userName = `${u.first_name} ${u.last_name}`.trim();
+      const token = createSession(u.id, userName);
+      console.log(`[Auth] Login: ${userName} (${u.id}), sessions active: ${sessionCount()}`);
+      return res.json({ success: true, token, userId: u.id, userName });
+    }
+    // Email supplied but no DB match — reject without falling through,
+    // otherwise a legitimate "wrong password" request leaks into env-user
+    // space and could succeed if the typed password happens to match one.
+    if (u) {
+      console.log(`[Auth] Login failed (bad password): ${email}`);
+      return res.status(401).json({ success: false, error: 'Wrong email or password' });
+    }
+  }
+
+  // No email, or email not registered — legacy env-user flow.
+  if (USERS.length === 0 && !email) {
     return res.json({ success: true, token: 'open', userId: 'default', userName: 'Admin', message: 'No password configured' });
   }
-
-  // Find matching user
-  const user = findUserByPassword(password);
-  if (user) {
-    const token = createSession(user.id, user.name || user.id);
-    console.log(`[Auth] Login: ${user.name || user.id} (${user.id}), sessions active: ${sessionCount()}`);
-    return res.json({
-      success: true,
-      token,
-      userId: user.id,
-      userName: user.name || user.id
-    });
+  const legacy = findUserByPassword(password);
+  if (legacy) {
+    const token = createSession(legacy.id, legacy.name || legacy.id);
+    console.log(`[Auth] Login (env user): ${legacy.name || legacy.id}, sessions active: ${sessionCount()}`);
+    return res.json({ success: true, token, userId: legacy.id, userName: legacy.name || legacy.id });
   }
 
-  console.log('[Auth] Login failed — wrong password');
-  res.status(401).json({ success: false, error: 'Wrong password' });
+  console.log('[Auth] Login failed — no match');
+  res.status(401).json({ success: false, error: 'Wrong email or password' });
+});
+
+// Legacy alias — older clients POST to /api/auth with { password }.
+app.post('/api/auth', (req, res, next) => {
+  req.url = '/auth/login';
+  next();
 });
 
 // ── Auth check — also returns user info
@@ -318,7 +374,8 @@ app.post('/api/auth/google', async (req, res) => {
 //    Attaches req.userId for downstream route handlers
 app.use('/api/', (req, res, next) => {
   // Skip auth for these paths
-  if (req.path === '/auth' || req.path === '/auth/check' || req.path === '/auth/google' || req.path === '/config') return next();
+  const open = ['/auth', '/auth/check', '/auth/google', '/auth/login', '/auth/signup', '/config'];
+  if (open.includes(req.path)) return next();
 
   // No users configured — open access, default user
   if (USERS.length === 0) {
