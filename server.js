@@ -966,12 +966,21 @@ app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
       }];
     }
 
+    // Tax: pquote stores tax_rate as a PERCENT (e.g. 8.25 for 8.25%); pzip's
+    // webhook interprets its `tax_rate` field as a fraction (0..1). Send the
+    // already-computed dollar amount under `tax` instead — pzip prefers that
+    // and the unit is unambiguous. Reproduces pquote's client-side math:
+    // taxAmount = subtotal * (rate / 100), rounded to cents.
+    const ratePct  = parseFloat(q.tax_rate) || 0;
+    const subtotal = lineItems.reduce((s, li) => s + (parseFloat(li.unit_price) || 0), 0);
+    const taxAmt   = Math.round(subtotal * (ratePct / 100) * 100) / 100;
+
     const payload = {
       client_name:    q.client_name,
       client_address: q.address || undefined,
       project_type:   q.project_type || undefined,
       total:          parseFloat(q.total) || 0,
-      tax_rate:       parseFloat(q.tax_rate) || 0,
+      tax:            taxAmt,
       line_items:     lineItems,
       notes:          q.notes || undefined,
       external_id:    `qmach:${q.id}`,
