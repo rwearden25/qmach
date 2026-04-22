@@ -815,15 +815,37 @@ app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
     if (!q) return res.status(404).json({ error: 'Quote not found.' });
 
     // Unpack line_items if the quote has them; fall back to a single-line synth.
+    //
+    // qmach line items are AREA-PRICED: each row is { area, unit, price, ... }
+    // where `price` is a per-unit rate (e.g. $0.10/sqft) and the line total is
+    // area × price.  Each row also carries a precomputed `subtotal` field (the
+    // line total) — we use it directly so our math always matches qmach's
+    // display math.  Bug this fixes: earlier version mapped qty=1 + unit_price=
+    // li.price, which produced $0.10 instead of $91.40 on an area-priced line.
+    //
+    // For the invoice we collapse each area-priced line into one invoice line
+    // with qty=1, unit_price=subtotal, and annotate the description with the
+    // area + per-unit basis so the customer sees what they're paying for.
     let lineItems = [];
     try {
       const parsed = JSON.parse(q.line_items || '[]');
       if (Array.isArray(parsed) && parsed.length) {
-        lineItems = parsed.map(li => ({
-          description: li.label || li.type || q.project_type || 'Quoted service',
-          qty: parseFloat(li.qty) || 1,
-          unit_price: parseFloat(li.price) || parseFloat(li.unit_price) || 0,
-        }));
+        lineItems = parsed.map(li => {
+          const area      = parseFloat(li.area) || 0;
+          const unitRate  = parseFloat(li.price) || 0;
+          const storedSub = parseFloat(li.subtotal);
+          const lineTotal = Number.isFinite(storedSub) ? storedSub : (area * unitRate);
+          const label     = (li.label || li.type || q.project_type || 'Quoted service').toString().replace(/-/g, ' ');
+          const unit      = li.unit || 'sqft';
+          const basis     = area > 0 && unitRate > 0
+            ? ` (${area.toLocaleString()} ${unit} @ $${unitRate.toFixed(2)}/${unit})`
+            : '';
+          return {
+            description: label + basis,
+            qty: 1,
+            unit_price: Math.round(lineTotal * 100) / 100,
+          };
+        });
       }
     } catch (_) { /* malformed line_items — ignore, use synth below */ }
 
