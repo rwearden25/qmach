@@ -61,42 +61,15 @@ db.exec(`
   -- QMACH_USERS flow is still honored in server.js as a fallback; new
   -- signups land here. user_id in quotes/sessions = the user's email.
   CREATE TABLE IF NOT EXISTS users (
-    id             TEXT PRIMARY KEY,
-    email          TEXT UNIQUE NOT NULL,
-    password_hash  TEXT NOT NULL,
-    first_name     TEXT NOT NULL,
-    last_name      TEXT NOT NULL,
-    created_at     INTEGER NOT NULL,
-    email_verified INTEGER NOT NULL DEFAULT 0,
-    verify_token   TEXT,
-    verify_sent_at INTEGER
+    id            TEXT PRIMARY KEY,
+    email         TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    first_name    TEXT NOT NULL,
+    last_name     TEXT NOT NULL,
+    created_at    INTEGER NOT NULL
   );
-  CREATE INDEX IF NOT EXISTS idx_users_email  ON users(email);
-  CREATE INDEX IF NOT EXISTS idx_users_verify ON users(verify_token);
-
-  -- One-shot password reset tokens. Expire after a fixed TTL and are
-  -- deleted on use. A single pending token per user: issuing a new one
-  -- overwrites the old via DELETE-then-INSERT in the endpoint handler.
-  CREATE TABLE IF NOT EXISTS password_resets (
-    token      TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
+  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 `);
-
-// Forward-compat migrations for existing DBs that were created before
-// the verification columns existed. These are idempotent and silent when
-// the column is already present.
-try {
-  const ucols = db.pragma('table_info(users)').map(c => c.name);
-  if (!ucols.includes('email_verified')) db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0');
-  if (!ucols.includes('verify_token'))   db.exec('ALTER TABLE users ADD COLUMN verify_token TEXT');
-  if (!ucols.includes('verify_sent_at')) db.exec('ALTER TABLE users ADD COLUMN verify_sent_at INTEGER');
-} catch (err) {
-  console.error('[DB] users migration error:', err.message);
-}
 
 console.log(`SQLite database initialized at: ${DB_PATH}`);
 

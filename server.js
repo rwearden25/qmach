@@ -77,47 +77,9 @@ const countSessionsStmt = db.prepare('SELECT COUNT(*) AS n FROM sessions');
 const oldestSessionStmt = db.prepare('SELECT token FROM sessions ORDER BY created_at ASC LIMIT 1');
 
 // DB-backed users (new email+password signup flow).
-const insertUserStmt          = db.prepare('INSERT INTO users (id, email, password_hash, first_name, last_name, created_at, email_verified, verify_token, verify_sent_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)');
-const getUserByEmailStmt      = db.prepare('SELECT id, email, password_hash, first_name, last_name, email_verified FROM users WHERE email = ?');
-const getUserByVerifyStmt     = db.prepare('SELECT id, email FROM users WHERE verify_token = ?');
-const setUserVerifiedStmt     = db.prepare('UPDATE users SET email_verified = 1, verify_token = NULL, verify_sent_at = NULL WHERE id = ?');
-const setUserVerifyTokenStmt  = db.prepare('UPDATE users SET verify_token = ?, verify_sent_at = ? WHERE id = ?');
-const setUserPasswordStmt     = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
-const deleteUserStmt          = db.prepare('DELETE FROM users WHERE id = ?');
-const deleteUserQuotesStmt    = db.prepare('DELETE FROM quotes WHERE user_id = ?');
-const deleteUserSessionsStmt  = db.prepare('DELETE FROM sessions WHERE user_id = ?');
-const countUsersStmt          = db.prepare('SELECT COUNT(*) AS n FROM users');
-
-// Password-reset one-shot tokens.
-const insertResetStmt         = db.prepare('INSERT INTO password_resets (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)');
-const getResetStmt            = db.prepare('SELECT token, user_id, expires_at FROM password_resets WHERE token = ?');
-const deleteResetStmt         = db.prepare('DELETE FROM password_resets WHERE token = ?');
-const deleteResetsByUserStmt  = db.prepare('DELETE FROM password_resets WHERE user_id = ?');
-const pruneResetsStmt         = db.prepare('DELETE FROM password_resets WHERE expires_at < ?');
-
-// Prune stale reset tokens on boot + hourly.
-pruneResetsStmt.run(Date.now());
-setInterval(() => { try { pruneResetsStmt.run(Date.now()); } catch {} }, 60 * 60 * 1000);
-
-// Google account merge: one-shot migration that collapses legacy 'g:<email>'
-// user_ids onto '<email>' whenever a DB user with that email exists. This
-// unifies quotes saved via Google OAuth with the same person's DB account
-// without requiring the user to do anything. Runs at boot; subsequent Google
-// logins go through mergeGoogleLogin() below which keeps things unified.
-try {
-  const rows = db.prepare(`
-    SELECT DISTINCT q.user_id AS gid, SUBSTR(q.user_id, 3) AS email
-    FROM quotes q
-    WHERE q.user_id LIKE 'g:%'
-      AND EXISTS (SELECT 1 FROM users u WHERE u.email = SUBSTR(q.user_id, 3))
-  `).all();
-  const stmt = db.prepare('UPDATE quotes SET user_id = ? WHERE user_id = ?');
-  let migrated = 0;
-  for (const r of rows) { migrated += stmt.run(r.email, r.gid).changes; }
-  if (migrated > 0) console.log(`[Auth] Merged ${migrated} Google-scoped quote(s) onto DB accounts`);
-} catch (err) {
-  console.error('[Auth] Google merge migration error:', err.message);
-}
+const insertUserStmt     = db.prepare('INSERT INTO users (id, email, password_hash, first_name, last_name, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+const getUserByEmailStmt = db.prepare('SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = ?');
+const countUsersStmt     = db.prepare('SELECT COUNT(*) AS n FROM users');
 
 // Open-access check: honored by the auth middleware and /api/auth/check.
 // Returns true only when BOTH env-configured users (QMACH_USERS/PASSWORD)
@@ -296,49 +258,9 @@ function getSession(req) {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// ── Email delivery — Resend first, console log fallback.
-// Set RESEND_API_KEY + MAIL_FROM on Railway to enable real email. Without
-// those, we still log the message body (including verification/reset URLs)
-// to stdout so the admin can fish links out of Railway logs during setup.
-// All callers await this, but we never throw — a failed email shouldn't
-// break signup or password-reset requests.
-const MAIL_FROM  = process.env.MAIL_FROM || 'pquote <onboarding@resend.dev>';
-const APP_ORIGIN = process.env.APP_ORIGIN || 'https://pquote.ai';
-
-async function sendEmail(to, subject, text) {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) {
-    console.log('──────── [Email — not sent, no RESEND_API_KEY]');
-    console.log(`  To:      ${to}`);
-    console.log(`  Subject: ${subject}`);
-    console.log(`  Body:\n${text.split('\n').map(l => '    ' + l).join('\n')}`);
-    console.log('────────');
-    return { ok: false, reason: 'not_configured' };
-  }
-  try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: MAIL_FROM, to, subject, text })
-    });
-    if (!r.ok) {
-      const body = await r.text().catch(() => '');
-      console.error(`[Email] Resend ${r.status}:`, body);
-      return { ok: false, reason: 'resend_error' };
-    }
-    return { ok: true };
-  } catch (err) {
-    console.error('[Email] send failed:', err.message);
-    return { ok: false, reason: 'network' };
-  }
-}
-
 // ── Signup — first name, last name, email, password. Creates a DB user,
-// hashes the password with bcrypt, generates a verification token, and
-// returns a session token. The verify email is best-effort — signup
-// succeeds even if the SMTP call fails, and the user gets a "resend"
-// button inside the app.
-app.post('/api/auth/signup', authLimiter, async (req, res) => {
+// hashes the password with bcrypt, and returns a session token.
+app.post('/api/auth/signup', authLimiter, (req, res) => {
   try {
     const firstName = String(req.body?.first_name || '').trim();
     const lastName  = String(req.body?.last_name  || '').trim();
@@ -363,9 +285,8 @@ app.post('/api/auth/signup', authLimiter, async (req, res) => {
 
     const hash = bcrypt.hashSync(password, 10);
     const userName = `${firstName} ${lastName}`.trim();
-    const verifyToken = uuidv4();
     try {
-      insertUserStmt.run(email, email, hash, firstName, lastName, Date.now(), verifyToken, Date.now());
+      insertUserStmt.run(email, email, hash, firstName, lastName, Date.now());
     } catch (err) {
       // Two signups racing for the same email — the pre-check above passed
       // for both, but the UNIQUE index catches the second INSERT. Return
@@ -376,99 +297,13 @@ app.post('/api/auth/signup', authLimiter, async (req, res) => {
       throw err;
     }
 
-    // Fire-and-forget the verify email; don't block the HTTP response.
-    const verifyUrl = `${APP_ORIGIN}/api/auth/verify?token=${verifyToken}`;
-    sendEmail(email, 'Confirm your pquote email',
-      `Welcome to pquote, ${firstName}!\n\nConfirm your email to remove the reminder banner in the app:\n${verifyUrl}\n\nIf you didn't sign up, ignore this message.\n`
-    ).catch(() => {});
-
     const token = createSession(email, userName);
     console.log(`[Auth] Signup: ${userName} (${email}), sessions active: ${sessionCount()}`);
-    res.status(201).json({ success: true, token, userId: email, userName, emailVerified: false });
+    res.status(201).json({ success: true, token, userId: email, userName });
   } catch (err) {
     console.error('[Auth] Signup error:', err);
     res.status(500).json({ success: false, error: 'Signup failed' });
   }
-});
-
-// ── Verify email via the link delivered in the signup/resend email.
-// This is a GET (triggered by a plain click in the user's mailbox) — on
-// success we redirect to /app so they land back in the product. On failure
-// we redirect to /app?verify=failed so the client can show a toast.
-app.get('/api/auth/verify', (req, res) => {
-  const token = String(req.query?.token || '').trim();
-  if (!token) return res.redirect('/app?verify=failed');
-  const user = getUserByVerifyStmt.get(token);
-  if (!user) return res.redirect('/app?verify=failed');
-  try {
-    setUserVerifiedStmt.run(user.id);
-    console.log(`[Auth] Email verified: ${user.email}`);
-    return res.redirect('/app?verify=ok');
-  } catch (err) {
-    console.error('[Auth] verify error:', err);
-    return res.redirect('/app?verify=failed');
-  }
-});
-
-// ── Resend verification email — requires an authenticated session so a
-// stranger can't spam someone's inbox by guessing addresses.
-app.post('/api/auth/resend-verification', authLimiter, async (req, res) => {
-  const sess = getSession(req);
-  if (!sess) return res.status(401).json({ success: false, error: 'Not signed in' });
-  const u = getUserByEmailStmt.get(sess.userId);
-  if (!u) return res.status(404).json({ success: false, error: 'Not a DB account' });
-  if (u.email_verified) return res.json({ success: true, already: true });
-  const verifyToken = uuidv4();
-  setUserVerifyTokenStmt.run(verifyToken, Date.now(), u.id);
-  const verifyUrl = `${APP_ORIGIN}/api/auth/verify?token=${verifyToken}`;
-  sendEmail(u.email, 'Confirm your pquote email',
-    `Confirm your email to remove the reminder banner:\n${verifyUrl}\n`
-  ).catch(() => {});
-  res.json({ success: true });
-});
-
-// ── Forgot password — issues a one-shot reset token by email. We always
-// respond 200 even if the email is unknown, so an attacker can't enumerate
-// accounts by watching the response difference.
-app.post('/api/auth/forgot', authLimiter, async (req, res) => {
-  const email = String(req.body?.email || '').trim().toLowerCase();
-  if (!EMAIL_RE.test(email)) return res.json({ success: true }); // no-op, don't leak
-  const u = getUserByEmailStmt.get(email);
-  if (u) {
-    deleteResetsByUserStmt.run(u.id); // invalidate any pending token for this user
-    const token = uuidv4();
-    const now = Date.now();
-    insertResetStmt.run(token, u.id, now, now + 60 * 60 * 1000); // 1h TTL
-    const resetUrl = `${APP_ORIGIN}/app?reset=${token}`;
-    sendEmail(email, 'Reset your pquote password',
-      `Open this link within one hour to set a new password:\n${resetUrl}\n\nIf you didn't ask for a reset, ignore this email.\n`
-    ).catch(() => {});
-  }
-  res.json({ success: true });
-});
-
-// ── Complete password reset — consumes the token, updates the hash,
-// revokes all existing sessions for the user.
-app.post('/api/auth/reset', authLimiter, (req, res) => {
-  const token    = String(req.body?.token || '').trim();
-  const password = String(req.body?.password || '');
-  if (!token) return res.status(400).json({ success: false, error: 'Missing token' });
-  if (password.length < 8 || password.length > 72
-      || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-    return res.status(400).json({ success: false, error: 'Password must be 8–72 characters with an uppercase letter, a number, and a special character' });
-  }
-  const row = getResetStmt.get(token);
-  if (!row) return res.status(400).json({ success: false, error: 'Invalid or expired reset link' });
-  if (Date.now() > row.expires_at) {
-    try { deleteResetStmt.run(token); } catch {}
-    return res.status(400).json({ success: false, error: 'Reset link expired — request a new one' });
-  }
-  const hash = bcrypt.hashSync(password, 10);
-  setUserPasswordStmt.run(hash, row.user_id);
-  deleteResetStmt.run(token);
-  deleteUserSessionsStmt.run(row.user_id);
-  console.log(`[Auth] Password reset: ${row.user_id}`);
-  res.json({ success: true });
 });
 
 // ── Login — primary path is email + password (DB users). We also keep the
@@ -485,7 +320,7 @@ function handleLogin(req, res) {
       const userName = `${u.first_name} ${u.last_name}`.trim();
       const token = createSession(u.id, userName);
       console.log(`[Auth] Login: ${userName} (${u.id}), sessions active: ${sessionCount()}`);
-      return res.json({ success: true, token, userId: u.id, userName, emailVerified: !!u.email_verified });
+      return res.json({ success: true, token, userId: u.id, userName });
     }
     // Email supplied but no DB match — reject without falling through,
     // otherwise a legitimate "wrong password" request leaks into env-user
@@ -525,16 +360,12 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Auth check — also returns user info and DB verification state.
+// ── Auth check — also returns user info
 app.get('/api/auth/check', (req, res) => {
-  if (isOpenAccess()) return res.json({ valid: true, userId: 'default', userName: 'Admin', emailVerified: true });
+  if (isOpenAccess()) return res.json({ valid: true, userId: 'default', userName: 'Admin' });
   const sess = getSession(req);
   if (sess) {
-    // emailVerified only meaningful for DB users. Google users (no DB row)
-    // are trusted via the OAuth provider. Env users are trusted via config.
-    const u = getUserByEmailStmt.get(sess.userId);
-    const emailVerified = u ? !!u.email_verified : true;
-    return res.json({ valid: true, userId: sess.userId, userName: sess.userName, emailVerified });
+    return res.json({ valid: true, userId: sess.userId, userName: sess.userName });
   }
   res.status(401).json({ valid: false });
 });
@@ -576,30 +407,13 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
     }
 
     const userName = userData.user_metadata?.full_name || name || userEmail;
-    const userEmailLower = userEmail.toLowerCase();
 
-    // Account merge: if a DB user exists with this email, sign the Google
-    // user into that DB account (same user_id = the email). Otherwise
-    // keep the legacy 'g:<email>' scheme for Google-only accounts. Any
-    // pre-existing 'g:<email>' quotes are reparented onto the DB account
-    // here as well, in case new quotes were saved before the boot-time
-    // migration got a chance to run.
-    const dbUser = getUserByEmailStmt.get(userEmailLower);
-    let userId;
-    if (dbUser) {
-      userId = dbUser.id;
-      try {
-        const merged = db.prepare('UPDATE quotes SET user_id = ? WHERE user_id = ?')
-          .run(userId, 'g:' + userEmailLower);
-        if (merged.changes > 0) console.log(`[Auth] Merged ${merged.changes} Google quote(s) onto DB account ${userId}`);
-      } catch {}
-    } else {
-      userId = 'g:' + userEmailLower;
-    }
+    // Use email as user_id for Google users (prefix with 'g:' to distinguish from password users)
+    const userId = 'g:' + userEmail;
 
     const token = createSession(userId, userName);
     console.log(`[Auth] Google login: ${userName} (${userEmail}), sessions active: ${sessionCount()}`);
-    res.json({ success: true, token, userId, userName, emailVerified: true });
+    res.json({ success: true, token, userId, userName });
   } catch (err) {
     console.error('[Auth] Google auth error:', err.message);
     res.status(500).json({ success: false, error: 'Google auth failed' });
@@ -610,12 +424,7 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
 //    Attaches req.userId for downstream route handlers
 app.use('/api/', (req, res, next) => {
   // Skip auth for these paths
-  const open = [
-    '/auth', '/auth/check', '/auth/google',
-    '/auth/login', '/auth/signup', '/auth/logout',
-    '/auth/verify', '/auth/forgot', '/auth/reset',
-    '/config'
-  ];
+  const open = ['/auth', '/auth/check', '/auth/google', '/auth/login', '/auth/signup', '/auth/logout', '/config'];
   if (open.includes(req.path)) return next();
 
   // Fresh install with zero users anywhere — grant open access so the app
@@ -634,55 +443,6 @@ app.use('/api/', (req, res, next) => {
   }
 
   res.status(401).json({ error: 'Unauthorized — please log in' });
-});
-
-// ══════════════════════════════════════════
-//  ACCOUNT — view profile, delete account
-// ══════════════════════════════════════════
-
-// Return the signed-in user's profile (DB users only — env and Google
-// users get a minimal payload). Used by the in-app Account Settings modal.
-app.get('/api/account/me', (req, res) => {
-  const u = getUserByEmailStmt.get(req.userId);
-  if (u) {
-    return res.json({
-      userId: u.id,
-      email: u.email,
-      firstName: u.first_name,
-      lastName: u.last_name,
-      emailVerified: !!u.email_verified,
-      source: 'db'
-    });
-  }
-  const source = typeof req.userId === 'string' && req.userId.startsWith('g:') ? 'google'
-               : req.userId === 'default' ? 'open'
-               : 'env';
-  res.json({ userId: req.userId, email: null, firstName: null, lastName: null, emailVerified: true, source });
-});
-
-// Delete the current user's account: removes the user row (if DB-backed),
-// all of their quotes, all of their sessions, and any pending reset tokens.
-// Non-DB accounts (Google/env) can still trigger quote deletion via this
-// endpoint, but the user row check is skipped.
-app.delete('/api/account/me', (req, res) => {
-  const userId = req.userId;
-  if (!userId || userId === 'default') {
-    return res.status(400).json({ success: false, error: 'No account to delete' });
-  }
-  try {
-    const tx = db.transaction((id) => {
-      deleteUserQuotesStmt.run(id);
-      deleteUserSessionsStmt.run(id);
-      deleteResetsByUserStmt.run(id);
-      deleteUserStmt.run(id); // no-op if not a DB user
-    });
-    tx(userId);
-    console.log(`[Auth] Account deleted: ${userId}`);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('[Account] delete error:', err);
-    res.status(500).json({ success: false, error: 'Delete failed' });
-  }
 });
 
 // ══════════════════════════════════════════

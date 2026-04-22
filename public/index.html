@@ -38,12 +38,8 @@
       <div class="login-divider"><span>or</span></div>
       <input type="email" id="login-email" class="auth-input" placeholder="Email" autocomplete="email" inputmode="email">
       <input type="password" id="login-password" class="auth-input" placeholder="Password" autocomplete="current-password">
-      <label class="auth-remember"><input type="checkbox" id="login-remember" checked> Keep me signed in</label>
       <button id="login-btn" class="auth-submit">Sign In</button>
       <div id="login-error" class="login-error"></div>
-      <div class="auth-toggle">
-        <a href="#" id="show-forgot">Forgot password?</a>
-      </div>
       <div class="auth-toggle">
         No account? <a href="#" id="show-signup">Create one</a>
       </div>
@@ -65,45 +61,6 @@
         Already have an account? <a href="#" id="show-signin">Sign in</a>
       </div>
     </div>
-
-    <!-- FORGOT PASSWORD -->
-    <div id="auth-forgot" class="auth-panel hidden">
-      <div class="login-sub">Reset your password</div>
-      <input type="email" id="forgot-email" class="auth-input" placeholder="Email" autocomplete="email" inputmode="email">
-      <button id="forgot-btn" class="auth-submit">Send reset link</button>
-      <div id="forgot-error" class="login-error"></div>
-      <div class="auth-toggle">
-        <a href="#" id="show-signin-from-forgot">← Back to sign in</a>
-      </div>
-    </div>
-
-    <!-- RESET PASSWORD (opened from email link) -->
-    <div id="auth-reset" class="auth-panel hidden">
-      <div class="login-sub">Choose a new password</div>
-      <input type="password" id="reset-password" class="auth-input" placeholder="New password" autocomplete="new-password">
-      <div class="auth-hint">8–72 chars · 1 uppercase · 1 number · 1 special character</div>
-      <button id="reset-btn" class="auth-submit">Update password</button>
-      <div id="reset-error" class="login-error"></div>
-    </div>
-  </div>
-</div>
-
-<!-- EMAIL-VERIFY BANNER (shown in-app when emailVerified=false) -->
-<div id="verify-banner" class="verify-banner hidden">
-  <span>Please verify your email. Check your inbox for a link.</span>
-  <button id="verify-resend" class="verify-resend">Resend</button>
-  <button id="verify-dismiss" class="verify-dismiss" aria-label="Dismiss">✕</button>
-</div>
-
-<!-- ACCOUNT SETTINGS MODAL -->
-<div id="account-modal" class="modal-overlay">
-  <div class="modal">
-    <h3>Account</h3>
-    <div id="account-info" class="account-info">Loading…</div>
-    <button id="account-delete" class="btn-danger-block">Delete account</button>
-    <div class="modal-btns">
-      <button class="mbtn cancel" id="account-close">Close</button>
-    </div>
   </div>
 </div>
 
@@ -117,7 +74,6 @@
       <button class="htab" id="htab-stats" data-view="stats">📊 Stats</button>
     </div>
     <button class="header-ai-btn" id="btn-ai-chat" title="AI Assistant">🤖 <span>AI</span></button>
-    <button class="header-logout-btn" id="btn-account" title="Account">👤</button>
     <button class="header-logout-btn" id="btn-logout" title="Sign Out">⏻</button>
   </header>
 

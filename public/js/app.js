@@ -21,34 +21,9 @@ const QUICK_PRICES = {
   'landscaping':[2.00,3.00,4.00,6.00],'custom':[1.00,5.00,10.00,25.00]
 };
 
-// ── Token storage — localStorage for "Keep me signed in", sessionStorage
-// otherwise (cleared when the tab closes). Read prefers localStorage so a
-// persistent token wins across browser restarts; logout clears both.
-function readStoredToken() {
-  try {
-    return localStorage.getItem('qmach_token') || sessionStorage.getItem('qmach_token') || '';
-  } catch { return sessionStorage.getItem('qmach_token') || ''; }
-}
-function writeStoredToken(token, remember) {
-  try { sessionStorage.removeItem('qmach_token'); localStorage.removeItem('qmach_token'); } catch {}
-  if (!token) return;
-  try {
-    if (remember) localStorage.setItem('qmach_token', token);
-    else          sessionStorage.setItem('qmach_token', token);
-  } catch {}
-}
-function clearStoredToken() {
-  try { sessionStorage.removeItem('qmach_token'); localStorage.removeItem('qmach_token'); } catch {}
-}
-// Default remember-me preference echoes the last choice the user made,
-// so a returning user doesn't have to re-tick the box every session.
-function readRememberPref()  { try { return localStorage.getItem('qmach_remember') !== '0'; } catch { return true; } }
-function writeRememberPref(v) { try { localStorage.setItem('qmach_remember', v ? '1' : '0'); } catch {} }
-
 // ── State
-let authToken = readStoredToken();
+let authToken = sessionStorage.getItem('qmach_token') || '';
 let currentUserId = '';
-let emailVerified = true; // flipped to false by login/check if DB account is unverified
 let mapboxToken = '';
 let pzipEnabled = false;
 let step = 0;
@@ -114,11 +89,7 @@ async function handleOAuthCallback() {
     if (data.success) {
       authToken = data.token;
       currentUserId = data.userId || '';
-      emailVerified = data.emailVerified !== false;
-      // Google sign-in implies persistence intent (user went through an
-      // OAuth redirect), so honor the last remember-me choice they made
-      // on the email form rather than forcing sessionStorage.
-      writeStoredToken(authToken, readRememberPref());
+      sessionStorage.setItem('qmach_token', authToken);
       if (window.location.hash) history.replaceState(null, '', window.location.pathname);
       return true;
     }
@@ -169,12 +140,7 @@ async function checkAuth() {
   try {
     const r = await fetch('/api/auth/check', { headers: authToken ? { 'x-auth-token': authToken } : {} });
     const d = await r.json();
-    if (d.valid) {
-      currentUserId = d.userId || '';
-      emailVerified = d.emailVerified !== false;
-      hideLogin();
-      return true;
-    }
+    if (d.valid) { currentUserId = d.userId || ''; hideLogin(); return true; }
   } catch {}
   showLogin(); return false;
 }
@@ -183,7 +149,6 @@ async function doLogin() {
   const btn = el('login-btn'), emailInput = el('login-email'), pw = el('login-password'), err = el('login-error');
   const email = (emailInput?.value || '').trim();
   const password = pw?.value || '';
-  const remember = !!el('login-remember')?.checked;
   if (!email) { err.textContent = 'Enter your email'; emailInput?.focus(); return; }
   if (!password) { err.textContent = 'Enter your password'; pw?.focus(); return; }
   btn.disabled = true; btn.textContent = 'Signing in...'; err.textContent = '';
@@ -196,10 +161,7 @@ async function doLogin() {
     if (r.ok && d.success) {
       authToken = d.token;
       currentUserId = d.userId || '';
-      emailVerified = d.emailVerified !== false;
-      writeRememberPref(remember);
-      writeStoredToken(authToken, remember);
-      if (redirectAfterLogin()) return;
+      sessionStorage.setItem('qmach_token', authToken);
       hideLogin(); bootApp();
     } else {
       err.textContent = d.error || 'Wrong email or password';
@@ -238,11 +200,7 @@ async function doSignup() {
     if (r.ok && d.success) {
       authToken = d.token;
       currentUserId = d.userId || '';
-      emailVerified = d.emailVerified !== false;
-      // Signup implies the user wants to stay in — remember by default.
-      writeRememberPref(true);
-      writeStoredToken(authToken, true);
-      if (redirectAfterLogin()) return;
+      sessionStorage.setItem('qmach_token', authToken);
       hideLogin(); bootApp();
     } else {
       err.textContent = d.error || 'Signup failed';
@@ -251,69 +209,16 @@ async function doSignup() {
   btn.disabled = false; btn.textContent = 'Create Account';
 }
 
-// ── Forgot password — issues a reset-link email.
-async function doForgot() {
-  const btn = el('forgot-btn'), emailInput = el('forgot-email'), err = el('forgot-error');
-  const email = (emailInput?.value || '').trim();
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    err.textContent = 'Enter a valid email'; emailInput?.focus(); return;
-  }
-  btn.disabled = true; btn.textContent = 'Sending...'; err.textContent = '';
-  try {
-    await fetch('/api/auth/forgot', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
-    });
-    // Same response whether or not the email exists — don't leak account status.
-    err.style.color = 'var(--accent)';
-    err.textContent = 'If that email has an account, a reset link is on the way.';
-    setTimeout(() => { err.style.color = ''; }, 5000);
-  } catch { err.textContent = 'Connection error'; }
-  btn.disabled = false; btn.textContent = 'Send reset link';
+function showSignup() {
+  el('auth-signin')?.classList.add('hidden');
+  el('auth-signup')?.classList.remove('hidden');
+  el('signup-first')?.focus();
 }
-
-// ── Complete password reset (triggered by the ?reset=<token> link).
-let pendingResetToken = '';
-async function doReset() {
-  const btn = el('reset-btn'), pw = el('reset-password'), err = el('reset-error');
-  const password = pw?.value || '';
-  if (password.length < 8 || password.length > 72
-      || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-    err.textContent = 'Password must be 8–72 chars with an uppercase letter, a number, and a special character';
-    pw?.focus();
-    return;
-  }
-  btn.disabled = true; btn.textContent = 'Updating...'; err.textContent = '';
-  try {
-    const r = await fetch('/api/auth/reset', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: pendingResetToken, password })
-    });
-    const d = await r.json().catch(() => ({}));
-    if (r.ok && d.success) {
-      pendingResetToken = '';
-      // Strip the token from the URL so a refresh doesn't re-trigger reset.
-      history.replaceState(null, '', window.location.pathname);
-      toast('Password updated — sign in to continue');
-      showSignin();
-    } else {
-      err.textContent = d.error || 'Reset failed';
-    }
-  } catch { err.textContent = 'Connection error'; }
-  btn.disabled = false; btn.textContent = 'Update password';
+function showSignin() {
+  el('auth-signup')?.classList.add('hidden');
+  el('auth-signin')?.classList.remove('hidden');
+  el('login-email')?.focus();
 }
-
-// ── Auth-gate panel switching. Each helper hides the other panels and
-// focuses the first input of the one it's showing. Four panels now:
-// signin, signup, forgot, reset.
-const AUTH_PANELS = ['auth-signin', 'auth-signup', 'auth-forgot', 'auth-reset'];
-function showAuthPanel(id) {
-  AUTH_PANELS.forEach(p => el(p)?.classList.toggle('hidden', p !== id));
-}
-function showSignup() { showAuthPanel('auth-signup'); el('signup-first')?.focus(); }
-function showSignin() { showAuthPanel('auth-signin'); el('login-email')?.focus(); }
-function showForgot() { showAuthPanel('auth-forgot'); el('forgot-email')?.focus(); }
-function showReset()  { showAuthPanel('auth-reset');  el('reset-password')?.focus(); }
 
 async function doLogout() {
   // Kill the server-side session first — if we cleared the token locally
@@ -330,109 +235,13 @@ async function doLogout() {
   const sb = getSupabase();
   if (sb) { try { await sb.auth.signOut(); } catch {} }
   try { clearDraft(); } catch {}
-  clearStoredToken();
+  sessionStorage.removeItem('qmach_token');
   authToken = '';
   currentUserId = '';
-  emailVerified = true;
   chatHistory = [];
-  hideVerifyBanner();
   el('app-shell').classList.add('hidden');
   showLogin();
   toast('Signed out');
-}
-
-// ── Post-login redirect. The admin page links to /app?returnTo=/admin so
-// the user can land back at /admin after signing in. We whitelist paths to
-// same-origin routes that we control — no open redirects, no protocols.
-function stashReturnTo() {
-  try {
-    const p = new URLSearchParams(window.location.search);
-    const rt = p.get('returnTo');
-    if (rt && /^\/(admin|app)(\b|\/|\?|$)/.test(rt)) {
-      sessionStorage.setItem('qmach_returnTo', rt);
-    }
-  } catch {}
-}
-function redirectAfterLogin() {
-  let rt = '';
-  try { rt = sessionStorage.getItem('qmach_returnTo') || ''; sessionStorage.removeItem('qmach_returnTo'); } catch {}
-  if (rt && /^\/(admin|app)(\b|\/|\?|$)/.test(rt)) {
-    window.location.href = rt;
-    return true;
-  }
-  return false;
-}
-
-// ── Email-verify banner
-function showVerifyBanner() { el('verify-banner')?.classList.remove('hidden'); }
-function hideVerifyBanner() { el('verify-banner')?.classList.add('hidden'); }
-function maybeShowVerifyBanner() {
-  // Dismissals are per-session only — the banner reappears on a fresh load
-  // so we don't nag but don't let the user forget either.
-  const dismissed = sessionStorage.getItem('qmach_verify_dismissed') === '1';
-  if (!emailVerified && !dismissed) showVerifyBanner();
-  else hideVerifyBanner();
-}
-async function resendVerifyEmail() {
-  const btn = el('verify-resend');
-  if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
-  try {
-    const r = await authFetch('/api/auth/resend-verification', { method: 'POST' });
-    const d = await r.json().catch(() => ({}));
-    if (d.already) toast('Already verified');
-    else if (d.success) toast('Verification email sent');
-    else toast('Could not send — try again later');
-  } catch { toast('Connection error'); }
-  if (btn) { btn.disabled = false; btn.textContent = 'Resend'; }
-}
-
-// ── Account settings modal
-async function openAccount() {
-  const modal = el('account-modal');
-  const info = el('account-info');
-  if (!modal || !info) return;
-  info.textContent = 'Loading…';
-  modal.classList.add('open');
-  try {
-    const d = await authFetch('/api/account/me').then(r => r.json());
-    const name = [d.firstName, d.lastName].filter(Boolean).join(' ');
-    const sourceLabel = { db: 'Email + password', google: 'Google', env: 'Configured user', open: 'Open access' }[d.source] || d.source;
-    const verified = d.emailVerified
-      ? '<span class="ac-badge ok">Verified</span>'
-      : '<span class="ac-badge warn">Unverified</span>';
-    info.innerHTML = `
-      <div class="ac-row"><span class="ac-label">Name</span><span class="ac-val">${esc(name) || '—'}</span></div>
-      <div class="ac-row"><span class="ac-label">Email</span><span class="ac-val">${esc(d.email || d.userId || '—')}</span></div>
-      <div class="ac-row"><span class="ac-label">Sign-in</span><span class="ac-val">${esc(sourceLabel)}</span></div>
-      <div class="ac-row"><span class="ac-label">Status</span><span class="ac-val">${verified}</span></div>
-    `;
-    // Hide delete for open-access mode — there's nothing to delete.
-    el('account-delete').style.display = d.source === 'open' ? 'none' : '';
-  } catch {
-    info.textContent = 'Failed to load account info.';
-  }
-}
-function closeAccount() { el('account-modal')?.classList.remove('open'); }
-async function deleteAccount() {
-  if (!confirm('Delete your account, all sessions, and all saved quotes? This cannot be undone.')) return;
-  if (!confirm('Are you absolutely sure? Tap OK to permanently delete everything.')) return;
-  try {
-    const r = await authFetch('/api/account/me', { method: 'DELETE' });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || 'Delete failed');
-    toast('Account deleted');
-    closeAccount();
-    // Clear local state (don't call doLogout — the session is already gone
-    // on the server and the user row is gone, so a logout POST would 401).
-    clearStoredToken();
-    authToken = '';
-    currentUserId = '';
-    try { clearDraft(); } catch {}
-    el('app-shell').classList.add('hidden');
-    showLogin();
-  } catch (e) {
-    toast('Delete failed: ' + (e.message || 'unknown'));
-  }
 }
 
 // ═══════════════════════════════════════
@@ -442,64 +251,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   on('login-btn', doLogin);
   on('btn-google', googleSignIn);
   on('signup-btn', doSignup);
-  on('forgot-btn', doForgot);
-  on('reset-btn', doReset);
   el('show-signup')?.addEventListener('click', e => { e.preventDefault(); showSignup(); });
   el('show-signin')?.addEventListener('click', e => { e.preventDefault(); showSignin(); });
-  el('show-forgot')?.addEventListener('click', e => { e.preventDefault(); showForgot(); });
-  el('show-signin-from-forgot')?.addEventListener('click', e => { e.preventDefault(); showSignin(); });
-  // Remember-me checkbox reflects the saved pref on load and writes back
-  // on change so it sticks across browser sessions.
-  const rememberBox = el('login-remember');
-  if (rememberBox) {
-    rememberBox.checked = readRememberPref();
-    rememberBox.addEventListener('change', () => writeRememberPref(rememberBox.checked));
-  }
   el('login-email')?.addEventListener('keydown', e => { if (e.key === 'Enter') el('login-password')?.focus(); });
   el('login-password')?.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-  el('forgot-email')?.addEventListener('keydown', e => { if (e.key === 'Enter') doForgot(); });
-  el('reset-password')?.addEventListener('keydown', e => { if (e.key === 'Enter') doReset(); });
   ['signup-first','signup-last','signup-email'].forEach(id =>
     el(id)?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const order=['signup-first','signup-last','signup-email','signup-password']; const next=order[order.indexOf(id)+1]; el(next)?.focus(); } })
   );
   el('signup-password')?.addEventListener('keydown', e => { if (e.key === 'Enter') doSignup(); });
 
-  // ── Process URL parameters before any auth decision:
-  //   ?returnTo=/admin   — stash for post-login redirect
-  //   ?verify=ok|failed  — toast about email verification result
-  //   ?reset=<token>     — open the password-reset panel
-  stashReturnTo();
-  try {
-    const qs = new URLSearchParams(window.location.search);
-    const v = qs.get('verify');
-    if (v === 'ok')     { toast('Email verified'); history.replaceState(null, '', window.location.pathname); }
-    else if (v === 'failed') { toast('Verify link expired — request a new one'); history.replaceState(null, '', window.location.pathname); }
-    const resetTok = qs.get('reset');
-    if (resetTok) {
-      pendingResetToken = resetTok;
-      // Keep the token in memory only; scrub the URL immediately so reloads
-      // don't re-show the reset panel (and the token doesn't land in logs).
-      history.replaceState(null, '', window.location.pathname);
-      showLogin();
-      showReset();
-      return;
-    }
-  } catch {}
-
   // Only check for OAuth callback when URL has auth tokens (returning from Google)
   const hasOAuthTokens = window.location.hash && window.location.hash.includes('access_token');
   if (hasOAuthTokens) {
     const oauthSuccess = await handleOAuthCallback();
-    if (oauthSuccess) {
-      if (redirectAfterLogin()) return;
-      hideLogin(); bootApp(); return;
-    }
+    if (oauthSuccess) { hideLogin(); bootApp(); return; }
   }
 
-  if (await checkAuth()) {
-    if (redirectAfterLogin()) return;
-    bootApp();
-  }
+  if (await checkAuth()) bootApp();
 });
 
 async function bootApp() {
@@ -511,16 +279,6 @@ async function bootApp() {
     btn.addEventListener('click', () => switchView(btn.dataset.view))
   );
   on('btn-logout', doLogout);
-  on('btn-account', openAccount);
-  on('account-close', closeAccount);
-  on('account-delete', deleteAccount);
-  el('account-modal')?.addEventListener('click', e => { if (e.target.id === 'account-modal') closeAccount(); });
-  on('verify-resend', resendVerifyEmail);
-  on('verify-dismiss', () => {
-    try { sessionStorage.setItem('qmach_verify_dismissed', '1'); } catch {}
-    hideVerifyBanner();
-  });
-  maybeShowVerifyBanner();
 
   // Wizard nav
   on('btn-continue', onContinue);
