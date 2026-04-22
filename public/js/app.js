@@ -25,6 +25,7 @@ const QUICK_PRICES = {
 let authToken = sessionStorage.getItem('qmach_token') || '';
 let currentUserId = '';
 let mapboxToken = '';
+let pzipEnabled = false;
 let step = 0;
 let items = [];                // completed line items [{service, area, unit, price}]
 let current = { service: null, area: '', unit: 'sqft', price: '' };
@@ -333,6 +334,7 @@ async function bootApp() {
   try {
     const cfg = await authFetch('/api/config').then(r => r.json());
     mapboxToken = cfg.mapboxToken || '';
+    pzipEnabled = !!cfg.pzipEnabled;
   } catch {}
 
   // Browser back button → navigate wizard steps instead of leaving the app
@@ -1100,6 +1102,7 @@ function renderSavedList(quotes) {
         <button class="mini-btn edit" data-id="${q.id}">✏️ Edit</button>
         <button class="mini-btn load" data-id="${q.id}">Load</button>
         <button class="mini-btn share" data-id="${q.id}">Share</button>
+        ${pzipEnabled ? `<button class="mini-btn pzip" data-id="${q.id}">📤 Send to pzip</button>` : ''}
         <button class="mini-btn del" data-id="${q.id}">Delete</button>
       </div>
     </div>`;
@@ -1111,7 +1114,29 @@ function renderSavedList(quotes) {
     const q = window._sq[b.dataset.id];
     if (q) openSheet();
   }));
+  c.querySelectorAll('.mini-btn.pzip').forEach(b => b.addEventListener('click', () => sendQuoteToPzip(b.dataset.id, b)));
   c.querySelectorAll('.mini-btn.del').forEach(b => b.addEventListener('click', () => deleteQuote(b.dataset.id)));
+}
+
+async function sendQuoteToPzip(id, btn) {
+  const orig = btn ? btn.textContent : '';
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+    const res = await authFetch(`/api/quotes/${id}/send-to-pzip`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Send failed');
+    const msg = data.duplicate
+      ? `Already sent (invoice ${data.invoice_num})`
+      : `Sent to pzip as ${data.invoice_num} ✓`;
+    toast(msg);
+    if (data.view_url && confirm(msg + '\n\nOpen the invoice now?')) {
+      window.open(data.view_url, '_blank');
+    }
+  } catch (e) {
+    toast('Send failed: ' + (e.message || 'unknown'));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
 }
 
 async function loadQuote(id) {

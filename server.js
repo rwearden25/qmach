@@ -790,8 +790,85 @@ ${context ? `Current quote context: ${JSON.stringify(context)}` : ''}`;
 app.get('/api/config', (req, res) => {
   res.json({
     mapboxToken: process.env.MAPBOX_TOKEN || '',
-    version: '2.0.0'
+    version: '2.0.0',
+    pzipEnabled: !!(process.env.PZIP_WEBHOOK_URL && process.env.PZIP_API_KEY),
   });
+});
+
+// ── Send a saved quote to pzip.ai as a draft invoice.
+//    Requires two Railway env vars on this service:
+//      PZIP_WEBHOOK_URL  (e.g. https://www.pzip.ai/api/invoices/from-pquote)
+//      PZIP_API_KEY      (the pqk_... key generated in pzip Settings → Integrations)
+//    The quote's line_items JSON, if present, is unpacked into invoice line
+//    items; otherwise a single line item is synthesized from project_type +
+//    total.  We pass the qmach quote UUID as external_id so retries on the
+//    pzip side are idempotent — a second click creates no duplicate.
+app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
+  try {
+    const webhook = process.env.PZIP_WEBHOOK_URL;
+    const apiKey  = process.env.PZIP_API_KEY;
+    if (!webhook || !apiKey) {
+      return res.status(503).json({ error: 'pzip integration not configured. Set PZIP_WEBHOOK_URL + PZIP_API_KEY env vars on this service.' });
+    }
+
+    const q = db.prepare('SELECT * FROM quotes WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+    if (!q) return res.status(404).json({ error: 'Quote not found.' });
+
+    // Unpack line_items if the quote has them; fall back to a single-line synth.
+    let lineItems = [];
+    try {
+      const parsed = JSON.parse(q.line_items || '[]');
+      if (Array.isArray(parsed) && parsed.length) {
+        lineItems = parsed.map(li => ({
+          description: li.label || li.type || q.project_type || 'Quoted service',
+          qty: parseFloat(li.qty) || 1,
+          unit_price: parseFloat(li.price) || parseFloat(li.unit_price) || 0,
+        }));
+      }
+    } catch (_) { /* malformed line_items — ignore, use synth below */ }
+
+    if (!lineItems.length) {
+      lineItems = [{
+        description: q.project_type || 'Quoted service',
+        qty: 1,
+        unit_price: parseFloat(q.total) || 0,
+      }];
+    }
+
+    const payload = {
+      client_name:    q.client_name,
+      client_address: q.address || undefined,
+      project_type:   q.project_type || undefined,
+      total:          parseFloat(q.total) || 0,
+      tax_rate:       parseFloat(q.tax_rate) || 0,
+      line_items:     lineItems,
+      notes:          q.notes || undefined,
+      external_id:    `qmach:${q.id}`,
+    };
+
+    const r = await fetch(webhook, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Pquote-Api-Key': apiKey,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return res.status(r.status).json({ error: data.error || `pzip returned ${r.status}` });
+    }
+
+    res.json({
+      ok: true,
+      duplicate: !!data.duplicate,
+      invoice_num: data.invoice_num,
+      view_url: data.view_url ? (webhook.replace(/\/api\/.*$/, '') + data.view_url) : null,
+    });
+  } catch (err) {
+    console.error('POST /api/quotes/:id/send-to-pzip error:', err);
+    res.status(500).json({ error: 'Failed to send quote to pzip' });
+  }
 });
 
 // ── Health check
