@@ -77,8 +77,19 @@ const countSessionsStmt = db.prepare('SELECT COUNT(*) AS n FROM sessions');
 const oldestSessionStmt = db.prepare('SELECT token FROM sessions ORDER BY created_at ASC LIMIT 1');
 
 // DB-backed users (new email+password signup flow).
-const insertUserStmt   = db.prepare('INSERT INTO users (id, email, password_hash, first_name, last_name, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+const insertUserStmt     = db.prepare('INSERT INTO users (id, email, password_hash, first_name, last_name, created_at) VALUES (?, ?, ?, ?, ?, ?)');
 const getUserByEmailStmt = db.prepare('SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = ?');
+const countUsersStmt     = db.prepare('SELECT COUNT(*) AS n FROM users');
+
+// Open-access check: honored by the auth middleware and /api/auth/check.
+// Returns true only when BOTH env-configured users (QMACH_USERS/PASSWORD)
+// AND the DB users table are empty — a fresh install with no accounts yet.
+// Once any user exists (env or DB), every protected endpoint requires a
+// valid session, even if QMACH_USERS is still unset.
+function isOpenAccess() {
+  if (USERS.length > 0) return false;
+  try { return countUsersStmt.get().n === 0; } catch { return true; }
+}
 
 function createSession(userId, userName) {
   // Evict oldest if at capacity (DoS prevention).
@@ -271,7 +282,7 @@ app.post('/api/auth/signup', (req, res) => {
 // ── Login — primary path is email + password (DB users). We also keep the
 // legacy env-configured QMACH_USERS path alive: if no email is supplied, or
 // the email isn't in the DB, we fall through to the password-only check.
-app.post('/api/auth/login', (req, res) => {
+function handleLogin(req, res) {
   const email    = String(req.body?.email || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
 
@@ -294,7 +305,7 @@ app.post('/api/auth/login', (req, res) => {
   }
 
   // No email, or email not registered — legacy env-user flow.
-  if (USERS.length === 0 && !email) {
+  if (isOpenAccess() && !email) {
     return res.json({ success: true, token: 'open', userId: 'default', userName: 'Admin', message: 'No password configured' });
   }
   const legacy = findUserByPassword(password);
@@ -306,17 +317,25 @@ app.post('/api/auth/login', (req, res) => {
 
   console.log('[Auth] Login failed — no match');
   res.status(401).json({ success: false, error: 'Wrong email or password' });
-});
+}
 
-// Legacy alias — older clients POST to /api/auth with { password }.
-app.post('/api/auth', (req, res, next) => {
-  req.url = '/auth/login';
-  next();
+// Bind the login handler at both the new path and the legacy `/api/auth` URL.
+// Older cached PWA clients still POST to /api/auth — Express treats array
+// paths as first-class, so both URLs route to the same handler.
+app.post(['/api/auth/login', '/api/auth'], handleLogin);
+
+// ── Logout — delete the server-side session so a stolen token can't outlive
+// a "sign out" click. Safe to call without a valid session (no-op if the
+// token is missing or expired).
+app.post('/api/auth/logout', (req, res) => {
+  const token = req.headers['x-auth-token'];
+  if (token) { try { deleteSessionStmt.run(token); } catch {} }
+  res.json({ success: true });
 });
 
 // ── Auth check — also returns user info
 app.get('/api/auth/check', (req, res) => {
-  if (USERS.length === 0) return res.json({ valid: true, userId: 'default', userName: 'Admin' });
+  if (isOpenAccess()) return res.json({ valid: true, userId: 'default', userName: 'Admin' });
   const sess = getSession(req);
   if (sess) {
     return res.json({ valid: true, userId: sess.userId, userName: sess.userName });
@@ -378,11 +397,13 @@ app.post('/api/auth/google', async (req, res) => {
 //    Attaches req.userId for downstream route handlers
 app.use('/api/', (req, res, next) => {
   // Skip auth for these paths
-  const open = ['/auth', '/auth/check', '/auth/google', '/auth/login', '/auth/signup', '/config'];
+  const open = ['/auth', '/auth/check', '/auth/google', '/auth/login', '/auth/signup', '/auth/logout', '/config'];
   if (open.includes(req.path)) return next();
 
-  // No users configured — open access, default user
-  if (USERS.length === 0) {
+  // Fresh install with zero users anywhere — grant open access so the app
+  // boots without config. Flips to "auth required" the moment any user
+  // signs up or QMACH_USERS is set.
+  if (isOpenAccess()) {
     req.userId = 'default';
     return next();
   }

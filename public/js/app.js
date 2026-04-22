@@ -220,6 +220,17 @@ function showSignin() {
 }
 
 async function doLogout() {
+  // Kill the server-side session first — if we cleared the token locally
+  // before telling the server, a stolen copy would stay valid until the
+  // 24h TTL expired. Best-effort; a dead network shouldn't block logout.
+  if (authToken) {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'x-auth-token': authToken }
+      });
+    } catch {}
+  }
   const sb = getSupabase();
   if (sb) { try { await sb.auth.signOut(); } catch {} }
   try { clearDraft(); } catch {}
