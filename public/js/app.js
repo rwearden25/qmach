@@ -183,8 +183,9 @@ async function doSignup() {
   if (!firstName) { err.textContent = 'Enter your first name'; first?.focus(); return; }
   if (!lastName)  { err.textContent = 'Enter your last name';  last?.focus();  return; }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = 'Enter a valid email'; emailInput?.focus(); return; }
-  if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-    err.textContent = 'Password must be 8+ chars with an uppercase letter, a number, and a special character';
+  if (password.length < 8 || password.length > 72
+      || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+    err.textContent = 'Password must be 8–72 chars with an uppercase letter, a number, and a special character';
     pw?.focus();
     return;
   }
@@ -842,16 +843,20 @@ function renderReview() {
   all.forEach((item, idx) => {
     const svc = JOB_TYPES.find(j => j.id === item.service);
     const sub = (parseFloat(item.area) || 0) * (parseFloat(item.price) || 0);
+    // svc.label/icon come from the hardcoded JOB_TYPES table — safe. The
+    // fallbacks (item.service, item.price) originate from saved quote rows
+    // and could in theory contain HTML if crafted via the API directly, so
+    // they go through esc() before landing in innerHTML.
     html += `<div class="rc-item" style="cursor:pointer" data-item-idx="${idx}">
       <div class="rc-item-header">
-        <div class="rc-item-name"><span>${svc?.icon || '📋'}</span> ${svc?.label || item.service}</div>
+        <div class="rc-item-name"><span>${svc?.icon || '📋'}</span> ${svc?.label || esc(item.service)}</div>
         <div style="display:flex;align-items:center;gap:8px">
           <span class="rc-item-sub">$${fmtMoney(sub)}</span>
           <span class="rc-edit" data-edit-idx="${idx}" style="cursor:pointer;font-size:14px">✏️</span>
           ${all.length > 1 ? `<span data-remove-idx="${idx}" style="cursor:pointer;font-size:14px;color:#DC2626">✕</span>` : ''}
         </div>
       </div>
-      <div class="rc-item-detail">${fmtNum(item.area)} ${UNIT_LABELS[item.unit]} × $${item.price}/${UNIT_SHORT[item.unit]}</div>
+      <div class="rc-item-detail">${fmtNum(item.area)} ${UNIT_LABELS[item.unit] || ''} × $${esc(item.price)}/${UNIT_SHORT[item.unit] || ''}</div>
     </div>`;
   });
 
@@ -1166,7 +1171,7 @@ function renderSavedList(quotes) {
     return `<div class="quote-card">
       <div class="qc-header">
         <div><div class="qc-client">${esc(q.client_name)}</div>
-        <div class="qc-meta">${itemsText}</div>
+        <div class="qc-meta">${esc(itemsText)}</div>
         <div class="qc-meta">${new Date(q.created_at).toLocaleDateString()}</div></div>
         <div class="qc-total">$${fmtMoney(q.total)}</div>
       </div>

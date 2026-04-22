@@ -145,9 +145,22 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 // ── Rate limiters
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
 const aiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 20, message: { error: 'Too many AI requests, slow down.' } });
+// Stricter limit on password-testing endpoints — the 60/min api limit is
+// too generous for credential stuffing. Successful requests don't count,
+// so a legitimate user who fat-fingers once doesn't get locked out after
+// finally logging in. Applied per-IP via express-rate-limit defaults.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  message: { success: false, error: 'Too many login attempts — try again in a few minutes.' }
+});
 
 app.use('/api/', apiLimiter);
 app.use('/api/ai/', aiLimiter);
+// NOTE: authLimiter is attached directly on each endpoint below, not via
+// app.use, so the route definitions stay the single source of truth for
+// which endpoints are credential-guarded.
 
 // ── Auto-migrate: add new columns if they don't exist
 try {
@@ -247,7 +260,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ── Signup — first name, last name, email, password. Creates a DB user,
 // hashes the password with bcrypt, and returns a session token.
-app.post('/api/auth/signup', (req, res) => {
+app.post('/api/auth/signup', authLimiter, (req, res) => {
   try {
     const firstName = String(req.body?.first_name || '').trim();
     const lastName  = String(req.body?.last_name  || '').trim();
@@ -256,10 +269,14 @@ app.post('/api/auth/signup', (req, res) => {
 
     if (!firstName || !lastName) return res.status(400).json({ success: false, error: 'First and last name required' });
     if (!EMAIL_RE.test(email))   return res.status(400).json({ success: false, error: 'Valid email required' });
-    // Password policy: ≥8 chars, ≥1 uppercase, ≥1 number, ≥1 special.
-    // Kept in sync with the client-side check in public/js/app.js (doSignup).
-    if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-      return res.status(400).json({ success: false, error: 'Password must be 8+ characters with an uppercase letter, a number, and a special character' });
+    // Password policy: 8–72 chars, ≥1 uppercase, ≥1 number, ≥1 special.
+    // The upper bound matches bcrypt's 72-byte input limit — anything longer
+    // is silently truncated by bcrypt, which would let two different long
+    // passwords collide on the same hash. Kept in sync with the client-side
+    // check in public/js/app.js (doSignup).
+    if (password.length < 8 || password.length > 72
+        || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+      return res.status(400).json({ success: false, error: 'Password must be 8–72 characters with an uppercase letter, a number, and a special character' });
     }
 
     if (getUserByEmailStmt.get(email)) {
@@ -268,7 +285,17 @@ app.post('/api/auth/signup', (req, res) => {
 
     const hash = bcrypt.hashSync(password, 10);
     const userName = `${firstName} ${lastName}`.trim();
-    insertUserStmt.run(email, email, hash, firstName, lastName, Date.now());
+    try {
+      insertUserStmt.run(email, email, hash, firstName, lastName, Date.now());
+    } catch (err) {
+      // Two signups racing for the same email — the pre-check above passed
+      // for both, but the UNIQUE index catches the second INSERT. Return
+      // 409 instead of a generic 500 so the client shows the right error.
+      if (err && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return res.status(409).json({ success: false, error: 'An account with that email already exists' });
+      }
+      throw err;
+    }
 
     const token = createSession(email, userName);
     console.log(`[Auth] Signup: ${userName} (${email}), sessions active: ${sessionCount()}`);
@@ -322,7 +349,7 @@ function handleLogin(req, res) {
 // Bind the login handler at both the new path and the legacy `/api/auth` URL.
 // Older cached PWA clients still POST to /api/auth — Express treats array
 // paths as first-class, so both URLs route to the same handler.
-app.post(['/api/auth/login', '/api/auth'], handleLogin);
+app.post(['/api/auth/login', '/api/auth'], authLimiter, handleLogin);
 
 // ── Logout — delete the server-side session so a stolen token can't outlive
 // a "sign out" click. Safe to call without a valid session (no-op if the
@@ -344,7 +371,7 @@ app.get('/api/auth/check', (req, res) => {
 });
 
 // ── Google OAuth — validate Supabase token and create pquote session
-app.post('/api/auth/google', async (req, res) => {
+app.post('/api/auth/google', authLimiter, async (req, res) => {
   const { access_token, email, name } = req.body;
   if (!access_token || !email) {
     return res.status(400).json({ success: false, error: 'Missing token or email' });
