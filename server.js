@@ -1047,12 +1047,22 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`pquote running on port ${PORT}`);
   console.log(`Routes: / → landing.html, /app → index.html`);
+  // Banner reflects what the runtime auth check will actually do at request
+  // time: DB users count toward "auth required" too, not just env-configured
+  // ones. The old message said "Open access" even when DB signups existed,
+  // which was misleading since isOpenAccess() already treated those as real
+  // accounts.
+  const dbUserCount = (() => {
+    try { return countUsersStmt.get().n; } catch { return 0; }
+  })();
   if (USERS.length > 1) {
-    console.log(`Auth: ✓ Multi-user (${USERS.length} users: ${USERS.map(u => u.name || u.id).join(', ')})`);
+    console.log(`Auth: ✓ Env users (${USERS.length}: ${USERS.map(u => u.name || u.id).join(', ')})${dbUserCount ? ` + ${dbUserCount} DB user(s)` : ''}`);
   } else if (USERS.length === 1) {
-    console.log(`Auth: ✓ Single-user (${USERS[0].name || USERS[0].id})`);
+    console.log(`Auth: ✓ Env user (${USERS[0].name || USERS[0].id})${dbUserCount ? ` + ${dbUserCount} DB user(s)` : ''}`);
+  } else if (dbUserCount > 0) {
+    console.log(`Auth: ✓ DB accounts (${dbUserCount} user${dbUserCount === 1 ? '' : 's'} — email + password)`);
   } else {
-    console.log('Auth: ✗ Open access (set QMACH_USERS or QMACH_PASSWORD)');
+    console.log('Auth: ✗ Open access (no users yet — signup via /app or set QMACH_USERS)');
   }
   console.log(`AI:   ${process.env.ANTHROPIC_API_KEY ? '✓ Configured' : '✗ Set ANTHROPIC_API_KEY to enable'}`);
 });
