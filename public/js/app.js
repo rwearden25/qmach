@@ -1198,8 +1198,14 @@ async function sendQuoteToPzip(id, btn) {
     const res = await authFetch(`/api/quotes/${id}/send-to-pzip`, { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Send failed');
-    const msg = data.duplicate
-      ? `Already sent (invoice ${data.invoice_num})`
+    // Three response shapes from pzip:
+    //   refreshed:true  → existing draft was updated in place (same id/link)
+    //   duplicate:true  → finalized invoice (sent/paid/void) — pzip refused to mutate
+    //   neither         → fresh invoice created
+    const msg = data.refreshed
+      ? `Invoice ${data.invoice_num} refreshed on pzip ↻`
+      : data.duplicate
+      ? `Already finalized (invoice ${data.invoice_num}) — pzip kept it as-is`
       : `Sent to pzip as ${data.invoice_num} ✓`;
     toast(msg);
     if (data.view_url && confirm(msg + '\n\nOpen the invoice now?')) {
