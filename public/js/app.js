@@ -183,7 +183,11 @@ async function doSignup() {
   if (!firstName) { err.textContent = 'Enter your first name'; first?.focus(); return; }
   if (!lastName)  { err.textContent = 'Enter your last name';  last?.focus();  return; }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { err.textContent = 'Enter a valid email'; emailInput?.focus(); return; }
-  if (password.length < 8) { err.textContent = 'Password must be at least 8 characters'; pw?.focus(); return; }
+  if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+    err.textContent = 'Password must be 8+ chars with an uppercase letter, a number, and a special character';
+    pw?.focus();
+    return;
+  }
 
   btn.disabled = true; btn.textContent = 'Creating...'; err.textContent = '';
   try {

@@ -245,7 +245,11 @@ app.post('/api/auth/signup', (req, res) => {
 
     if (!firstName || !lastName) return res.status(400).json({ success: false, error: 'First and last name required' });
     if (!EMAIL_RE.test(email))   return res.status(400).json({ success: false, error: 'Valid email required' });
-    if (password.length < 8)     return res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
+    // Password policy: ≥8 chars, ≥1 uppercase, ≥1 number, ≥1 special.
+    // Kept in sync with the client-side check in public/js/app.js (doSignup).
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+      return res.status(400).json({ success: false, error: 'Password must be 8+ characters with an uppercase letter, a number, and a special character' });
+    }
 
     if (getUserByEmailStmt.get(email)) {
       return res.status(409).json({ success: false, error: 'An account with that email already exists' });

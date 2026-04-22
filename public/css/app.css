@@ -105,6 +105,10 @@ body { display: flex; flex-direction: column; }
 }
 .auth-toggle a:hover { color: var(--accent-hover); border-bottom-color: var(--accent); }
 .auth-panel.hidden { display: none; }
+.auth-hint {
+  font-size: 11px; color: var(--muted); margin-top: 6px;
+  font-family: var(--mono); letter-spacing: .3px; text-align: left;
+}
 .login-error { color: var(--red); font-size: 13px; font-weight: 600; margin-top: 12px; min-height: 18px; }
 
 /* Google Sign-In button */
