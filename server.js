@@ -925,8 +925,8 @@ Return ONLY this JSON:
 app.post('/api/voice/price', async (req, res) => {
   try {
     const { industry, parsed_job, addons } = req.body;
-    if (!industry || !parsed_job) {
-      return res.status(400).json({ error: 'industry and parsed_job required' });
+    if (!industry || typeof industry !== 'string' || industry.trim().length > 100 || !parsed_job) {
+      return res.status(400).json({ error: 'industry (≤100 chars) and parsed_job required' });
     }
 
     const examples = getRecentQuotesForIndustry(req.userId, industry, 5);
@@ -941,7 +941,7 @@ calibrate to their actual pricing patterns. Otherwise use realistic market rates
 Always respond with a JSON object only — no markdown, no commentary.`,
       messages: [{
         role: 'user',
-        content: `Industry: ${industry}
+        content: `Industry: ${JSON.stringify(industry)}
 Parsed job: ${JSON.stringify(parsed_job)}
 Selected add-ons: ${JSON.stringify(addons || [])}
 
