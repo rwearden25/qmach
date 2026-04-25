@@ -189,6 +189,18 @@ try {
     db.exec('ALTER TABLE quotes ADD COLUMN tax_rate REAL NOT NULL DEFAULT 0');
     console.log('[DB] Added tax_rate column');
   }
+  if (!cols.includes('source')) {
+    db.exec("ALTER TABLE quotes ADD COLUMN source TEXT DEFAULT 'map'");
+    console.log('[DB] Added source column — existing quotes default to "map"');
+  }
+  if (!cols.includes('transcript')) {
+    db.exec('ALTER TABLE quotes ADD COLUMN transcript TEXT');
+    console.log('[DB] Added transcript column');
+  }
+  if (!cols.includes('inferred_industry')) {
+    db.exec('ALTER TABLE quotes ADD COLUMN inferred_industry TEXT');
+    console.log('[DB] Added inferred_industry column');
+  }
 } catch (err) {
   console.error('[DB] Migration error:', err.message);
 }
