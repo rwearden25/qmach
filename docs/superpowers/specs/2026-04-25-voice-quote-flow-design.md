@@ -172,7 +172,7 @@ Both endpoints use `claude-opus-4-7` (matches the rest of the app after the rece
 - `public/js/voice.js` — Web Speech API handling, screen state, calls to new endpoints, save handoff
 - `public/css/voice.css` — voice-specific styles (mobile-first, big touch targets)
 - `server.js` — adds two route handlers near the existing AI routes (around line 748)
-- `db/database.js` — adds the three new columns. SQLite has no `ADD COLUMN IF NOT EXISTS`, so wrap each `ALTER TABLE quotes ADD COLUMN …` in a try/catch that swallows the "duplicate column" error, making startup idempotent across deploys.
+- Migration runs in `server.js` (where the existing `user_id`, `line_items`, `markup`, `tax_rate` migrations live near line 169–189). Follow the same pattern: introspect `PRAGMA table_info(quotes)`, gate each `ALTER TABLE quotes ADD COLUMN …` on `!cols.includes('<name>')`. Idempotent across deploys.
 - `public/landing.html` — adds a "Voice Quote" button next to the existing entry point
 
 ## Testing Strategy
