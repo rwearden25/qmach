@@ -855,6 +855,9 @@ app.post('/api/voice/analyze', async (req, res) => {
     if (!transcript || typeof transcript !== 'string' || transcript.trim().length < 3) {
       return res.status(400).json({ error: 'transcript is required (min 3 chars)' });
     }
+    if (transcript.trim().length > 5000) {
+      return res.status(400).json({ error: 'transcript too long (max 5000 chars)' });
+    }
 
     // KB lookup uses prior_context industry if continuing, otherwise we have no
     // industry yet — we'll send empty examples and let Q infer cold. After the
@@ -871,7 +874,7 @@ Your job: extract a structured ballpark quote from a spoken transcript.
 Always respond with a JSON object only — no markdown, no commentary.`,
       messages: [{
         role: 'user',
-        content: `Voice transcript: """${transcript.trim()}"""
+        content: `Voice transcript: ${JSON.stringify(transcript.trim())}
 
 Prior context (if continuing a previous analyze, otherwise null): ${JSON.stringify(prior_context || null)}
 
