@@ -921,6 +921,56 @@ Return ONLY this JSON:
   }
 });
 
+// AI: Voice quote — suggest price calibrated to user's past jobs
+app.post('/api/voice/price', async (req, res) => {
+  try {
+    const { industry, parsed_job, addons } = req.body;
+    if (!industry || !parsed_job) {
+      return res.status(400).json({ error: 'industry and parsed_job required' });
+    }
+
+    const examples = getRecentQuotesForIndustry(req.userId, industry, 5);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 400,
+      system: `You are Q, a pricing assistant for trades on pquote.
+Suggest a fair ballpark price for the job. When the user has past similar quotes,
+calibrate to their actual pricing patterns. Otherwise use realistic market rates
+(default location: DFW Texas area).
+Always respond with a JSON object only — no markdown, no commentary.`,
+      messages: [{
+        role: 'user',
+        content: `Industry: ${industry}
+Parsed job: ${JSON.stringify(parsed_job)}
+Selected add-ons: ${JSON.stringify(addons || [])}
+
+User's recent similar jobs (calibration signal — their actual prices):
+${JSON.stringify(examples, null, 2)}
+
+Return ONLY this JSON:
+{
+  "suggested_price": 0,
+  "range": { "low": 0, "high": 0 },
+  "reasoning": "1-2 sentences. Mention if calibrated to user's past jobs."
+}`
+      }]
+    });
+
+    const raw = message.content[0].text.trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    } catch {
+      return res.status(500).json({ error: 'AI returned invalid JSON', raw });
+    }
+    res.json(parsed);
+  } catch (err) {
+    console.error('AI voice/price error:', err);
+    res.status(500).json({ error: 'AI price request failed' });
+  }
+});
+
 // AI: Chat assistant (streaming-capable)
 app.post('/api/ai/chat', async (req, res) => {
   try {
