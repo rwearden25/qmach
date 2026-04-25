@@ -757,7 +757,7 @@ app.post('/api/ai/suggest-price', async (req, res) => {
     }
 
     const message = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 512,
       system: `You are a pricing expert for trades and contracting businesses. 
 You provide realistic market-rate pricing guidance for jobs. 
@@ -807,7 +807,7 @@ app.post('/api/ai/generate-narrative', async (req, res) => {
     }
 
     const message = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 600,
       system: `You are a professional estimator for a contracting company. 
 Write clear, confident, professional quote narratives that build trust with clients.
@@ -882,7 +882,7 @@ FIELD CONTEXT: These users are in the field. Keep it fast and practical. Bullets
 ${context ? `Current quote context: ${JSON.stringify(context)}` : ''}`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 1024,
       system: systemPrompt,
       messages: messages.slice(-10)
