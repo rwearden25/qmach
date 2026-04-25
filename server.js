@@ -9,6 +9,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const db = require('./db/database');
+const { getRecentQuotesForIndustry } = require('./db/kb');
 const backup = require('./db/backup');
 
 const app = express();
@@ -844,6 +845,76 @@ Include what the work entails, why the price is fair, and a closing sentence abo
   } catch (err) {
     console.error('AI narrative error:', err);
     res.status(500).json({ error: 'AI narrative generation failed' });
+  }
+});
+
+// AI: Voice quote — analyze transcript, infer industry, parse job, suggest gaps + add-ons
+app.post('/api/voice/analyze', async (req, res) => {
+  try {
+    const { transcript, prior_context } = req.body;
+    if (!transcript || typeof transcript !== 'string' || transcript.trim().length < 3) {
+      return res.status(400).json({ error: 'transcript is required (min 3 chars)' });
+    }
+
+    // KB lookup uses prior_context industry if continuing, otherwise we have no
+    // industry yet — we'll send empty examples and let Q infer cold. After the
+    // first analyze, "Talk to Q again" passes prior_context so the next call
+    // gets calibration.
+    const industry = prior_context?.inferred_industry || null;
+    const examples = industry ? getRecentQuotesForIndustry(req.userId, industry, 5) : [];
+
+    const message = await anthropic.messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 800,
+      system: `You are Q, a quoting assistant for trades on pquote.
+Your job: extract a structured ballpark quote from a spoken transcript.
+Always respond with a JSON object only — no markdown, no commentary.`,
+      messages: [{
+        role: 'user',
+        content: `Voice transcript: """${transcript.trim()}"""
+
+Prior context (if continuing a previous analyze, otherwise null): ${JSON.stringify(prior_context || null)}
+
+User's recent similar jobs (calibration — match this user's pricing patterns when present):
+${JSON.stringify(examples, null, 2)}
+
+Task:
+1. Infer the trade/industry from the transcript (e.g. "pressure-washing", "striping", "roofing", "painting", "sealcoating", or "custom" if unclear).
+2. Extract structured job data (area, unit, location hints, scope notes).
+3. List up to 3 missing-info gaps the user should fill in for an accurate quote.
+4. Suggest up to 3 common add-ons for this trade.
+
+Return ONLY this JSON:
+{
+  "inferred_industry": "string",
+  "confidence": 0.0,
+  "parsed_job": {
+    "area": null,
+    "unit": "sqft",
+    "location": null,
+    "scope_notes": "string"
+  },
+  "missing_fields": [
+    { "key": "string", "prompt": "string" }
+  ],
+  "suggested_addons": [
+    { "key": "string", "label": "string", "default_qty": 1 }
+  ]
+}`
+      }]
+    });
+
+    const raw = message.content[0].text.trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    } catch {
+      return res.status(500).json({ error: 'AI returned invalid JSON', raw });
+    }
+    res.json(parsed);
+  } catch (err) {
+    console.error('AI voice/analyze error:', err);
+    res.status(500).json({ error: 'AI analyze request failed' });
   }
 });
 
