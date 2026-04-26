@@ -105,7 +105,13 @@ function buildRecognition() {
       try { r.start(); } catch {}
     } else if (recording) {
       // iOS/Safari ended naturally — flip UI back to idle but keep transcript
+      const captured = (transcriptEl.textContent || '').trim();
       stopRecording();
+      if (!captured) {
+        statusEl.textContent = '[ NO SPEECH ] tap mic to retry, or type below';
+        fallbackEl.classList.remove('hidden');
+        submitBtn.classList.remove('hidden');
+      }
     }
   };
 
@@ -530,11 +536,16 @@ function talkAgain() {
   statusEl.textContent = '';
   statusEl.classList.remove('error');
   setStatus('idle');
+  // Capture context the new analyze call needs to merge against, then reset
+  // round-specific UI state so old gap answers and addon toggles don't carry
+  // forward onto a re-parsed job that may have a different shape.
   state.prior_context = {
     inferred_industry: state.industry,
     parsed_job: state.enriched_job || state.parsed_job,
     addons: state.final_addons || [],
   };
+  state.gap_answers = {};
+  state.selected_addons = {};
   show('mic');
 }
 
@@ -684,7 +695,14 @@ function showRestoreBanner(stash) {
     <button type="button" class="act-btn primary" style="padding: 8px 14px; font-size: 11px;" id="restore-yes">▸ FILE IT NOW</button>
     <button type="button" class="act-btn ghost" style="padding: 8px 12px; font-size: 11px;" id="restore-no">discard</button>
   `;
-  document.body.insertBefore(banner, document.body.firstChild.nextSibling);
+  // Sit between the frame header and the first active screen so it appears
+  // immediately under the sticky header without shoving the layout around.
+  const header = document.querySelector('.frame-header');
+  if (header && header.parentNode) {
+    header.parentNode.insertBefore(banner, header.nextSibling);
+  } else {
+    document.body.prepend(banner);
+  }
 
   document.getElementById('restore-yes').addEventListener('click', async () => {
     const btn = document.getElementById('restore-yes');
