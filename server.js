@@ -159,6 +159,8 @@ const authLimiter = rateLimit({
 
 app.use('/api/', apiLimiter);
 app.use('/api/ai/', aiLimiter);
+// Voice endpoints hit Anthropic too — share the AI rate limit
+app.use('/api/voice/', aiLimiter);
 // NOTE: authLimiter is attached directly on each endpoint below, not via
 // app.use, so the route definitions stay the single source of truth for
 // which endpoints are credential-guarded.
@@ -436,8 +438,15 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
 // ── Auth middleware — protect all /api/ routes except auth + config + health
 //    Attaches req.userId for downstream route handlers
 app.use('/api/', (req, res, next) => {
-  // Skip auth for these paths
-  const open = ['/auth', '/auth/check', '/auth/google', '/auth/login', '/auth/signup', '/auth/logout', '/config'];
+  // Skip auth for these paths.
+  // /voice/analyze and /voice/price are open so users can try the voice
+  // quote flow without an account — saving still requires login (the
+  // natural conversion nudge). Rate limited via aiLimiter above.
+  const open = [
+    '/auth', '/auth/check', '/auth/google', '/auth/login', '/auth/signup', '/auth/logout',
+    '/config',
+    '/voice/analyze', '/voice/price',
+  ];
   if (open.includes(req.path)) return next();
 
   // Fresh install with zero users anywhere — grant open access so the app
