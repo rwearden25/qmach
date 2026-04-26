@@ -9,6 +9,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const db = require('./db/database');
+const { getRecentQuotesForIndustry } = require('./db/kb');
 const backup = require('./db/backup');
 
 const app = express();
@@ -188,6 +189,18 @@ try {
   if (!cols.includes('tax_rate')) {
     db.exec('ALTER TABLE quotes ADD COLUMN tax_rate REAL NOT NULL DEFAULT 0');
     console.log('[DB] Added tax_rate column');
+  }
+  if (!cols.includes('source')) {
+    db.exec("ALTER TABLE quotes ADD COLUMN source TEXT DEFAULT 'map'");
+    console.log('[DB] Added source column — existing quotes default to "map"');
+  }
+  if (!cols.includes('transcript')) {
+    db.exec('ALTER TABLE quotes ADD COLUMN transcript TEXT');
+    console.log('[DB] Added transcript column');
+  }
+  if (!cols.includes('inferred_industry')) {
+    db.exec('ALTER TABLE quotes ADD COLUMN inferred_industry TEXT');
+    console.log('[DB] Added inferred_industry column');
   }
 } catch (err) {
   console.error('[DB] Migration error:', err.message);
@@ -757,7 +770,7 @@ app.post('/api/ai/suggest-price', async (req, res) => {
     }
 
     const message = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 512,
       system: `You are a pricing expert for trades and contracting businesses. 
 You provide realistic market-rate pricing guidance for jobs. 
@@ -807,7 +820,7 @@ app.post('/api/ai/generate-narrative', async (req, res) => {
     }
 
     const message = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 600,
       system: `You are a professional estimator for a contracting company. 
 Write clear, confident, professional quote narratives that build trust with clients.
@@ -832,6 +845,129 @@ Include what the work entails, why the price is fair, and a closing sentence abo
   } catch (err) {
     console.error('AI narrative error:', err);
     res.status(500).json({ error: 'AI narrative generation failed' });
+  }
+});
+
+// AI: Voice quote — analyze transcript, infer industry, parse job, suggest gaps + add-ons
+app.post('/api/voice/analyze', async (req, res) => {
+  try {
+    const { transcript, prior_context } = req.body;
+    if (!transcript || typeof transcript !== 'string' || transcript.trim().length < 3) {
+      return res.status(400).json({ error: 'transcript is required (min 3 chars)' });
+    }
+    if (transcript.trim().length > 5000) {
+      return res.status(400).json({ error: 'transcript too long (max 5000 chars)' });
+    }
+
+    // KB lookup uses prior_context industry if continuing, otherwise we have no
+    // industry yet — we'll send empty examples and let Q infer cold. After the
+    // first analyze, "Talk to Q again" passes prior_context so the next call
+    // gets calibration.
+    const industry = prior_context?.inferred_industry || null;
+    const examples = industry ? getRecentQuotesForIndustry(req.userId, industry, 5) : [];
+
+    const message = await anthropic.messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 800,
+      system: `You are Q, a quoting assistant for trades on pquote.
+Your job: extract a structured ballpark quote from a spoken transcript.
+Always respond with a JSON object only — no markdown, no commentary.`,
+      messages: [{
+        role: 'user',
+        content: `Voice transcript: ${JSON.stringify(transcript.trim())}
+
+Prior context (if continuing a previous analyze, otherwise null): ${JSON.stringify(prior_context || null)}
+
+User's recent similar jobs (calibration — match this user's pricing patterns when present):
+${JSON.stringify(examples, null, 2)}
+
+Task:
+1. Infer the trade/industry from the transcript (e.g. "pressure-washing", "striping", "roofing", "painting", "sealcoating", or "custom" if unclear).
+2. Extract structured job data (area, unit, location hints, scope notes).
+3. List up to 3 missing-info gaps the user should fill in for an accurate quote.
+4. Suggest up to 3 common add-ons for this trade.
+
+Return ONLY this JSON:
+{
+  "inferred_industry": "string",
+  "confidence": 0.0,
+  "parsed_job": {
+    "area": null,
+    "unit": "sqft",
+    "location": null,
+    "scope_notes": "string"
+  },
+  "missing_fields": [
+    { "key": "string", "prompt": "string" }
+  ],
+  "suggested_addons": [
+    { "key": "string", "label": "string", "default_qty": 1 }
+  ]
+}`
+      }]
+    });
+
+    const raw = message.content[0].text.trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    } catch {
+      return res.status(500).json({ error: 'AI returned invalid JSON', raw });
+    }
+    res.json(parsed);
+  } catch (err) {
+    console.error('AI voice/analyze error:', err);
+    res.status(500).json({ error: 'AI analyze request failed' });
+  }
+});
+
+// AI: Voice quote — suggest price calibrated to user's past jobs
+app.post('/api/voice/price', async (req, res) => {
+  try {
+    const { industry, parsed_job, addons } = req.body;
+    if (!industry || typeof industry !== 'string' || industry.trim().length > 100 || !parsed_job) {
+      return res.status(400).json({ error: 'industry (≤100 chars) and parsed_job required' });
+    }
+
+    const examples = getRecentQuotesForIndustry(req.userId, industry, 5);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 400,
+      system: `You are Q, a pricing assistant for trades on pquote.
+Suggest a fair ballpark price for the job. When the user has past similar quotes,
+calibrate to their actual pricing patterns. Otherwise use realistic market rates
+(default location: DFW Texas area).
+Always respond with a JSON object only — no markdown, no commentary.`,
+      messages: [{
+        role: 'user',
+        content: `Industry: ${JSON.stringify(industry)}
+Parsed job: ${JSON.stringify(parsed_job)}
+Selected add-ons: ${JSON.stringify(addons || [])}
+
+User's recent similar jobs (calibration signal — their actual prices):
+${JSON.stringify(examples, null, 2)}
+
+Return ONLY this JSON:
+{
+  "suggested_price": 0,
+  "range": { "low": 0, "high": 0 },
+  "reasoning": "1-2 sentences. Mention if calibrated to user's past jobs."
+}`
+      }]
+    });
+
+    const raw = message.content[0].text.trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    } catch {
+      return res.status(500).json({ error: 'AI returned invalid JSON', raw });
+    }
+    res.json(parsed);
+  } catch (err) {
+    console.error('AI voice/price error:', err);
+    res.status(500).json({ error: 'AI price request failed' });
   }
 });
 
@@ -882,7 +1018,7 @@ FIELD CONTEXT: These users are in the field. Keep it fast and practical. Bullets
 ${context ? `Current quote context: ${JSON.stringify(context)}` : ''}`;
 
     const response = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-opus-4-7',
       max_tokens: 1024,
       system: systemPrompt,
       messages: messages.slice(-10)
@@ -1024,6 +1160,10 @@ app.get('/', (req, res) => {
 // ── App entry point
 app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/voice', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'voice.html'));
 });
 
 // ── Admin UI (the page itself is public HTML; the API endpoints below
