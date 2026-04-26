@@ -134,14 +134,53 @@ function buildRecognition() {
   return r;
 }
 
-if (SR) {
+/* ───── Universal: textarea is always wired for submit visibility ─────
+   On iOS this is the primary input path; on non-iOS it's a fallback that
+   stays usable alongside SR.
+*/
+fallbackEl.addEventListener('input', () => {
+  submitBtn.classList.toggle('hidden', !fallbackEl.value.trim());
+});
+
+if (IS_IOS) {
+  // Skip the Web Speech API entirely on iOS. WKWebView's SpeechRecognition
+  // is too unreliable across iOS Safari / Chrome / Edge / Firefox (Apple
+  // forces them all onto WKWebView). Use the iOS keyboard's built-in
+  // dictation 🎙 instead — it's an OS-level feature that works in every
+  // iOS browser.
+  transcriptEl.classList.add('hidden');
+  fallbackEl.classList.remove('hidden');
+  fallbackEl.placeholder = 'Tap, then use the 🎙 on your keyboard to dictate — or just type.';
+  meterEl.textContent = 'INPUT · KEYBOARD';
+  micLabel.textContent = 'TAP TO DICTATE';
+  statusEl.textContent = '[ READY ] tap mic to open keyboard';
+
+  // Visual feedback tied to keyboard open/close
+  fallbackEl.addEventListener('focus', () => {
+    setStatus('live');
+    statusEl.textContent = '[ INPUT ] tap 🎙 on your keyboard to dictate';
+    statusEl.classList.remove('error');
+    micBtn.classList.add('recording');
+    micLabel.textContent = 'KEYBOARD OPEN';
+  });
+  fallbackEl.addEventListener('blur', () => {
+    setStatus('idle');
+    micBtn.classList.remove('recording');
+    micLabel.textContent = 'TAP TO DICTATE';
+    statusEl.textContent = fallbackEl.value.trim()
+      ? `[ ${fallbackEl.value.trim().length} CHARS ] tap TRANSMIT to send`
+      : '[ READY ] tap mic to open keyboard';
+  });
+} else if (SR) {
   recognition = buildRecognition();
 } else {
+  // Non-iOS browser without Web Speech API (Firefox desktop, etc.) —
+  // textarea is the only input.
   micBtn.classList.add('hidden');
   transcriptEl.classList.add('hidden');
   fallbackEl.classList.remove('hidden');
   submitBtn.classList.remove('hidden');
-  statusEl.textContent = '[ NO MIC SUPPORT ] type to transmit · upgrade to iOS 14.5+ or Chrome';
+  statusEl.textContent = '[ NO MIC SUPPORT ] type to transmit';
   meterEl.textContent = 'INPUT · TEXT';
 }
 
@@ -254,6 +293,13 @@ function stopRecording() {
 }
 
 micBtn?.addEventListener('click', () => {
+  if (IS_IOS) {
+    // Focus the textarea so iOS opens the keyboard with its built-in
+    // dictation 🎙 button. The keyboard mic is OS-level and works in every
+    // iOS browser — far more reliable than WKWebView's SpeechRecognition.
+    fallbackEl.focus();
+    return;
+  }
   if (recording) stopRecording();
   else startRecording();
 });
@@ -533,7 +579,11 @@ function talkAgain() {
   submitBtn.disabled = false;
   submitBtn.querySelector('span').textContent = 'TRANSMIT';
   submitBtn.classList.add('hidden');
-  statusEl.textContent = '';
+  if (IS_IOS) {
+    statusEl.textContent = '[ READY ] tap mic to open keyboard';
+  } else {
+    statusEl.textContent = '';
+  }
   statusEl.classList.remove('error');
   setStatus('idle');
   // Capture context the new analyze call needs to merge against, then reset
@@ -546,6 +596,16 @@ function talkAgain() {
   };
   state.gap_answers = {};
   state.selected_addons = {};
+  // Also clear cached enriched_job / final_addons. If round N's fetchPrice
+  // failed (its catch branch never updates these), a later talkAgain would
+  // pick state.enriched_job over the freshly parsed_job and leak stale
+  // scope_notes into prior_context.
+  state.enriched_job = null;
+  state.final_addons = null;
+  // On non-iOS, re-hide the fallback textarea so the user lands cleanly on
+  // the SR-driven mic screen. (On iOS the textarea is the primary input and
+  // stays visible.)
+  if (!IS_IOS) fallbackEl.classList.add('hidden');
   show('mic');
 }
 
