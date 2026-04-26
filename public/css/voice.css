@@ -986,6 +986,32 @@ body {
 }
 .act-btn.ghost:hover { color: var(--amber); }
 
+/* ─── Guest-quota banner ─── */
+.guest-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: linear-gradient(180deg, var(--amber-pale), var(--bg-elev-1));
+  border-bottom: 1px dashed var(--amber);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.guest-hint-icon {
+  color: var(--amber);
+  font-size: 16px;
+  font-weight: 700;
+}
+.guest-hint-text { flex: 1; }
+.guest-hint-text strong { font-weight: 800; color: var(--amber-dim); }
+.guest-hint-text a {
+  color: var(--amber);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* ─── iOS keyboard-mic tip (shown only on iOS via JS) ─── */
 .keyboard-tip {
   display: flex;
