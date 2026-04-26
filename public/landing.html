@@ -103,18 +103,50 @@ body {
   line-height: 1.7; margin-bottom: 36px; position: relative; z-index: 1;
   animation: fadeUp .6s ease .2s both;
 }
+.hero-cta-row {
+  display: inline-flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  position: relative; z-index: 1;
+  animation: fadeUp .6s ease .3s both;
+}
 .hero-cta {
   display: inline-flex; align-items: center; gap: 10px;
   font-family: var(--mono); font-size: 14px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 1px;
   background: var(--accent); color: white;
   padding: 18px 40px; border-radius: 8px; border: none;
-  cursor: pointer; text-decoration: none; position: relative; z-index: 1;
+  cursor: pointer; text-decoration: none;
   box-shadow: 0 6px 24px rgba(58,94,48,.35);
-  transition: all .2s; animation: fadeUp .6s ease .3s both;
+  transition: all .2s;
 }
 .hero-cta:hover { background: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 10px 36px rgba(58,94,48,.4); }
 .hero-cta:active { transform: translateY(0); }
+
+/* Voice CTA — previews the field-transmission aesthetic */
+.hero-cta-voice {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 14px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 1.4px;
+  background: transparent; color: #FFB000;
+  padding: 17px 32px; border-radius: 8px;
+  border: 1.5px solid #FFB000;
+  cursor: pointer; text-decoration: none;
+  transition: all .2s;
+}
+.hero-cta-voice:hover {
+  background: rgba(255,176,0,.08);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 36px rgba(255,176,0,.18);
+}
+.hero-cta-voice .voice-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #FFB000;
+  box-shadow: 0 0 8px #FFB000, 0 0 0 0 rgba(255,176,0,.5);
+  animation: voiceDotPulse 2.2s ease-in-out infinite;
+}
+@keyframes voiceDotPulse {
+  0%, 100% { box-shadow: 0 0 8px #FFB000, 0 0 0 0 rgba(255,176,0,.5); }
+  50%      { box-shadow: 0 0 12px #FFB000, 0 0 0 6px rgba(255,176,0,0); }
+}
 .hero-note {
   font-family: var(--mono); font-size: 11px; color: rgba(255,255,255,.25);
   margin-top: 14px; position: relative; z-index: 1;
@@ -376,7 +408,9 @@ body {
 }
 @media (max-width: 480px) {
   .hero { padding: 80px 20px 48px; }
+  .hero-cta-row { display: flex; flex-direction: column; gap: 10px; width: 100%; }
   .hero-cta { width: 100%; justify-content: center; padding: 16px 24px; font-size: 13px; }
+  .hero-cta-voice { width: 100%; justify-content: center; padding: 15px 24px; font-size: 13px; }
   .price-card { padding: 28px 20px; }
 }
 </style>
@@ -399,7 +433,10 @@ body {
   <div class="hero-badge">Satellite measurement for trades</div>
   <h1>Measure. Price. Send. <em>60 seconds.</em></h1>
   <p class="hero-sub">Tap the corners of any parking lot, roof, or driveway on satellite imagery. Get sq ft, AI pricing, and a polished PDF — without leaving the truck.</p>
-  <a href="/app" class="hero-cta">Start Quoting Free →</a>
+  <div class="hero-cta-row">
+    <a href="/app" class="hero-cta">Start Quoting Free →</a>
+    <a href="/voice" class="hero-cta-voice"><span class="voice-dot"></span>Voice Quote · NEW</a>
+  </div>
   <p class="hero-note">No credit card · Works on any phone</p>
 </section>
 
