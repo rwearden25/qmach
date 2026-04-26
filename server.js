@@ -1166,9 +1166,23 @@ app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
   }
 });
 
+// ── Build identifier — bumped on every deploy attempt so /version makes it
+// trivial to tell which build is actually running (vs. what GitHub says is
+// merged). If /version doesn't show this string within ~2min of merge, the
+// Railway container didn't swap and a manual Redeploy is needed.
+const APP_VERSION = '20260426e-preview-modal-cachebust-versionstamp';
+console.log(`[Boot] pquote APP_VERSION = ${APP_VERSION}`);
+
 // ── Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ── Version endpoint — returns the build identifier above so we can verify
+// deploys without having to inspect static-asset response headers.
+app.get('/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ version: APP_VERSION, timestamp: new Date().toISOString() });
 });
 
 // ── Landing page (public — no auth)
