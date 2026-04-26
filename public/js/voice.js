@@ -530,6 +530,11 @@ function talkAgain() {
   finalTranscript = '';
   transcriptEl.textContent = '';
   fallbackEl.value = '';
+  // Re-hide the fallback textarea — it may have been revealed earlier by
+  // onerror or the no-speech onend branch. Without this, the user lands on
+  // the mic screen with a visible empty textarea AND a hidden submit button,
+  // which looks broken (typing produces no submit affordance).
+  fallbackEl.classList.add('hidden');
   submitBtn.disabled = false;
   submitBtn.querySelector('span').textContent = 'TRANSMIT';
   submitBtn.classList.add('hidden');
@@ -546,6 +551,12 @@ function talkAgain() {
   };
   state.gap_answers = {};
   state.selected_addons = {};
+  // Also clear the prior round's enriched_job and final_addons. Without this,
+  // if round N's fetchPrice failed (its catch branch leaves these untouched),
+  // a subsequent talkAgain would pick state.enriched_job over the freshly
+  // parsed round-N+1 job and leak stale scope_notes into prior_context.
+  state.enriched_job = null;
+  state.final_addons = null;
   show('mic');
 }
 
