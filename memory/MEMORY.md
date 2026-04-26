@@ -1,1 +1,2 @@
 - [Frontend work needs frontend-design treatment](feedback_frontend_design.md) — never default to generic CSS for Ross's UI
+- [Voice quote token-spend defense](reference_voice_token_defense.md) — 6-layer abuse stack on /api/voice/*; `VOICE_DAILY_CAP` env tunes the daily kill-switch

@@ -104,6 +104,11 @@ quote-machine/
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | / | Marketing landing page |
+| GET | /app | Authenticated map-based quoter |
+| GET | /voice | Open voice-quote flow (guest-quota'd) |
+| GET | /version | Build identifier (deploy verification) |
+| GET | /health | Health check |
 | GET | /api/quotes | List all quotes (supports ?search=) |
 | GET | /api/quotes/:id | Get single quote |
 | POST | /api/quotes | Create quote |
@@ -113,5 +118,20 @@ quote-machine/
 | POST | /api/ai/suggest-price | AI pricing (low/mid/high) |
 | POST | /api/ai/generate-narrative | AI quote narrative |
 | POST | /api/ai/chat | AI chat assistant |
+| POST | /api/voice/analyze | Voice → structured quote (open, guest-capped) |
+| POST | /api/voice/price | Voice quote price refinement (open, daily-capped) |
 | GET | /api/config | Returns Mapbox token to frontend |
-| GET | /health | Health check |
+
+---
+
+## Voice quote security
+
+`/voice` is open to guests, so it's defended by a 6-layer token-spend stack
+(IP rate limit → IP quota → cookie quota → MAX of both → daily server cap →
+Anthropic console cap). Full details, env vars (`VOICE_DAILY_CAP`,
+`GUEST_COOKIE_SECRET`), and verification commands:
+**[docs/voice-security.md](docs/voice-security.md)**.
+
+You should also configure a monthly spend cap at
+https://console.anthropic.com/settings/limits — that's the only layer that
+can't be defeated by a bug in our own code.
