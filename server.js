@@ -1162,6 +1162,10 @@ app.get('/app', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+app.get('/voice', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'voice.html'));
+});
+
 // ── Admin UI (the page itself is public HTML; the API endpoints below
 // enforce ADMIN_USER_ID. Non-admins loading the page see a "not authorized"
 // message rendered by the page's client-side auth check.)
