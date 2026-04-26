@@ -379,11 +379,25 @@ submitBtn.addEventListener('click', async () => {
         prior_context: window._voiceState?.prior_context || null,
       }),
     });
+    if (res.status === 403) {
+      const err = await safeJson(res);
+      if (err?.error === 'guest_limit_reached') {
+        showGuestLimitReached(err);
+        submitBtn.disabled = false;
+        submitBtn.querySelector('span').textContent = 'Get my quote';
+        setStatus('idle');
+        return;
+      }
+    }
     if (!res.ok) {
       const err = await safeJson(res);
       throw new Error(err?.error || `analyze ${res.status}`);
     }
     const data = await res.json();
+    // Surface remaining guest quota (set by server only for unauthenticated calls)
+    if (data.__guest) {
+      window._voiceState = { ...(window._voiceState || {}), guest: data.__guest };
+    }
     const prior = window._voiceState || {};
     window._voiceState = {
       ...prior,
@@ -407,6 +421,53 @@ async function safeJson(res) {
   try { return await res.json(); } catch { return null; }
 }
 
+/* ───── Guest-limit reached: full-bleed sign-up nudge ───── */
+function showGuestLimitReached(payload) {
+  // Replace Screen 1's prompt area with a clear next-step CTA
+  const promptWrap = document.querySelector('.prompt-wrap');
+  if (!promptWrap) {
+    alert(payload?.message || 'Free quote limit reached. Sign up to keep going.');
+    return;
+  }
+  promptWrap.innerHTML = `
+    <p class="prompt-eyebrow">Free quotes used</p>
+    <h1 class="prompt-line">You're <em>done</em> for today.</h1>
+    <p class="prompt-help">${escapeHtml(payload?.message || 'Sign up for pquote to keep quoting — first account is free.')}</p>
+    <div class="examples" style="border-left-color: var(--amber)">
+      <div class="examples-label">Free with an account</div>
+      <ul class="examples-list">
+        <li>Unlimited voice quotes</li>
+        <li>Save and resend any quote</li>
+        <li>Q learns your pricing over time</li>
+      </ul>
+      <div style="margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap;">
+        <a href="/app" style="
+          flex: 1; min-width: 140px;
+          display: inline-flex; align-items: center; justify-content: center;
+          padding: 14px 18px;
+          font-family: var(--sans); font-size: 14px; font-weight: 700;
+          letter-spacing: .02em;
+          background: linear-gradient(180deg, var(--amber-soft), var(--amber));
+          color: #FFFFFF; border: 1px solid var(--amber);
+          border-radius: var(--rad-md); text-decoration: none;
+          box-shadow: var(--shadow-amber);
+        ">Sign up — free</a>
+        <a href="/app" style="
+          flex: 1; min-width: 140px;
+          display: inline-flex; align-items: center; justify-content: center;
+          padding: 14px 18px;
+          font-family: var(--sans); font-size: 14px; font-weight: 700;
+          background: transparent; color: var(--amber); border: 1px solid var(--amber);
+          border-radius: var(--rad-md); text-decoration: none;
+        ">Sign in</a>
+      </div>
+    </div>
+  `;
+  // Hide the mic stage and the readout — they're not actionable now
+  document.querySelector('.mic-stage')?.classList.add('hidden');
+  document.querySelector('.readout')?.classList.add('hidden');
+}
+
 /* ═══════════════════════════════════════════════════════════
    SCREEN 2 — Log entry render
 ═══════════════════════════════════════════════════════════ */
@@ -424,8 +485,21 @@ function renderResult(analyze) {
   const entryId = state.analyze_id || ('TX-' + Math.random().toString(36).slice(2, 8).toUpperCase());
   state.analyze_id = entryId;
 
+  const guest = state.guest;
+  const guestBanner = (guest && guest.remaining >= 0 && guest.remaining < guest.limit) ? `
+    <div class="guest-hint">
+      <span class="guest-hint-icon" aria-hidden="true">★</span>
+      <span class="guest-hint-text">
+        ${guest.remaining > 0
+          ? `<strong>${guest.remaining} free quote${guest.remaining === 1 ? '' : 's'} left</strong> · <a href="/app">Sign up</a> for unlimited</span>`
+          : `<strong>This is your last free quote</strong> · <a href="/app">Sign up</a> to keep going</span>`}
+      </span>
+    </div>
+  ` : '';
+
   const card = $('#result-card');
   card.innerHTML = `
+    ${guestBanner}
     <div class="log-head">
       <div>
         <div class="log-head-eyebrow">Step 2 of 2</div>

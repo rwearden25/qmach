@@ -169,8 +169,50 @@ const authLimiter = rateLimit({
 
 app.use('/api/', apiLimiter);
 app.use('/api/ai/', aiLimiter);
-// Voice endpoints hit Anthropic too — share the AI rate limit
-app.use('/api/voice/', aiLimiter);
+// Voice endpoints hit Anthropic too. Tighter cap (10/min) than the auth'd
+// /api/ai/* routes since /voice/* is open to unauthenticated guests.
+const voiceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: { error: 'Too many voice requests — slow down or sign in.' },
+});
+app.use('/api/voice/', voiceLimiter);
+
+// ── Guest quota for unauthenticated voice analyses
+//    In-memory per-IP counter with 24h rolling window. Each "quote" is one
+//    /api/voice/analyze call (price recalcs are free). After GUEST_VOICE_LIMIT,
+//    /voice/analyze returns 403 and the client surfaces a sign-up panel.
+const GUEST_VOICE_LIMIT  = 2;
+const GUEST_VOICE_WINDOW = 24 * 60 * 60 * 1000; // 24h
+const guestVoiceUsage    = new Map(); // ip → { count, firstAt, lastAt }
+
+function readGuestVoice(ip) {
+  const rec = guestVoiceUsage.get(ip);
+  if (!rec) return 0;
+  if (Date.now() - rec.firstAt > GUEST_VOICE_WINDOW) {
+    guestVoiceUsage.delete(ip);
+    return 0;
+  }
+  return rec.count;
+}
+function bumpGuestVoice(ip) {
+  const now = Date.now();
+  const rec = guestVoiceUsage.get(ip);
+  if (!rec || now - rec.firstAt > GUEST_VOICE_WINDOW) {
+    guestVoiceUsage.set(ip, { count: 1, firstAt: now, lastAt: now });
+    return 1;
+  }
+  rec.count++;
+  rec.lastAt = now;
+  return rec.count;
+}
+// Periodic cleanup so the Map doesn't grow unbounded.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, rec] of guestVoiceUsage) {
+    if (now - rec.firstAt > GUEST_VOICE_WINDOW) guestVoiceUsage.delete(ip);
+  }
+}, 60 * 60 * 1000);
 // NOTE: authLimiter is attached directly on each endpoint below, not via
 // app.use, so the route definitions stay the single source of truth for
 // which endpoints are credential-guarded.
@@ -878,6 +920,23 @@ app.post('/api/voice/analyze', async (req, res) => {
       return res.status(400).json({ error: 'transcript too long (max 5000 chars)' });
     }
 
+    // ── Guest quota — anonymous users get GUEST_VOICE_LIMIT analyses per IP
+    // per 24h. Authenticated users have no per-IP cap (auth middleware ran
+    // first and either populated req.userId or fell through to /voice via
+    // the open list, leaving req.userId undefined).
+    const isGuest = !req.userId;
+    if (isGuest) {
+      const used = readGuestVoice(req.ip);
+      if (used >= GUEST_VOICE_LIMIT) {
+        return res.status(403).json({
+          error: 'guest_limit_reached',
+          message: `You've used your ${GUEST_VOICE_LIMIT} free quotes. Sign up for pquote to keep going.`,
+          remaining: 0,
+          limit: GUEST_VOICE_LIMIT,
+        });
+      }
+    }
+
     // KB lookup uses prior_context industry if continuing, otherwise we have no
     // industry yet — we'll send empty examples and let Q infer cold. After the
     // first analyze, "Talk to Q again" passes prior_context so the next call
@@ -932,6 +991,16 @@ Return ONLY this JSON:
       parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
     } catch {
       return res.status(500).json({ error: 'AI returned invalid JSON', raw });
+    }
+    // Bump the guest counter only after a successful analyze (so failed
+    // calls don't burn the user's quota).
+    if (isGuest) {
+      const newCount = bumpGuestVoice(req.ip);
+      parsed.__guest = {
+        used: newCount,
+        limit: GUEST_VOICE_LIMIT,
+        remaining: Math.max(0, GUEST_VOICE_LIMIT - newCount),
+      };
     }
     res.json(parsed);
   } catch (err) {
@@ -1170,7 +1239,7 @@ app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
 // trivial to tell which build is actually running (vs. what GitHub says is
 // merged). If /version doesn't show this string within ~2min of merge, the
 // Railway container didn't swap and a manual Redeploy is needed.
-const APP_VERSION = '20260426g-android-polish-scroll-fix-share-api';
+const APP_VERSION = '20260426h-guest-quota-2-quotes';
 console.log(`[Boot] pquote APP_VERSION = ${APP_VERSION}`);
 
 // ── Health check
