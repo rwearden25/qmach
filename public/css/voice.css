@@ -583,7 +583,11 @@ body {
   overflow: hidden;
   position: relative;
   box-shadow: var(--shadow-3);
+  /* Hard cap so nothing inside can blow past the card edge on narrow screens */
+  max-width: 100%;
+  min-width: 0;
 }
+.log-entry, .log-entry * { box-sizing: border-box; }
 .log-entry::before {
   /* Top brass-line accent — lifts the card off the page */
   content: '';
@@ -786,6 +790,8 @@ body {
 .price-block {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
 }
 .price-loading {
   font-family: var(--mono);
@@ -851,10 +857,15 @@ body {
   font-size: 14px;
   color: var(--ink-soft);
   border-left: 3px solid var(--amber);
-  padding-left: 14px;
+  padding: 10px 14px 10px 14px;
   background: var(--bg-elev-2);
   border-radius: 0 var(--rad-sm) var(--rad-sm) 0;
-  padding-top: 8px; padding-bottom: 8px; padding-right: 12px;
+  /* Defense-in-depth so long words / model output can't overflow the card */
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-sizing: border-box;
 }
 .price-reasoning summary {
   cursor: pointer;
@@ -866,7 +877,14 @@ body {
 .price-reasoning summary::after { content: ' ▾'; font-size: 10px; }
 .price-reasoning[open] summary { margin-bottom: 8px; }
 .price-reasoning[open] summary::after { content: ' ▴'; }
-.price-reasoning p { line-height: 1.55; color: var(--ink); }
+.price-reasoning p {
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
 
 /* ─── Disclosure (collapsible "Improve this quote" section) ─── */
 .disclosure {
@@ -957,6 +975,42 @@ body {
   letter-spacing: .2em;
 }
 .act-btn.ghost:hover { color: var(--amber); }
+
+/* ─── iOS keyboard-mic tip (shown only on iOS via JS) ─── */
+.keyboard-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, var(--amber-pale), var(--bg-elev-1));
+  border-bottom: 1px solid var(--line);
+}
+.keyboard-tip-icon {
+  font-size: 22px;
+  line-height: 1.2;
+  flex: 0 0 auto;
+}
+.keyboard-tip-text {
+  flex: 1;
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.keyboard-tip-text strong {
+  display: block;
+  font-weight: 800;
+  color: var(--amber);
+  margin-bottom: 2px;
+}
+.kbd-mic-glyph {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 4px;
+  font-size: 12px;
+}
 
 /* ─── Inline client info inputs ─── */
 .client-row {

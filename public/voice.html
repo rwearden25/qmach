@@ -83,9 +83,17 @@
       <span class="readout-label">What we heard</span>
       <span class="readout-meter" id="readout-meter">— — —</span>
     </div>
+    <!-- iOS-only tip: shown via JS so users know about the keyboard's dictation 🎙 -->
+    <div id="keyboard-tip" class="keyboard-tip hidden">
+      <span class="keyboard-tip-icon" aria-hidden="true">🎙</span>
+      <div class="keyboard-tip-text">
+        <strong>Use your keyboard's mic to dictate.</strong>
+        Tap the input below — when the keyboard opens, tap the microphone <span class="kbd-mic-glyph" aria-hidden="true">🎙</span> next to the spacebar and start talking.
+      </div>
+    </div>
     <canvas id="waveform" class="waveform" width="800" height="60" aria-hidden="true"></canvas>
     <div id="transcript" class="transcript" aria-live="polite"></div>
-    <textarea id="transcript-fallback" class="transcript-fallback hidden" placeholder="Type the job here, or tap the mic above to dictate…" rows="4"></textarea>
+    <textarea id="transcript-fallback" class="transcript-fallback hidden" placeholder="Tap here, then use the 🎙 on your keyboard to dictate — or just type." rows="4"></textarea>
     <div class="readout-foot">
       <span id="mic-status" class="mic-status"></span>
       <button id="submit-btn" type="button" class="tx-btn hidden">
