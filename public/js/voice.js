@@ -27,7 +27,8 @@ function setStatus(name) {
   $('#status-text').textContent = s.text;
 }
 
-function show(name) {
+function show(name, opts = {}) {
+  const previous = document.querySelector('.screen.active')?.id;
   Object.values(screens).forEach(s => s.classList.remove('active'));
   screens[name].classList.add('active');
   // The sticky action dock only belongs on the result screen
@@ -42,7 +43,35 @@ function show(name) {
     step2.classList.toggle('active', name === 'result');
   }
   window.scrollTo({ top: 0, behavior: 'instant' });
+
+  // History integration: push a state when going forward (mic → result) so
+  // iOS swipe-back / browser back lands on the mic screen instead of leaving
+  // /voice entirely. opts.fromPop = true means we're already responding to a
+  // popstate event and shouldn't push again.
+  if (!opts.fromPop) {
+    const goingForward = previous === 'screen-mic' && name === 'result';
+    const goingBack    = previous === 'screen-result' && name === 'mic';
+    if (goingForward) {
+      try { history.pushState({ screen: 'result' }, '', '#review'); } catch {}
+    } else if (goingBack) {
+      // Coming back via in-page button (talkAgain) — pop the result entry off
+      // so the browser back stack stays clean.
+      if (history.state?.screen === 'result') {
+        try { history.back(); } catch {}
+      }
+    }
+  }
 }
+
+window.addEventListener('popstate', (e) => {
+  // Map any popstate to the right screen. State === 'result' means forward to
+  // the result card; otherwise treat as "back to mic".
+  if (e.state?.screen === 'result' && screens.result) {
+    show('result', { fromPop: true });
+  } else if (screens.mic) {
+    show('mic', { fromPop: true });
+  }
+});
 
 const INDUSTRIES = [
   'pressure-washing',
@@ -164,6 +193,7 @@ if (IS_IOS) {
   // iOS browser.
   transcriptEl.classList.add('hidden');
   fallbackEl.classList.remove('hidden');
+  document.getElementById('keyboard-tip')?.classList.remove('hidden');
   fallbackEl.placeholder = 'Tap, then use the 🎙 on your keyboard to dictate — or type.';
   meterEl.textContent = '';
   micLabel.textContent = 'Tap to talk';
