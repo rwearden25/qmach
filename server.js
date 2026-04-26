@@ -1170,7 +1170,7 @@ app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
 // trivial to tell which build is actually running (vs. what GitHub says is
 // merged). If /version doesn't show this string within ~2min of merge, the
 // Railway container didn't swap and a manual Redeploy is needed.
-const APP_VERSION = '20260426e-preview-modal-cachebust-versionstamp';
+const APP_VERSION = '20260426f-real-pdf-download-no-print-dialog';
 console.log(`[Boot] pquote APP_VERSION = ${APP_VERSION}`);
 
 // ── Health check
