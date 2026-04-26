@@ -910,21 +910,173 @@ function showCopyToast(message = 'Copied to clipboard ✓') {
   window._copyToastTimer = setTimeout(() => toast.classList.add('hidden'), 1800);
 }
 
-/* ───── Print path: fill the print-only document and trigger window.print() ───── */
+/* ───── Real PDF generation via jsPDF (no print-dialog detour) ─────
+   On every browser including iOS Safari, this builds a PDF blob in memory
+   and triggers a direct download via <a download>. iOS surfaces it as
+   "Save to Files" / Share sheet without going through the print preview.
+   Falls back to window.print() if jsPDF didn't load (CSP block, network).
+*/
 function saveAsPdf() {
   const s = buildQuoteSummary();
   const dollars = (n) => '$' + Math.round(n).toLocaleString();
+
+  // jsPDF UMD attaches to window.jspdf
+  const jsPDFCtor = window.jspdf?.jsPDF;
+  if (!jsPDFCtor) {
+    // CDN didn't load — fall back to print path
+    return saveAsPdfPrintFallback(s, dollars);
+  }
+
+  const doc = new jsPDFCtor({ unit: 'pt', format: 'letter' });
+  const W = doc.internal.pageSize.getWidth();
+  const M = 56; // margin
+
+  // ── Header
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(28);
+  doc.setTextColor(26);
+  doc.text('pquote', M, 80);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text('FIELD QUOTE', M, 96);
+
+  doc.setFontSize(10);
+  doc.setTextColor(80);
+  doc.text(`Quote ${s.id}`, W - M, 80, { align: 'right' });
+  doc.text(s.dateStr, W - M, 96, { align: 'right' });
+
+  // Header divider
+  doc.setDrawColor(26);
+  doc.setLineWidth(2);
+  doc.line(M, 116, W - M, 116);
+
+  // ── Parties
+  let y = 152;
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text('PREPARED FOR', M, y);
+  doc.text('FROM', W / 2 + 24, y);
+  y += 18;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(26);
+  doc.text(String(s.state.client_name || '—'), M, y);
+  doc.text(String(s.state.provider_name || 'Independent contractor'), W / 2 + 24, y);
+
+  // ── Divider
+  y += 36;
+  doc.setDrawColor(220);
+  doc.setLineWidth(1);
+  doc.line(M, y, W - M, y);
+
+  // ── Line item table header
+  y += 28;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text('SERVICE', M, y);
+  doc.text('DETAIL', M + 140, y);
+  doc.text('AMOUNT', W - M, y, { align: 'right' });
+
+  y += 6;
+  doc.setDrawColor(220);
+  doc.line(M, y, W - M, y);
+
+  // ── Line item row
+  y += 24;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(26);
+  doc.text(s.industryLabel, M, y);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(60);
+  // Wrap detail text to fit column width
+  const detailLines = doc.splitTextToSize(s.detail || '—', W - M - (M + 140) - 100);
+  doc.text(detailLines, M + 140, y);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(26);
+  doc.text(dollars(s.price), W - M, y, { align: 'right' });
+
+  // Move y down by however many lines the detail wrapped to
+  y += Math.max(detailLines.length, 1) * 14;
+
+  // Add-ons sub-line
+  if (s.addons.length) {
+    y += 6;
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    const addonsText = `Includes: ${s.addons.join(', ')}`;
+    const addonsLines = doc.splitTextToSize(addonsText, W - M - (M + 140) - 100);
+    doc.text(addonsLines, M + 140, y);
+    y += addonsLines.length * 12;
+  }
+
+  // ── Total
+  y += 28;
+  doc.setDrawColor(26);
+  doc.setLineWidth(2);
+  doc.line(M, y, W - M, y);
+
+  y += 32;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(120);
+  doc.text('TOTAL', W - M - 120, y, { align: 'right' });
+
+  doc.setFontSize(28);
+  doc.setTextColor(26);
+  doc.text(dollars(s.price), W - M, y, { align: 'right' });
+
+  // ── Terms
+  y += 60;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  const terms = doc.splitTextToSize(
+    'Quote valid 30 days from issue. Pricing reflects scope as described. Final invoice may adjust if scope changes on site.',
+    W - 2 * M
+  );
+  doc.text(terms, M, y);
+
+  // ── Footer
+  doc.setFontSize(8);
+  doc.setTextColor(150);
+  doc.text('Generated via pquote.ai · Voice quote', M, doc.internal.pageSize.getHeight() - 36);
+  doc.text(s.id, W - M, doc.internal.pageSize.getHeight() - 36, { align: 'right' });
+
+  // Trigger download
+  const filename = `quote-${(s.state.client_name || 'voice')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)}-${s.id}.pdf`;
+
+  try {
+    // jsPDF's save() handles cross-browser download trigger including iOS Safari
+    doc.save(filename);
+    closePreview();
+  } catch (err) {
+    saveAsPdfPrintFallback(s, dollars);
+  }
+}
+
+/* Print fallback if jsPDF is unavailable (CDN block, etc.) */
+function saveAsPdfPrintFallback(s, dollars) {
   const addonsLine = s.addons.length
     ? `<br><span style="color:#777;font-size:12px">includes: ${escapeHtml(s.addons.join(', '))}</span>`
     : '';
-
   $('#pq-id').textContent = s.id;
   $('#pq-id-footer').textContent = s.id;
   $('#pq-date').textContent = s.dateStr;
   $('#pq-client').textContent = s.state.client_name;
   $('#pq-provider').textContent = s.state.provider_name || 'Independent contractor';
   $('#pq-total').textContent = dollars(s.price);
-
   $('#pq-lines').innerHTML = `
     <tr>
       <td><strong>${escapeHtml(s.industryLabel)}</strong></td>
@@ -932,8 +1084,6 @@ function saveAsPdf() {
       <td class="pq-amt">${dollars(s.price)}</td>
     </tr>
   `;
-
-  // Close the modal first so it doesn't interfere with the print preview, then print
   closePreview();
   setTimeout(() => window.print(), 200);
 }
