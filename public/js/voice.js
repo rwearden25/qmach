@@ -14,11 +14,11 @@ const screens = {
 };
 
 const STATUS = {
-  idle:     { state: 'idle',     text: 'OFFLINE' },
-  live:     { state: 'live',     text: 'ON AIR' },
-  parsing:  { state: 'parsing',  text: 'PARSING' },
-  received: { state: 'received', text: 'RECEIVED' },
-  error:    { state: 'idle',     text: 'ERROR' },
+  idle:     { state: 'idle',     text: 'Ready' },
+  live:     { state: 'live',     text: 'Listening…' },
+  parsing:  { state: 'parsing',  text: 'Building quote…' },
+  received: { state: 'received', text: 'Done' },
+  error:    { state: 'idle',     text: 'Something went wrong' },
 };
 
 function setStatus(name) {
@@ -33,6 +33,14 @@ function show(name) {
   // The sticky action dock only belongs on the result screen
   const dock = document.getElementById('action-dock');
   if (dock) dock.classList.toggle('hidden', name !== 'result');
+  // Step indicator
+  const step1 = document.getElementById('step-1');
+  const step2 = document.getElementById('step-2');
+  if (step1 && step2) {
+    step1.classList.toggle('active', name === 'mic');
+    step1.classList.toggle('done', name === 'result');
+    step2.classList.toggle('active', name === 'result');
+  }
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
@@ -47,7 +55,7 @@ const INDUSTRIES = [
   'custom',
 ];
 
-/* ───── Operator ID + auth-aware save button label ───── */
+/* ───── Auth-aware save button label ───── */
 let IS_AUTHED = false;
 (async () => {
   try {
@@ -55,13 +63,11 @@ let IS_AUTHED = false;
     if (r.ok) {
       const j = await r.json();
       IS_AUTHED = !!(j?.userId || j?.userName);
-      if (j?.userName) $('#op-id').textContent = j.userName.toUpperCase();
-      else if (j?.userId) $('#op-id').textContent = String(j.userId).split('@')[0].toUpperCase();
     }
   } catch {}
   // Update save button label based on auth state
   const saveLabel = document.querySelector('#save-btn .dock-btn-label');
-  if (saveLabel) saveLabel.textContent = IS_AUTHED ? 'SAVE' : 'SIGN IN · SAVE';
+  if (saveLabel) saveLabel.textContent = IS_AUTHED ? 'Save quote' : 'Sign in to save';
 })();
 
 /* ═══════════════════════════════════════════════════════════
@@ -158,26 +164,26 @@ if (IS_IOS) {
   // iOS browser.
   transcriptEl.classList.add('hidden');
   fallbackEl.classList.remove('hidden');
-  fallbackEl.placeholder = 'Tap, then use the 🎙 on your keyboard to dictate — or just type.';
-  meterEl.textContent = 'INPUT · KEYBOARD';
-  micLabel.textContent = 'TAP TO DICTATE';
-  statusEl.textContent = '[ READY ] tap mic to open keyboard';
+  fallbackEl.placeholder = 'Tap, then use the 🎙 on your keyboard to dictate — or type.';
+  meterEl.textContent = '';
+  micLabel.textContent = 'Tap to talk';
+  statusEl.textContent = 'Tap mic to open the keyboard';
 
   // Visual feedback tied to keyboard open/close
   fallbackEl.addEventListener('focus', () => {
     setStatus('live');
-    statusEl.textContent = '[ INPUT ] tap 🎙 on your keyboard to dictate';
+    statusEl.textContent = 'Tap the 🎙 on your keyboard to dictate';
     statusEl.classList.remove('error');
     micBtn.classList.add('recording');
-    micLabel.textContent = 'KEYBOARD OPEN';
+    micLabel.textContent = 'Listening…';
   });
   fallbackEl.addEventListener('blur', () => {
     setStatus('idle');
     micBtn.classList.remove('recording');
-    micLabel.textContent = 'TAP TO DICTATE';
+    micLabel.textContent = 'Tap to talk';
     statusEl.textContent = fallbackEl.value.trim()
-      ? `[ ${fallbackEl.value.trim().length} CHARS ] tap TRANSMIT to send`
-      : '[ READY ] tap mic to open keyboard';
+      ? `${fallbackEl.value.trim().length} characters · tap "Get my quote"`
+      : 'Tap mic to open the keyboard';
   });
 } else if (SR) {
   recognition = buildRecognition();
@@ -188,8 +194,8 @@ if (IS_IOS) {
   transcriptEl.classList.add('hidden');
   fallbackEl.classList.remove('hidden');
   submitBtn.classList.remove('hidden');
-  statusEl.textContent = '[ NO MIC SUPPORT ] type to transmit';
-  meterEl.textContent = 'INPUT · TEXT';
+  statusEl.textContent = 'Type the job below';
+  meterEl.textContent = '';
 }
 
 function showMicError(msg) {
@@ -268,8 +274,8 @@ function startRecording() {
   transcriptEl.textContent = '';
   recording = true;
   micBtn.classList.add('recording');
-  micLabel.textContent = IS_IOS || IS_SAFARI ? 'LISTENING — TAP TO STOP' : 'TAP TO STOP';
-  statusEl.textContent = '[ TX ] speak now…';
+  micLabel.textContent = 'Tap to stop';
+  statusEl.textContent = 'Listening — speak naturally';
   statusEl.classList.remove('error');
   setStatus('live');
   try {
@@ -293,7 +299,7 @@ function stopRecording() {
   if (!recording && !recognition) return;
   recording = false;
   micBtn.classList.remove('recording');
-  micLabel.textContent = 'PRESS TO TX';
+  micLabel.textContent = 'Tap to talk';
   setStatus('idle');
   try { recognition?.stop(); } catch {}
   stopWaveform();
@@ -315,16 +321,16 @@ micBtn?.addEventListener('click', () => {
 submitBtn.addEventListener('click', async () => {
   const transcript = (transcriptEl.textContent.trim() || fallbackEl.value.trim());
   if (!transcript) {
-    statusEl.textContent = '[ EMPTY ] speak or type something first';
+    statusEl.textContent = 'Tell us about the job first';
     statusEl.classList.add('error');
     return;
   }
   stopRecording();
   submitBtn.disabled = true;
-  submitBtn.querySelector('span').textContent = 'PARSING';
+  submitBtn.querySelector('span').textContent = 'Building…';
   setStatus('parsing');
   statusEl.classList.remove('error');
-  statusEl.textContent = '[ UPLINK ] Q is parsing…';
+  statusEl.textContent = 'Building your quote — one moment…';
 
   try {
     const res = await fetch('/api/voice/analyze', {
@@ -352,10 +358,10 @@ submitBtn.addEventListener('click', async () => {
     renderResult(data);
     show('result');
   } catch (err) {
-    statusEl.textContent = `[ ERROR ] ${err.message}`;
+    statusEl.textContent = `Couldn't build the quote — ${err.message}`;
     statusEl.classList.add('error');
     submitBtn.disabled = false;
-    submitBtn.querySelector('span').textContent = 'TRANSMIT';
+    submitBtn.querySelector('span').textContent = 'Get my quote';
     setStatus('error');
   }
 });
@@ -385,7 +391,8 @@ function renderResult(analyze) {
   card.innerHTML = `
     <div class="log-head">
       <div>
-        <div class="log-head-title"><em>Q</em> · log entry</div>
+        <div class="log-head-eyebrow">Step 2 of 2</div>
+        <div class="log-head-title">Your <em>quote</em></div>
       </div>
       <div class="log-head-meta">
         <span class="meta-id">${escapeHtml(entryId)}</span>
@@ -393,70 +400,81 @@ function renderResult(analyze) {
       </div>
     </div>
 
+    <!-- Price first — the answer they came for -->
+    <section class="log-section price-headline">
+      <div class="log-label">Your price</div>
+      <div id="price-section" class="price-block">
+        <div class="price-loading">Calculating</div>
+      </div>
+    </section>
+
     <section class="log-section">
-      <div class="log-label">Trade · Channel</div>
+      <div class="log-label">Type of job</div>
       <div class="industry-row">
-        <select id="industry-chip" class="industry-chip">
+        <select id="industry-chip" class="industry-chip" aria-label="Job type">
           ${[...new Set([state.industry, ...INDUSTRIES])].map(i =>
             `<option value="${escapeAttr(i)}" ${i === state.industry ? 'selected' : ''}>${escapeHtml(i.replace(/-/g, ' '))}</option>`
           ).join('')}
         </select>
-        <span class="confidence-tag">CONF · <span class="conf-val">${conf}%</span></span>
+        <span class="confidence-tag" title="How confident Q is about the trade">${conf}% match</span>
       </div>
     </section>
 
     <section class="log-section">
-      <div class="log-label">Job brief</div>
+      <div class="log-label">What we heard</div>
       <div class="brief">${formatJobSummary(state.parsed_job)}</div>
     </section>
 
-    ${analyze.missing_fields?.length ? `
-      <section class="log-section">
-        <div class="log-label">Q noticed gaps · tap to answer</div>
-        <div class="pills" id="gap-pills">
-          ${analyze.missing_fields.map(f => `
-            <button type="button" class="pill" data-gap="${escapeAttr(f.key)}" data-prompt="${escapeAttr(f.prompt)}">
-              + ${escapeHtml(f.prompt)}
-            </button>
-          `).join('')}
-        </div>
-      </section>
-    ` : ''}
+    ${(analyze.missing_fields?.length || analyze.suggested_addons?.length) ? `
+      <details class="log-section disclosure" ${(analyze.missing_fields?.length ? 'open' : '')}>
+        <summary class="disclosure-summary">
+          <span class="disclosure-title">Improve this quote</span>
+          <span class="disclosure-count">${(analyze.missing_fields?.length || 0) + (analyze.suggested_addons?.length || 0)} suggestion${((analyze.missing_fields?.length || 0) + (analyze.suggested_addons?.length || 0)) === 1 ? '' : 's'}</span>
+          <span class="disclosure-chev" aria-hidden="true">▾</span>
+        </summary>
 
-    ${analyze.suggested_addons?.length ? `
-      <section class="log-section">
-        <div class="log-label">Common add-ons · tap to include</div>
-        <div class="pills" id="addon-pills">
-          ${analyze.suggested_addons.map(a => `
-            <button type="button" class="pill" data-addon="${escapeAttr(a.key)}" data-label="${escapeAttr(a.label)}">
-              + ${escapeHtml(a.label)}
-            </button>
-          `).join('')}
-        </div>
-      </section>
+        ${analyze.missing_fields?.length ? `
+          <div class="disclosure-block">
+            <div class="disclosure-label">Add details</div>
+            <div class="pills" id="gap-pills">
+              ${analyze.missing_fields.map(f => `
+                <button type="button" class="pill" data-gap="${escapeAttr(f.key)}" data-prompt="${escapeAttr(f.prompt)}">
+                  ${escapeHtml(f.prompt)}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${analyze.suggested_addons?.length ? `
+          <div class="disclosure-block">
+            <div class="disclosure-label">Add-ons you might want</div>
+            <div class="pills" id="addon-pills">
+              ${analyze.suggested_addons.map(a => `
+                <button type="button" class="pill" data-addon="${escapeAttr(a.key)}" data-label="${escapeAttr(a.label)}">
+                  + ${escapeHtml(a.label)}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </details>
     ` : ''}
 
     <section class="log-section">
-      <div class="log-label">Quote · USD</div>
-      <div id="price-section" class="price-block">
-        <div class="price-loading">Q is calibrating</div>
-      </div>
-    </section>
-
-    <section class="log-section">
-      <div class="log-label">Quote details</div>
+      <div class="log-label">Who is this for?</div>
       <div class="client-row">
         <input type="text"
           id="client-name-input"
           class="client-input"
-          placeholder="Client name (required to download or save)"
+          placeholder="Client name (required)"
           value="${escapeAttr(state.client_name || '')}"
           autocomplete="off"
           autocapitalize="words" />
         <input type="text"
           id="provider-name-input"
           class="client-input"
-          placeholder="Your name or business (optional, shown on the quote)"
+          placeholder="Your name or business (optional)"
           value="${escapeAttr(state.provider_name || '')}"
           autocomplete="off"
           autocapitalize="words" />
@@ -464,8 +482,8 @@ function renderResult(analyze) {
     </section>
 
     <div class="quick-links">
-      <button type="button" id="talk-again-btn" class="quick-link">◉ Transmit again</button>
-      <button type="button" id="full-review-btn" class="quick-link">Open in detailed editor →</button>
+      <button type="button" id="talk-again-btn" class="quick-link">＋ Add more details</button>
+      <button type="button" id="full-review-btn" class="quick-link">More options →</button>
     </div>
   `;
 
@@ -525,7 +543,7 @@ function expandGapPill(btn) {
   btn.classList.add('expanded');
   btn.innerHTML = `
     <label>${escapeHtml(prompt)}</label>
-    <input type="text" data-gap-input="${escapeAttr(key)}" placeholder="type answer…" autocomplete="off" />
+    <input type="text" data-gap-input="${escapeAttr(key)}" placeholder="Type your answer" autocomplete="off" />
   `;
   const input = btn.querySelector('input');
   input.focus();
@@ -567,7 +585,7 @@ async function fetchPrice() {
   const addons = Object.entries(state.selected_addons || {}).filter(([, v]) => v).map(([k]) => k);
 
   const seq = ++priceFetchSeq;
-  section.innerHTML = '<div class="price-loading">Q is calibrating</div>';
+  section.innerHTML = '<div class="price-loading">Calculating</div>';
 
   try {
     const res = await fetch('/api/voice/price', {
@@ -591,14 +609,14 @@ async function fetchPrice() {
     section.innerHTML = `
       <div class="price-input-wrap">
         <span class="price-currency">$</span>
-        <input type="number" id="price-input" class="price-input" value="${state.user_price}" min="0" step="1" inputmode="numeric" />
+        <input type="number" id="price-input" class="price-input" value="${state.user_price}" min="0" step="1" inputmode="numeric" aria-label="Your price in dollars" />
       </div>
       <div class="price-meta">
-        <span>your price</span>
-        <span class="price-range">Q range · $${Math.round(data.range.low)}–$${Math.round(data.range.high)}</span>
+        <span class="price-meta-label">Tap to edit</span>
+        <span class="price-range">Suggested range · $${Math.round(data.range.low).toLocaleString()}–$${Math.round(data.range.high).toLocaleString()}</span>
       </div>
       <details class="price-reasoning">
-        <summary>▾ why this number</summary>
+        <summary>Why this number?</summary>
         <p>${escapeHtml(data.reasoning || '')}</p>
       </details>
     `;
@@ -609,8 +627,8 @@ async function fetchPrice() {
   } catch (err) {
     if (seq !== priceFetchSeq) return;
     section.innerHTML = `
-      <div class="price-loading" style="color:var(--sig-red)">[ ERROR ] ${escapeHtml(err.message)}</div>
-      <button type="button" class="act-btn" id="retry-price" style="margin-top:10px">↻ RETRY</button>
+      <div class="price-loading" style="color:var(--sig-red)">Couldn't get a price · ${escapeHtml(err.message)}</div>
+      <button type="button" class="quick-link" id="retry-price" style="margin-top:10px">↻ Try again</button>
     `;
     $('#retry-price')?.addEventListener('click', fetchPrice);
   }
@@ -623,10 +641,10 @@ function talkAgain() {
   transcriptEl.textContent = '';
   fallbackEl.value = '';
   submitBtn.disabled = false;
-  submitBtn.querySelector('span').textContent = 'TRANSMIT';
+  submitBtn.querySelector('span').textContent = 'Get my quote';
   submitBtn.classList.add('hidden');
   if (IS_IOS) {
-    statusEl.textContent = '[ READY ] tap mic to open keyboard';
+    statusEl.textContent = 'Tap mic to open the keyboard';
   } else {
     statusEl.textContent = '';
   }
@@ -681,14 +699,14 @@ async function saveQuote() {
   const state = window._voiceState;
   const price = Number.isFinite(state.user_price) ? state.user_price : Math.round(state.price?.suggested_price || 0);
   if (!price || price <= 0) { flashError('set a price first'); return; }
-  if (!state.client_name) { focusClientInput('client name needed to save'); return; }
+  if (!state.client_name) { focusClientInput('Add a client name to save'); return; }
 
   const body = buildQuoteBody();
   const saveBtn = $('#save-btn');
   saveBtn.disabled = true;
   const label = saveBtn.querySelector('.dock-btn-label');
   const oldLabel = label.textContent;
-  label.textContent = 'SAVING…';
+  label.textContent = 'Saving…';
 
   try {
     const res = await fetch('/api/quotes', {
@@ -721,7 +739,7 @@ function downloadQuote() {
   const state = window._voiceState;
   const price = Number.isFinite(state.user_price) ? state.user_price : Math.round(state.price?.suggested_price || 0);
   if (!price || price <= 0) { flashError('set a price first'); return; }
-  if (!state.client_name) { focusClientInput('client name needed to download'); return; }
+  if (!state.client_name) { focusClientInput('Add a client name to download'); return; }
 
   const job = state.enriched_job || state.parsed_job || {};
   const industryLabel = (state.industry || 'service').replace(/-/g, ' ');
@@ -783,11 +801,11 @@ function stashDraftAndPromptSignIn(quoteBody) {
   panel.id = 'signin-prompt';
   panel.className = 'signin-prompt';
   panel.innerHTML = `
-    <div class="signin-prompt-eyebrow">[ Sign in to save ]</div>
-    Your quote is ready and stashed. Sign in or sign up to save it to your account — first one's on the house.
+    <div class="signin-prompt-eyebrow">Sign in to save</div>
+    Your quote is ready and held. Sign in or create an account to save it — your first one's free.
     <div class="signin-prompt-actions">
-      <a href="/app">▸ SIGN IN</a>
-      <button type="button" class="ghost" id="signin-dismiss">DISMISS</button>
+      <a href="/app">Sign in or sign up</a>
+      <button type="button" class="ghost" id="signin-dismiss">Not now</button>
     </div>
   `;
   // Insert into the result card right before the dock so it sits in flow.
@@ -833,10 +851,10 @@ function showRestoreBanner(stash) {
     display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
   `;
   banner.innerHTML = `
-    <span style="color: var(--amber); letter-spacing: .2em; text-transform: uppercase; font-size: 10.5px;">[ DRAFT FOUND ]</span>
+    <span style="color: var(--amber); letter-spacing: .12em; text-transform: uppercase; font-size: 11px; font-weight: 700;">Draft found</span>
     <span style="flex: 1;">A quote you started earlier is still here.</span>
-    <button type="button" class="act-btn primary" style="padding: 8px 14px; font-size: 11px;" id="restore-yes">▸ FILE IT NOW</button>
-    <button type="button" class="act-btn ghost" style="padding: 8px 12px; font-size: 11px;" id="restore-no">discard</button>
+    <button type="button" class="act-btn primary" style="padding: 10px 16px; font-size: 12px;" id="restore-yes">Save it now</button>
+    <button type="button" class="act-btn ghost" style="padding: 10px 14px; font-size: 12px;" id="restore-no">Discard</button>
   `;
   // Sit between the frame header and the first active screen so it appears
   // immediately under the sticky header without shoving the layout around.
@@ -850,7 +868,7 @@ function showRestoreBanner(stash) {
   document.getElementById('restore-yes').addEventListener('click', async () => {
     const btn = document.getElementById('restore-yes');
     btn.disabled = true;
-    btn.textContent = 'FILING…';
+    btn.textContent = 'Saving…';
     try {
       const res = await fetch('/api/quotes', {
         method: 'POST',
