@@ -179,27 +179,74 @@ const voiceLimiter = rateLimit({
 app.use('/api/voice/', voiceLimiter);
 
 // ── Guest quota for unauthenticated voice analyses
-//    In-memory per-IP counter with 24h rolling window. Each "quote" is one
-//    /api/voice/analyze call (price recalcs are free). After GUEST_VOICE_LIMIT,
-//    /voice/analyze returns 403 and the client surfaces a sign-up panel.
+//    Defense-in-depth: track usage by BOTH (a) signed httpOnly cookie that
+//    identifies the browser instance, and (b) the request IP. We take the
+//    MAX of both counters when checking the quota — so to bypass the limit
+//    a guest must change BOTH their browser/cookies AND their IP. Plus a
+//    server-wide daily kill-switch (VOICE_DAILY_CAP env) caps total token
+//    spend even if both per-guest signals are evaded by a coordinated proxy
+//    attack. Anthropic's own console spend cap is the ultimate ceiling.
 const GUEST_VOICE_LIMIT  = 2;
 const GUEST_VOICE_WINDOW = 24 * 60 * 60 * 1000; // 24h
-const guestVoiceUsage    = new Map(); // ip → { count, firstAt, lastAt }
+const guestVoiceUsage    = new Map(); // key → { count, firstAt, lastAt }
 
-function readGuestVoice(ip) {
-  const rec = guestVoiceUsage.get(ip);
+// Cookie signing — uses an env secret if set, otherwise a random per-boot
+// secret. Per-boot is fine because cookies only need to be valid for the
+// 24h quota window; the worst case after a deploy/restart is everyone gets
+// fresh quota, which is consistent with the IP fallback resetting on the
+// same cadence anyway.
+const GUEST_COOKIE_NAME   = '_qg';
+const GUEST_COOKIE_SECRET = process.env.GUEST_COOKIE_SECRET ||
+  crypto.randomBytes(32).toString('hex');
+const GUEST_COOKIE_TTL    = 30 * 24 * 60 * 60 * 1000; // 30d
+
+function signGuestCookie(value) {
+  const sig = crypto.createHmac('sha256', GUEST_COOKIE_SECRET)
+    .update(value).digest('hex').slice(0, 16);
+  return `${value}.${sig}`;
+}
+function verifyGuestCookie(signed) {
+  if (!signed || typeof signed !== 'string') return null;
+  const i = signed.lastIndexOf('.');
+  if (i < 0) return null;
+  const value = signed.slice(0, i);
+  const sig   = signed.slice(i + 1);
+  if (!sig || sig.length !== 16) return null;
+  const expected = crypto.createHmac('sha256', GUEST_COOKIE_SECRET)
+    .update(value).digest('hex').slice(0, 16);
+  try {
+    if (crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return value;
+  } catch { /* length mismatch */ }
+  return null;
+}
+function parseCookies(req) {
+  const out = {};
+  const h = req.headers.cookie;
+  if (!h) return out;
+  for (const pair of h.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx < 0) continue;
+    const k = pair.slice(0, idx).trim();
+    const v = pair.slice(idx + 1).trim();
+    if (k) out[k] = decodeURIComponent(v);
+  }
+  return out;
+}
+
+function readGuestVoice(key) {
+  const rec = guestVoiceUsage.get(key);
   if (!rec) return 0;
   if (Date.now() - rec.firstAt > GUEST_VOICE_WINDOW) {
-    guestVoiceUsage.delete(ip);
+    guestVoiceUsage.delete(key);
     return 0;
   }
   return rec.count;
 }
-function bumpGuestVoice(ip) {
+function bumpGuestVoice(key) {
   const now = Date.now();
-  const rec = guestVoiceUsage.get(ip);
+  const rec = guestVoiceUsage.get(key);
   if (!rec || now - rec.firstAt > GUEST_VOICE_WINDOW) {
-    guestVoiceUsage.set(ip, { count: 1, firstAt: now, lastAt: now });
+    guestVoiceUsage.set(key, { count: 1, firstAt: now, lastAt: now });
     return 1;
   }
   rec.count++;
@@ -209,10 +256,44 @@ function bumpGuestVoice(ip) {
 // Periodic cleanup so the Map doesn't grow unbounded.
 setInterval(() => {
   const now = Date.now();
-  for (const [ip, rec] of guestVoiceUsage) {
-    if (now - rec.firstAt > GUEST_VOICE_WINDOW) guestVoiceUsage.delete(ip);
+  for (const [k, rec] of guestVoiceUsage) {
+    if (now - rec.firstAt > GUEST_VOICE_WINDOW) guestVoiceUsage.delete(k);
   }
 }, 60 * 60 * 1000);
+
+// ── Server-wide daily voice cap (token-spend ceiling)
+//    Counts ALL /voice/analyze + /voice/price calls regardless of auth.
+//    Returns 503 once exceeded so the client shows a friendly "we're at
+//    capacity, try again tomorrow" instead of burning more tokens. Default
+//    of 500 ≈ $15/day worst case at Opus 4.7 rates; raise/lower via env.
+const VOICE_DAILY_CAP = parseInt(process.env.VOICE_DAILY_CAP || '500', 10);
+let voiceDayKey = '';
+let voiceDayCount = 0;
+function checkVoiceDailyCap() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== voiceDayKey) {
+    voiceDayKey = today;
+    voiceDayCount = 0;
+  }
+  return voiceDayCount < VOICE_DAILY_CAP;
+}
+function bumpVoiceDaily() {
+  checkVoiceDailyCap();
+  voiceDayCount++;
+}
+
+function ensureGuestCookie(req, res) {
+  const cookies = parseCookies(req);
+  const existing = verifyGuestCookie(cookies[GUEST_COOKIE_NAME]);
+  if (existing) return existing;
+  const fresh = crypto.randomBytes(8).toString('hex');
+  res.setHeader('Set-Cookie',
+    `${GUEST_COOKIE_NAME}=${encodeURIComponent(signGuestCookie(fresh))}; ` +
+    `Max-Age=${Math.floor(GUEST_COOKIE_TTL / 1000)}; ` +
+    `Path=/; HttpOnly; SameSite=Lax; Secure`
+  );
+  return fresh;
+}
 // NOTE: authLimiter is attached directly on each endpoint below, not via
 // app.use, so the route definitions stay the single source of truth for
 // which endpoints are credential-guarded.
@@ -920,13 +1001,25 @@ app.post('/api/voice/analyze', async (req, res) => {
       return res.status(400).json({ error: 'transcript too long (max 5000 chars)' });
     }
 
-    // ── Guest quota — anonymous users get GUEST_VOICE_LIMIT analyses per IP
-    // per 24h. Authenticated users have no per-IP cap (auth middleware ran
-    // first and either populated req.userId or fell through to /voice via
-    // the open list, leaving req.userId undefined).
+    // ── Server-wide daily kill switch (covers everyone — auth or guest)
+    if (!checkVoiceDailyCap()) {
+      return res.status(503).json({
+        error: 'daily_cap_reached',
+        message: "Voice quotes are at capacity for today. Try again tomorrow.",
+      });
+    }
+
+    // ── Guest quota — anonymous users get GUEST_VOICE_LIMIT analyses per
+    // (cookie ⨉ IP) per 24h. We take the MAX of the two counters so to
+    // bypass the limit a guest must rotate BOTH browser/cookies AND IP.
+    // Authenticated users (req.userId set) bypass this check.
     const isGuest = !req.userId;
+    let guestId = null;
     if (isGuest) {
-      const used = readGuestVoice(req.ip);
+      guestId = ensureGuestCookie(req, res);
+      const ipUsed     = readGuestVoice(`ip:${req.ip}`);
+      const cookieUsed = readGuestVoice(`gid:${guestId}`);
+      const used       = Math.max(ipUsed, cookieUsed);
       if (used >= GUEST_VOICE_LIMIT) {
         return res.status(403).json({
           error: 'guest_limit_reached',
@@ -992,14 +1085,16 @@ Return ONLY this JSON:
     } catch {
       return res.status(500).json({ error: 'AI returned invalid JSON', raw });
     }
-    // Bump the guest counter only after a successful analyze (so failed
-    // calls don't burn the user's quota).
+    // Bump counters only on success so failed calls don't burn quota.
+    bumpVoiceDaily();
     if (isGuest) {
-      const newCount = bumpGuestVoice(req.ip);
+      const ipNew     = bumpGuestVoice(`ip:${req.ip}`);
+      const cookieNew = bumpGuestVoice(`gid:${guestId}`);
+      const used      = Math.max(ipNew, cookieNew);
       parsed.__guest = {
-        used: newCount,
+        used,
         limit: GUEST_VOICE_LIMIT,
-        remaining: Math.max(0, GUEST_VOICE_LIMIT - newCount),
+        remaining: Math.max(0, GUEST_VOICE_LIMIT - used),
       };
     }
     res.json(parsed);
@@ -1015,6 +1110,16 @@ app.post('/api/voice/price', async (req, res) => {
     const { industry, parsed_job, addons } = req.body;
     if (!industry || typeof industry !== 'string' || industry.trim().length > 100 || !parsed_job) {
       return res.status(400).json({ error: 'industry (≤100 chars) and parsed_job required' });
+    }
+
+    // Server-wide daily kill switch — covers price calls too since they
+    // also burn Anthropic tokens. No per-guest quota here (price is just
+    // refinement within an in-progress quote, not a new "quote").
+    if (!checkVoiceDailyCap()) {
+      return res.status(503).json({
+        error: 'daily_cap_reached',
+        message: "Voice quotes are at capacity for today. Try again tomorrow.",
+      });
     }
 
     const examples = getRecentQuotesForIndustry(req.userId, industry, 5);
@@ -1052,6 +1157,7 @@ Return ONLY this JSON:
     } catch {
       return res.status(500).json({ error: 'AI returned invalid JSON', raw });
     }
+    bumpVoiceDaily(); // count toward server-wide daily cap
     res.json(parsed);
   } catch (err) {
     console.error('AI voice/price error:', err);
@@ -1239,7 +1345,7 @@ app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
 // trivial to tell which build is actually running (vs. what GitHub says is
 // merged). If /version doesn't show this string within ~2min of merge, the
 // Railway container didn't swap and a manual Redeploy is needed.
-const APP_VERSION = '20260426h-guest-quota-2-quotes';
+const APP_VERSION = '20260426i-cookie-quota-daily-cap';
 console.log(`[Boot] pquote APP_VERSION = ${APP_VERSION}`);
 
 // ── Health check
