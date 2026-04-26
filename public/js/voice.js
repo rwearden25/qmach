@@ -30,6 +30,9 @@ function setStatus(name) {
 function show(name) {
   Object.values(screens).forEach(s => s.classList.remove('active'));
   screens[name].classList.add('active');
+  // The sticky action dock only belongs on the result screen
+  const dock = document.getElementById('action-dock');
+  if (dock) dock.classList.toggle('hidden', name !== 'result');
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
@@ -44,16 +47,21 @@ const INDUSTRIES = [
   'custom',
 ];
 
-/* ───── Operator ID (cosmetic) ───── */
+/* ───── Operator ID + auth-aware save button label ───── */
+let IS_AUTHED = false;
 (async () => {
   try {
     const r = await fetch('/api/auth/check', { credentials: 'same-origin' });
     if (r.ok) {
       const j = await r.json();
+      IS_AUTHED = !!(j?.userId || j?.userName);
       if (j?.userName) $('#op-id').textContent = j.userName.toUpperCase();
       else if (j?.userId) $('#op-id').textContent = String(j.userId).split('@')[0].toUpperCase();
     }
   } catch {}
+  // Update save button label based on auth state
+  const saveLabel = document.querySelector('#save-btn .dock-btn-label');
+  if (saveLabel) saveLabel.textContent = IS_AUTHED ? 'SAVE' : 'SIGN IN · SAVE';
 })();
 
 /* ═══════════════════════════════════════════════════════════
@@ -435,16 +443,29 @@ function renderResult(analyze) {
       </div>
     </section>
 
-    <div class="log-actions">
-      <button type="button" id="save-btn" class="act-btn primary" disabled>
-        ▸ FILE QUOTE
-      </button>
-      <button type="button" id="talk-again-btn" class="act-btn">
-        ◉ TRANSMIT AGAIN
-      </button>
-      <button type="button" id="full-review-btn" class="act-btn ghost">
-        Open in detailed editor →
-      </button>
+    <section class="log-section">
+      <div class="log-label">Quote details</div>
+      <div class="client-row">
+        <input type="text"
+          id="client-name-input"
+          class="client-input"
+          placeholder="Client name (required to download or save)"
+          value="${escapeAttr(state.client_name || '')}"
+          autocomplete="off"
+          autocapitalize="words" />
+        <input type="text"
+          id="provider-name-input"
+          class="client-input"
+          placeholder="Your name or business (optional, shown on the quote)"
+          value="${escapeAttr(state.provider_name || '')}"
+          autocomplete="off"
+          autocapitalize="words" />
+      </div>
+    </section>
+
+    <div class="quick-links">
+      <button type="button" id="talk-again-btn" class="quick-link">◉ Transmit again</button>
+      <button type="button" id="full-review-btn" class="quick-link">Open in detailed editor →</button>
     </div>
   `;
 
@@ -456,11 +477,36 @@ function renderResult(analyze) {
   $$('[data-gap]', card).forEach(btn => btn.addEventListener('click', () => expandGapPill(btn)));
   $$('[data-addon]', card).forEach(btn => btn.addEventListener('click', () => toggleAddon(btn)));
 
+  $('#client-name-input').addEventListener('input', (e) => {
+    state.client_name = e.target.value.trim();
+    refreshDockState();
+  });
+  $('#provider-name-input').addEventListener('input', (e) => {
+    state.provider_name = e.target.value.trim();
+  });
+
   $('#talk-again-btn').addEventListener('click', talkAgain);
-  $('#save-btn').addEventListener('click', saveQuote);
   $('#full-review-btn').addEventListener('click', editInFullReview);
 
+  // Reveal sticky bottom dock and wire its buttons
+  const dock = $('#action-dock');
+  dock.classList.remove('hidden');
+  $('#save-btn').onclick = saveQuote;
+  $('#download-btn').onclick = downloadQuote;
+  refreshDockState();
+
   fetchPrice();
+}
+
+function refreshDockState() {
+  const state = window._voiceState || {};
+  const hasPrice = !!state.price;
+  const hasClient = !!(state.client_name && state.client_name.trim());
+  const ready = hasPrice && hasClient;
+  const saveBtn = $('#save-btn');
+  const downloadBtn = $('#download-btn');
+  if (saveBtn) saveBtn.disabled = !ready;
+  if (downloadBtn) downloadBtn.disabled = !ready;
 }
 
 function formatJobSummary(job) {
@@ -556,7 +602,7 @@ async function fetchPrice() {
         <p>${escapeHtml(data.reasoning || '')}</p>
       </details>
     `;
-    $('#save-btn').disabled = false;
+    refreshDockState();
     $('#price-input').addEventListener('input', (e) => {
       state.user_price = parseFloat(e.target.value) || 0;
     });
@@ -609,21 +655,13 @@ function talkAgain() {
   show('mic');
 }
 
-/* ───── Save handoff ───── */
-async function saveQuote() {
+/* ───── Build the quote body that goes to /api/quotes ───── */
+function buildQuoteBody() {
   const state = window._voiceState;
   const price = Number.isFinite(state.user_price) ? state.user_price : Math.round(state.price?.suggested_price || 0);
-  if (!price || price <= 0) {
-    flashError('set a price first');
-    return;
-  }
-
-  const clientName = await prompt2('Client name for this quote?');
-  if (!clientName) return;
-
-  const job = state.enriched_job || state.parsed_job;
-  const body = {
-    client_name: clientName,
+  const job = state.enriched_job || state.parsed_job || {};
+  return {
+    client_name: state.client_name || 'Voice Quote',
     project_type: state.industry || 'custom',
     area: job.area || 0,
     unit: job.unit || 'sqft',
@@ -636,10 +674,21 @@ async function saveQuote() {
     transcript: state.transcript,
     inferred_industry: state.industry,
   };
+}
 
+/* ───── Save to account ───── */
+async function saveQuote() {
+  const state = window._voiceState;
+  const price = Number.isFinite(state.user_price) ? state.user_price : Math.round(state.price?.suggested_price || 0);
+  if (!price || price <= 0) { flashError('set a price first'); return; }
+  if (!state.client_name) { focusClientInput('client name needed to save'); return; }
+
+  const body = buildQuoteBody();
   const saveBtn = $('#save-btn');
   saveBtn.disabled = true;
-  saveBtn.textContent = '↑ FILING…';
+  const label = saveBtn.querySelector('.dock-btn-label');
+  const oldLabel = label.textContent;
+  label.textContent = 'SAVING…';
 
   try {
     const res = await fetch('/api/quotes', {
@@ -649,9 +698,9 @@ async function saveQuote() {
       body: JSON.stringify(body),
     });
     if (res.status === 401) {
-      // Voice is the open marketing flow; saving is the conversion gate.
-      // Stash the draft so the user can come back and finish after sign-in.
       stashDraftAndPromptSignIn(body);
+      label.textContent = oldLabel;
+      saveBtn.disabled = false;
       return;
     }
     if (!res.ok) {
@@ -662,8 +711,59 @@ async function saveQuote() {
     window.location.href = `/app?id=${encodeURIComponent(data.id)}`;
   } catch (err) {
     flashError(`save failed · ${err.message}`);
+    label.textContent = oldLabel;
     saveBtn.disabled = false;
-    saveBtn.textContent = '▸ FILE QUOTE';
+  }
+}
+
+/* ───── Download as PDF (browser print → save as PDF) ───── */
+function downloadQuote() {
+  const state = window._voiceState;
+  const price = Number.isFinite(state.user_price) ? state.user_price : Math.round(state.price?.suggested_price || 0);
+  if (!price || price <= 0) { flashError('set a price first'); return; }
+  if (!state.client_name) { focusClientInput('client name needed to download'); return; }
+
+  const job = state.enriched_job || state.parsed_job || {};
+  const industryLabel = (state.industry || 'service').replace(/-/g, ' ');
+  const detailParts = [];
+  if (job.area) detailParts.push(`${Number(job.area).toLocaleString()} ${job.unit || 'sqft'}`);
+  if (job.location) detailParts.push(job.location);
+  if (job.scope_notes) detailParts.push(job.scope_notes);
+  const detail = detailParts.join(' · ') || '—';
+  const addons = (state.final_addons && state.final_addons.length)
+    ? state.final_addons.map(k => k.replace(/_/g, ' ')).join(', ')
+    : null;
+
+  const dollars = (n) => '$' + Math.round(n).toLocaleString();
+  const dateStr = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  const id = state.analyze_id || ('TX-' + Math.random().toString(36).slice(2, 8).toUpperCase());
+
+  $('#pq-id').textContent = id;
+  $('#pq-id-footer').textContent = id;
+  $('#pq-date').textContent = dateStr;
+  $('#pq-client').textContent = state.client_name;
+  $('#pq-provider').textContent = state.provider_name || 'Independent contractor';
+  $('#pq-total').textContent = dollars(price);
+
+  const linesEl = $('#pq-lines');
+  linesEl.innerHTML = `
+    <tr>
+      <td><strong>${escapeHtml(industryLabel)}</strong></td>
+      <td>${escapeHtml(detail)}${addons ? `<br><span style="color:#777;font-size:12px">includes: ${escapeHtml(addons)}</span>` : ''}</td>
+      <td class="pq-amt">${dollars(price)}</td>
+    </tr>
+  `;
+
+  // Trigger native print dialog. Mobile users get "Save as PDF" / Share PDF.
+  setTimeout(() => window.print(), 80);
+}
+
+function focusClientInput(msg) {
+  flashError(msg);
+  const input = $('#client-name-input');
+  if (input) {
+    input.focus();
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
 
@@ -675,42 +775,25 @@ function stashDraftAndPromptSignIn(quoteBody) {
       at: Date.now(),
     }));
   } catch {}
-  const actions = document.querySelector('.log-actions');
-  if (!actions) {
-    window.location.href = '/app';
-    return;
-  }
-  actions.innerHTML = `
-    <div style="
-      padding: 16px;
-      border: 1px dashed var(--amber);
-      border-radius: var(--rad-md);
-      background: rgba(255,176,0,.06);
-      color: var(--paper);
-      font-family: var(--mono);
-      font-size: 13px;
-      line-height: 1.6;
-      margin-bottom: 12px;
-    ">
-      <div style="
-        font-family: var(--sans);
-        font-size: 11px;
-        letter-spacing: .25em;
-        text-transform: uppercase;
-        color: var(--amber);
-        margin-bottom: 8px;
-      ">[ Sign in to file ]</div>
-      Your quote is ready. Sign in or sign up to save it — first one's on the house.
+  // Insert an inline panel above the dock — replaces the previous full-bleed
+  // takeover and keeps the result card visible.
+  let panel = document.getElementById('signin-prompt');
+  if (panel) panel.remove();
+  panel = document.createElement('div');
+  panel.id = 'signin-prompt';
+  panel.className = 'signin-prompt';
+  panel.innerHTML = `
+    <div class="signin-prompt-eyebrow">[ Sign in to save ]</div>
+    Your quote is ready and stashed. Sign in or sign up to save it to your account — first one's on the house.
+    <div class="signin-prompt-actions">
+      <a href="/app">▸ SIGN IN</a>
+      <button type="button" class="ghost" id="signin-dismiss">DISMISS</button>
     </div>
-    <a href="/app" class="act-btn primary" style="text-decoration:none">▸ SIGN IN TO SAVE</a>
-    <button type="button" class="act-btn ghost" id="back-to-edit">← keep editing</button>
   `;
-  document.getElementById('back-to-edit')?.addEventListener('click', () => {
-    // Re-render the original action bar by simulating a fresh price fetch result —
-    // simplest is just to reload the result card with the existing state.
-    const state = window._voiceState;
-    if (state?.analyze) renderResult(state.analyze);
-  });
+  // Insert into the result card right before the dock so it sits in flow.
+  const card = $('#result-card');
+  card?.parentNode?.insertBefore(panel, $('#action-dock'));
+  document.getElementById('signin-dismiss')?.addEventListener('click', () => panel.remove());
 }
 
 /* ───── Restore a pending voice draft after sign-in ───── */

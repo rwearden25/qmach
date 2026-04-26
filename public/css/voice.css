@@ -735,18 +735,293 @@ body {
 }
 .act-btn.ghost:hover { color: var(--amber); }
 
+/* ─── Inline client info inputs ─── */
+.client-row {
+  display: grid;
+  gap: 8px;
+}
+.client-input {
+  width: 100%;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 16px; /* 16px prevents iOS zoom-on-focus */
+  background: var(--bg-elev-3);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--rad-md);
+  color: var(--paper);
+  outline: none;
+  transition: border-color .15s var(--easing);
+}
+.client-input:focus { border-color: var(--amber); }
+.client-input::placeholder { color: var(--whisper); }
+
+/* ─── Sticky bottom action dock ─── */
+.action-dock {
+  position: sticky;
+  bottom: 0;
+  left: 0; right: 0;
+  display: flex;
+  gap: 10px;
+  padding: 14px 22px calc(14px + env(safe-area-inset-bottom, 0)) 22px;
+  background: linear-gradient(180deg, rgba(10,10,10,.0) 0%, var(--bg) 28%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 30;
+  margin-top: 28px;
+}
+.dock-btn {
+  flex: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 14px 16px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-bright);
+  background: var(--bg-elev-3);
+  color: var(--ink);
+  border-radius: var(--rad-md);
+  cursor: pointer;
+  transition: all .15s var(--easing);
+  -webkit-tap-highlight-color: transparent;
+}
+.dock-btn:hover:not(:disabled) { border-color: var(--amber-dim); color: var(--amber); }
+.dock-btn:active { transform: scale(.985); }
+.dock-btn:disabled { opacity: .4; cursor: not-allowed; }
+.dock-btn.primary {
+  background: var(--amber);
+  color: var(--bg);
+  border-color: var(--amber);
+}
+.dock-btn.primary:hover:not(:disabled) {
+  background: var(--amber-soft);
+  color: var(--bg);
+  border-color: var(--amber-soft);
+}
+.dock-btn.primary:disabled { background: var(--amber-dim); border-color: var(--amber-dim); color: var(--bg-elev-1); }
+
+/* Quick text-link actions in the card body (talk again, full editor) */
+.quick-links {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  padding: 14px 20px 4px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.quick-link {
+  background: transparent; border: 0; padding: 6px 0;
+  color: var(--muted);
+  cursor: pointer;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.quick-link:hover { color: var(--amber); }
+
+/* Inline guest-save-prompt panel */
+.signin-prompt {
+  margin: 0 20px 14px;
+  padding: 14px 16px;
+  border: 1px dashed var(--amber);
+  border-radius: var(--rad-md);
+  background: rgba(255,176,0,.06);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--paper);
+}
+.signin-prompt-eyebrow {
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin-bottom: 6px;
+}
+.signin-prompt-actions {
+  display: flex; gap: 10px; margin-top: 10px;
+}
+.signin-prompt-actions a,
+.signin-prompt-actions button {
+  flex: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 14px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  border-radius: var(--rad-sm);
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid var(--amber);
+  background: var(--amber);
+  color: var(--bg);
+}
+.signin-prompt-actions .ghost {
+  background: transparent;
+  color: var(--amber);
+}
+
 /* ─── Utilities ─── */
 .hidden { display: none !important; }
 
 /* ─── Mobile tightening ─── */
 @media (max-width: 480px) {
   .frame-header { padding: 14px 16px; }
-  .screen { padding: 22px 16px 60px; }
+  .screen { padding: 22px 16px 0; padding-bottom: 100px; }
+  #screen-result { padding-bottom: 0; }
   .mic-btn { --size: 168px; }
   .mic-icon { width: 62px; }
   .q-monogram { font-size: 240px; right: -20px; top: 8px; }
   .prompt-line { font-size: 36px; }
   .log-head-title { font-size: 22px; }
+  .action-dock { padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0)) 16px; }
+  .dock-btn { min-height: 52px; font-size: 12px; letter-spacing: .18em; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   PRINT-ONLY: download-quote document
+   Hidden on screen; rendered cleanly when window.print() runs
+═══════════════════════════════════════════════════════ */
+.print-quote {
+  display: none;
+}
+
+@media print {
+  /* Hide everything except the quote document */
+  body > *:not(.print-quote) { display: none !important; }
+  body { background: white; color: black; padding: 0; margin: 0; max-width: none; }
+  .print-quote {
+    display: block;
+    padding: 48px 56px;
+    font-family: 'Georgia', serif;
+    color: #1a1a1a;
+    background: white;
+  }
+  @page { margin: 0.5in; size: letter; }
+}
+
+/* Print-quote internal styles (also applied via @media print so they cascade) */
+@media print {
+  .pq-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-bottom: 24px;
+    border-bottom: 2px solid #1a1a1a;
+    margin-bottom: 32px;
+  }
+  .pq-brand-mark {
+    font-family: 'Georgia', serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 36px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+  .pq-brand-sub {
+    font-family: 'Helvetica', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: #555;
+    margin-top: 4px;
+  }
+  .pq-meta {
+    text-align: right;
+    font-family: 'Helvetica', sans-serif;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .pq-meta-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: #777;
+    margin-right: 8px;
+  }
+  .pq-parties {
+    display: flex;
+    gap: 64px;
+    margin-bottom: 36px;
+  }
+  .pq-party-label {
+    font-family: 'Helvetica', sans-serif;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: #777;
+    margin-bottom: 6px;
+  }
+  .pq-party-name {
+    font-family: 'Georgia', serif;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .pq-divider {
+    border-top: 1px solid #ddd;
+    margin: 32px 0;
+  }
+  .pq-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Helvetica', sans-serif;
+  }
+  .pq-table th {
+    text-align: left;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: #777;
+    padding: 8px 12px;
+    border-bottom: 1px solid #ddd;
+  }
+  .pq-table td {
+    padding: 12px;
+    font-size: 14px;
+    vertical-align: top;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .pq-amt { text-align: right; }
+  .pq-total-label {
+    text-align: right;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 11px;
+    color: #777;
+    padding-top: 16px;
+  }
+  .pq-total {
+    font-family: 'Georgia', serif;
+    font-style: italic;
+    font-size: 28px;
+    font-weight: 700;
+    color: #1a1a1a;
+    padding-top: 16px;
+  }
+  .pq-terms {
+    font-family: 'Helvetica', sans-serif;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #555;
+    margin-top: 24px;
+  }
+  .pq-footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 1px solid #ddd;
+    font-family: 'Helvetica', sans-serif;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: #999;
+  }
 }
 
 /* ─── Reduced motion ─── */

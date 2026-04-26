@@ -91,7 +91,68 @@
 ═══════════════════════════════════════════════════════ -->
 <main class="screen" id="screen-result">
   <div id="result-card" class="log-entry"></div>
+  <!-- Sticky bottom action bar — primary CTAs always reachable on mobile -->
+  <div id="action-dock" class="action-dock hidden">
+    <button type="button" id="save-btn" class="dock-btn primary" disabled>
+      <span class="dock-btn-label">SAVE</span>
+    </button>
+    <button type="button" id="download-btn" class="dock-btn" disabled>
+      <span class="dock-btn-label">DOWNLOAD</span>
+    </button>
+  </div>
 </main>
+
+<!-- ═══════════════════════════════════════════════════════
+     PRINT-ONLY: clean quote document
+     Hidden on screen, rendered on @media print so users get
+     a polished PDF when they tap DOWNLOAD QUOTE.
+═══════════════════════════════════════════════════════ -->
+<section id="print-quote" class="print-quote" aria-hidden="true">
+  <header class="pq-header">
+    <div class="pq-brand">
+      <div class="pq-brand-mark">pquote</div>
+      <div class="pq-brand-sub">Field quote</div>
+    </div>
+    <div class="pq-meta">
+      <div><span class="pq-meta-label">Quote</span> <span id="pq-id">—</span></div>
+      <div><span class="pq-meta-label">Date</span> <span id="pq-date">—</span></div>
+    </div>
+  </header>
+
+  <div class="pq-parties">
+    <div class="pq-party">
+      <div class="pq-party-label">Prepared for</div>
+      <div class="pq-party-name" id="pq-client">—</div>
+    </div>
+    <div class="pq-party">
+      <div class="pq-party-label">From</div>
+      <div class="pq-party-name" id="pq-provider">—</div>
+    </div>
+  </div>
+
+  <div class="pq-divider"></div>
+
+  <table class="pq-table">
+    <thead>
+      <tr><th>Service</th><th>Detail</th><th class="pq-amt">Amount</th></tr>
+    </thead>
+    <tbody id="pq-lines"></tbody>
+    <tfoot>
+      <tr><td colspan="2" class="pq-total-label">TOTAL</td><td class="pq-amt pq-total" id="pq-total">$0</td></tr>
+    </tfoot>
+  </table>
+
+  <div class="pq-divider"></div>
+
+  <div class="pq-terms">
+    <p>Quote valid for 30 days from issue date. Pricing reflects scope as described. Final invoice may adjust if scope changes on site.</p>
+  </div>
+
+  <footer class="pq-footer">
+    <div>Generated via pquote.ai · Voice quote</div>
+    <div id="pq-id-footer">—</div>
+  </footer>
+</section>
 
 <script src="/js/voice.js"></script>
 </body>
