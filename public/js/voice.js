@@ -577,6 +577,12 @@ async function saveQuote() {
       credentials: 'same-origin',
       body: JSON.stringify(body),
     });
+    if (res.status === 401) {
+      // Voice is the open marketing flow; saving is the conversion gate.
+      // Stash the draft so the user can come back and finish after sign-in.
+      stashDraftAndPromptSignIn(body);
+      return;
+    }
     if (!res.ok) {
       const err = await safeJson(res);
       throw new Error(err?.error || `save ${res.status}`);
@@ -588,6 +594,123 @@ async function saveQuote() {
     saveBtn.disabled = false;
     saveBtn.textContent = '▸ FILE QUOTE';
   }
+}
+
+function stashDraftAndPromptSignIn(quoteBody) {
+  try {
+    sessionStorage.setItem('voice_pending_save', JSON.stringify({
+      body: quoteBody,
+      state: window._voiceState || {},
+      at: Date.now(),
+    }));
+  } catch {}
+  const actions = document.querySelector('.log-actions');
+  if (!actions) {
+    window.location.href = '/app';
+    return;
+  }
+  actions.innerHTML = `
+    <div style="
+      padding: 16px;
+      border: 1px dashed var(--amber);
+      border-radius: var(--rad-md);
+      background: rgba(255,176,0,.06);
+      color: var(--paper);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    ">
+      <div style="
+        font-family: var(--sans);
+        font-size: 11px;
+        letter-spacing: .25em;
+        text-transform: uppercase;
+        color: var(--amber);
+        margin-bottom: 8px;
+      ">[ Sign in to file ]</div>
+      Your quote is ready. Sign in or sign up to save it — first one's on the house.
+    </div>
+    <a href="/app" class="act-btn primary" style="text-decoration:none">▸ SIGN IN TO SAVE</a>
+    <button type="button" class="act-btn ghost" id="back-to-edit">← keep editing</button>
+  `;
+  document.getElementById('back-to-edit')?.addEventListener('click', () => {
+    // Re-render the original action bar by simulating a fresh price fetch result —
+    // simplest is just to reload the result card with the existing state.
+    const state = window._voiceState;
+    if (state?.analyze) renderResult(state.analyze);
+  });
+}
+
+/* ───── Restore a pending voice draft after sign-in ───── */
+(function restorePendingDraft() {
+  try {
+    const raw = sessionStorage.getItem('voice_pending_save');
+    if (!raw) return;
+    const stash = JSON.parse(raw);
+    // Only restore if recent (1 hour) and we're freshly authenticated
+    if (!stash || Date.now() - (stash.at || 0) > 3600 * 1000) {
+      sessionStorage.removeItem('voice_pending_save');
+      return;
+    }
+    fetch('/api/auth/check', { credentials: 'same-origin' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (!j?.userId && !j?.userName) return;
+        // We're signed in and have a draft — show a restore banner up top
+        showRestoreBanner(stash);
+      })
+      .catch(() => {});
+  } catch {}
+})();
+
+function showRestoreBanner(stash) {
+  const banner = document.createElement('div');
+  banner.style.cssText = `
+    position: sticky; top: 60px; z-index: 40;
+    margin: 12px 22px 0;
+    padding: 12px 16px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--amber);
+    border-radius: var(--rad-md);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink);
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  `;
+  banner.innerHTML = `
+    <span style="color: var(--amber); letter-spacing: .2em; text-transform: uppercase; font-size: 10.5px;">[ DRAFT FOUND ]</span>
+    <span style="flex: 1;">A quote you started earlier is still here.</span>
+    <button type="button" class="act-btn primary" style="padding: 8px 14px; font-size: 11px;" id="restore-yes">▸ FILE IT NOW</button>
+    <button type="button" class="act-btn ghost" style="padding: 8px 12px; font-size: 11px;" id="restore-no">discard</button>
+  `;
+  document.body.insertBefore(banner, document.body.firstChild.nextSibling);
+
+  document.getElementById('restore-yes').addEventListener('click', async () => {
+    const btn = document.getElementById('restore-yes');
+    btn.disabled = true;
+    btn.textContent = 'FILING…';
+    try {
+      const res = await fetch('/api/quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(stash.body),
+      });
+      if (!res.ok) throw new Error(`save ${res.status}`);
+      const data = await res.json();
+      sessionStorage.removeItem('voice_pending_save');
+      window.location.href = `/app?id=${encodeURIComponent(data.id)}`;
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = `failed · retry`;
+      btn.style.color = 'var(--sig-red)';
+    }
+  });
+  document.getElementById('restore-no').addEventListener('click', () => {
+    sessionStorage.removeItem('voice_pending_save');
+    banner.remove();
+  });
 }
 
 function editInFullReview() {
