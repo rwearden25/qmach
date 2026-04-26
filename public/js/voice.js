@@ -71,10 +71,12 @@ const waveformEl   = $('#waveform');
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const IS_IOS_CHROME = IS_IOS && /CriOS\//.test(navigator.userAgent);
 const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
 let recognition = null;
 let recording = false;
+let starting = false; // guards against double-start during async permission warmup
 let finalTranscript = '';
 let waveformRAF = null;
 
@@ -206,19 +208,64 @@ function stopWaveform() {
   ctx.clearRect(0, 0, W, H);
 }
 
-function startRecording() {
+async function startRecording() {
+  if (starting || recording) return;
   if (!recognition) {
-    showMicError('speech recognition unavailable in this browser');
+    showMicError('speech recognition not available in this browser');
     return;
   }
+  starting = true;
+
+  // Immediate visual feedback so the user knows the tap registered, even
+  // before the async mic-permission warmup runs.
+  micBtn.classList.add('recording');
+  micLabel.textContent = IS_IOS ? 'REQUESTING MIC…' : (IS_SAFARI ? 'LISTENING — TAP TO STOP' : 'TAP TO STOP');
+  statusEl.textContent = '[ INIT ] preparing…';
+  statusEl.classList.remove('error');
+  setStatus('live');
+
+  // iOS warmup: SpeechRecognition on WKWebView (iOS Safari + iOS Chrome /
+  // Edge / Firefox, all forced onto WebKit by Apple) silently no-ops if mic
+  // permission hasn't been primed via the standard mediaDevices API first.
+  // Request the stream, immediately release it so SpeechRecognition can
+  // take exclusive ownership of the mic.
+  if (IS_IOS) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showMicError('mic access unavailable — try Safari');
+      stopRecording();
+      starting = false;
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+    } catch (err) {
+      const code = (err.name || 'UNKNOWN').toUpperCase();
+      let msg;
+      if (code === 'NOTALLOWEDERROR' || code === 'PERMISSIONDENIEDERROR') {
+        msg = IS_IOS_CHROME
+          ? 'denied — Settings → Chrome → Microphone, then refresh'
+          : 'denied — Settings → Safari → Microphone, then refresh';
+      } else if (code === 'NOTFOUNDERROR' || code === 'DEVICESNOTFOUNDERROR') {
+        msg = 'no microphone detected';
+      } else if (code === 'NOTSUPPORTEDERROR') {
+        msg = 'mic API not supported · try Safari';
+      } else {
+        msg = `${code} · ${err.message || 'mic warmup failed'}`;
+      }
+      showMicError(msg);
+      stopRecording();
+      starting = false;
+      return;
+    }
+  }
+
   finalTranscript = '';
   transcriptEl.textContent = '';
   recording = true;
-  micBtn.classList.add('recording');
   micLabel.textContent = IS_IOS || IS_SAFARI ? 'LISTENING — TAP TO STOP' : 'TAP TO STOP';
   statusEl.textContent = '[ TX ] speak now…';
-  statusEl.classList.remove('error');
-  setStatus('live');
+
   try {
     recognition.start();
   } catch (err) {
@@ -228,17 +275,20 @@ function startRecording() {
       recognition = buildRecognition();
       recognition.start();
     } catch (e2) {
-      showMicError(`couldn't start mic · ${e2.message || e2.name || 'unknown'}`);
+      showMicError(`recognition.start failed · ${e2.name || e2.message || 'unknown'}`);
       stopRecording();
+      starting = false;
       return;
     }
   }
   startWaveform();
+  starting = false;
 }
 
 function stopRecording() {
   if (!recording && !recognition) return;
   recording = false;
+  starting = false;
   micBtn.classList.remove('recording');
   micLabel.textContent = 'PRESS TO TX';
   setStatus('idle');
