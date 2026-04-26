@@ -389,6 +389,16 @@ submitBtn.addEventListener('click', async () => {
         return;
       }
     }
+    if (res.status === 503) {
+      const err = await safeJson(res);
+      if (err?.error === 'daily_cap_reached') {
+        showDailyCapReached(err);
+        submitBtn.disabled = false;
+        submitBtn.querySelector('span').textContent = 'Get my quote';
+        setStatus('idle');
+        return;
+      }
+    }
     if (!res.ok) {
       const err = await safeJson(res);
       throw new Error(err?.error || `analyze ${res.status}`);
@@ -419,6 +429,29 @@ submitBtn.addEventListener('click', async () => {
 
 async function safeJson(res) {
   try { return await res.json(); } catch { return null; }
+}
+
+/* ───── Daily cap reached: friendly "try later" message ───── */
+function showDailyCapReached(payload) {
+  const promptWrap = document.querySelector('.prompt-wrap');
+  if (!promptWrap) {
+    alert(payload?.message || 'At capacity for today — try again tomorrow.');
+    return;
+  }
+  promptWrap.innerHTML = `
+    <p class="prompt-eyebrow">At capacity</p>
+    <h1 class="prompt-line">Back <em>tomorrow</em>.</h1>
+    <p class="prompt-help">${escapeHtml(payload?.message || 'Voice quotes are at daily capacity. Try again tomorrow, or sign in for priority access.')}</p>
+    <div class="examples" style="border-left-color: var(--amber)">
+      <div class="examples-label">In the meantime</div>
+      <ul class="examples-list">
+        <li>Already have an account? Signed-in users get priority.</li>
+        <li>Use the satellite measure tool at <a href="/app" style="color:var(--amber);font-weight:700">/app</a></li>
+      </ul>
+    </div>
+  `;
+  document.querySelector('.mic-stage')?.classList.add('hidden');
+  document.querySelector('.readout')?.classList.add('hidden');
 }
 
 /* ───── Guest-limit reached: full-bleed sign-up nudge ───── */
