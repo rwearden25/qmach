@@ -141,7 +141,17 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+// Serve /public with no-cache headers on HTML/CSS/JS so deploys are
+// picked up immediately. iOS Safari caches static files aggressively
+// even in private mode otherwise. Images and fonts can still cache.
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,
+  setHeaders(res, filePath) {
+    if (/\.(?:html|css|js)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    }
+  },
+}));
 
 // ── Rate limiters
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 60 });
@@ -1172,6 +1182,11 @@ app.get('/app', (req, res) => {
 });
 
 app.get('/voice', (req, res) => {
+  // Explicit no-cache so the HTML (which references the cache-busted
+  // voice.css?v= and voice.js?v=) is always fetched fresh. Otherwise
+  // iOS Safari can serve a stale HTML with old asset URLs and the
+  // cache-bust never reaches the device.
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'voice.html'));
 });
 
