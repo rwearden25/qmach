@@ -70,22 +70,24 @@ const meterEl      = $('#readout-meter');
 const waveformEl   = $('#waveform');
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
 let recognition = null;
 let recording = false;
 let finalTranscript = '';
-
-let audioCtx = null;
-let analyser = null;
-let micStream = null;
 let waveformRAF = null;
 
-if (SR) {
-  recognition = new SR();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
+function buildRecognition() {
+  const r = new SR();
+  // iOS Safari is broken with continuous=true (stops after first utterance and
+  // can't auto-restart outside a user gesture). Use single-shot mode there.
+  // On other browsers use continuous mode for natural multi-sentence dictation.
+  r.continuous = !(IS_IOS || IS_SAFARI);
+  r.interimResults = true;
+  r.lang = 'en-US';
 
-  recognition.onresult = (e) => {
+  r.onresult = (e) => {
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const chunk = e.results[i][0].transcript;
@@ -96,72 +98,70 @@ if (SR) {
     submitBtn.classList.toggle('hidden', !transcriptEl.textContent);
   };
 
-  recognition.onend = () => {
-    if (recording) {
-      try { recognition.start(); } catch {}
+  r.onend = () => {
+    // On iOS/Safari (single-shot), one tap = one utterance. Auto-stop UI.
+    // On Chrome (continuous), browser may stop mid-session — auto-restart while still recording.
+    if (recording && !(IS_IOS || IS_SAFARI)) {
+      try { r.start(); } catch {}
+    } else if (recording) {
+      // iOS/Safari ended naturally — flip UI back to idle but keep transcript
+      stopRecording();
     }
   };
 
-  recognition.onerror = (e) => {
-    statusEl.textContent = `[ MIC ERROR · ${(e.error || 'unknown').toUpperCase()} ] type below to continue`;
-    statusEl.classList.add('error');
+  r.onerror = (e) => {
+    const code = (e.error || 'unknown').toUpperCase();
+    let hint = 'tap mic again or type below';
+    if (code === 'NOT-ALLOWED' || code === 'SERVICE-NOT-ALLOWED') {
+      hint = 'enable mic in Settings → Safari → Microphone, then refresh';
+    } else if (code === 'NO-SPEECH') {
+      hint = "didn't catch anything — tap mic and try again";
+    } else if (code === 'AUDIO-CAPTURE') {
+      hint = 'no microphone detected';
+    }
+    showMicError(`${code} · ${hint}`);
     fallbackEl.classList.remove('hidden');
     submitBtn.classList.remove('hidden');
     stopRecording();
   };
+
+  return r;
+}
+
+if (SR) {
+  recognition = buildRecognition();
 } else {
   micBtn.classList.add('hidden');
   transcriptEl.classList.add('hidden');
   fallbackEl.classList.remove('hidden');
   submitBtn.classList.remove('hidden');
-  statusEl.textContent = '[ NO MIC SUPPORT ] type to transmit';
+  statusEl.textContent = '[ NO MIC SUPPORT ] type to transmit · upgrade to iOS 14.5+ or Chrome';
   meterEl.textContent = 'INPUT · TEXT';
 }
 
-async function startWaveform() {
-  if (!navigator.mediaDevices?.getUserMedia) return;
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = audioCtx.createMediaStreamSource(micStream);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 1024;
-    src.connect(analyser);
-    drawWaveform();
-  } catch {
-    // user denied mic; recognition may still be in textarea fallback. silent.
-  }
+function showMicError(msg) {
+  statusEl.textContent = `[ ERROR ] ${msg}`;
+  statusEl.classList.add('error');
 }
 
-function stopWaveform() {
-  if (waveformRAF) cancelAnimationFrame(waveformRAF);
-  waveformRAF = null;
-  if (micStream) micStream.getTracks().forEach(t => t.stop());
-  micStream = null;
-  if (audioCtx?.state !== 'closed') audioCtx?.close();
-  audioCtx = null;
-  analyser = null;
-  // clear canvas to baseline
+/* ───── Faux oscilloscope ─────
+   We can't read real mic levels because iOS only grants one mic stream per
+   tab and SpeechRecognition is using it. Draw a synthetic but believable
+   waveform — looks alive without competing for the mic.
+*/
+function startWaveform() {
   const ctx = waveformEl.getContext('2d');
-  const w = waveformEl.width = waveformEl.clientWidth * (window.devicePixelRatio || 1);
-  const h = waveformEl.height;
-  ctx.clearRect(0, 0, w, h);
-}
-
-function drawWaveform() {
-  if (!analyser) return;
-  const ctx = waveformEl.getContext('2d');
-  waveformEl.width  = waveformEl.clientWidth * (window.devicePixelRatio || 1);
-  const W = waveformEl.width;
-  const H = waveformEl.height;
-  const buf = new Uint8Array(analyser.fftSize);
+  const dpr = window.devicePixelRatio || 1;
+  let t = 0;
 
   const tick = () => {
-    if (!analyser) return;
-    analyser.getByteTimeDomainData(buf);
+    if (!recording) return;
+    waveformEl.width = waveformEl.clientWidth * dpr;
+    const W = waveformEl.width;
+    const H = waveformEl.height;
     ctx.clearRect(0, 0, W, H);
 
-    // baseline trace (faint amber line)
+    // baseline
     ctx.strokeStyle = 'rgba(255, 176, 0, 0.18)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -169,48 +169,75 @@ function drawWaveform() {
     ctx.lineTo(W, H / 2);
     ctx.stroke();
 
-    // live waveform
+    // synthetic waveform — sum of two sines + noise jitter
     ctx.strokeStyle = '#FFB000';
-    ctx.lineWidth = 1.6 * (window.devicePixelRatio || 1);
+    ctx.lineWidth = 1.6 * dpr;
     ctx.beginPath();
-    const slice = W / buf.length;
-    let x = 0;
-    let peak = 0;
-    for (let i = 0; i < buf.length; i++) {
-      const v = (buf[i] - 128) / 128;
-      peak = Math.max(peak, Math.abs(v));
-      const y = H / 2 + v * (H / 2 - 4);
+    const points = 180;
+    const amp = H * 0.32;
+    for (let i = 0; i <= points; i++) {
+      const x = (i / points) * W;
+      const phase = t + i * 0.18;
+      const wave =
+        Math.sin(phase) * 0.6 +
+        Math.sin(phase * 2.3) * 0.25 +
+        (Math.random() - 0.5) * 0.35;
+      const y = H / 2 + wave * amp;
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
-      x += slice;
     }
     ctx.stroke();
+    t += 0.22;
 
-    // dB-ish meter readout (cosmetic)
-    const db = Math.round(20 * Math.log10(peak + 1e-3));
-    meterEl.textContent = `LVL ${db.toString().padStart(3, ' ')}dB`;
+    // cosmetic dB readout
+    meterEl.textContent = `LVL ${(-20 + Math.round(Math.random() * 14)).toString().padStart(3, ' ')}dB`;
 
     waveformRAF = requestAnimationFrame(tick);
   };
   tick();
 }
 
+function stopWaveform() {
+  if (waveformRAF) cancelAnimationFrame(waveformRAF);
+  waveformRAF = null;
+  const ctx = waveformEl.getContext('2d');
+  const W = waveformEl.width = waveformEl.clientWidth * (window.devicePixelRatio || 1);
+  const H = waveformEl.height;
+  ctx.clearRect(0, 0, W, H);
+}
+
 function startRecording() {
-  if (!recognition) return;
+  if (!recognition) {
+    showMicError('speech recognition unavailable in this browser');
+    return;
+  }
   finalTranscript = '';
   transcriptEl.textContent = '';
   recording = true;
   micBtn.classList.add('recording');
-  micLabel.textContent = 'RELEASE TO STOP';
-  statusEl.textContent = '[ TX ] capture in progress…';
+  micLabel.textContent = IS_IOS || IS_SAFARI ? 'LISTENING — TAP TO STOP' : 'TAP TO STOP';
+  statusEl.textContent = '[ TX ] speak now…';
   statusEl.classList.remove('error');
   setStatus('live');
-  try { recognition.start(); } catch {}
+  try {
+    recognition.start();
+  } catch (err) {
+    // Sometimes throws InvalidStateError if a previous session is still tearing
+    // down. Rebuild the recognizer and retry once.
+    try {
+      recognition = buildRecognition();
+      recognition.start();
+    } catch (e2) {
+      showMicError(`couldn't start mic · ${e2.message || e2.name || 'unknown'}`);
+      stopRecording();
+      return;
+    }
+  }
   startWaveform();
 }
 
 function stopRecording() {
-  if (!recognition && !recording) return;
+  if (!recording && !recognition) return;
   recording = false;
   micBtn.classList.remove('recording');
   micLabel.textContent = 'PRESS TO TX';
