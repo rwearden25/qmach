@@ -64,8 +64,15 @@ function show(name, opts = {}) {
 }
 
 window.addEventListener('popstate', (e) => {
-  // Map any popstate to the right screen. State === 'result' means forward to
-  // the result card; otherwise treat as "back to mic".
+  // Modal close on back: if the modal is open, just hide it; the popstate
+  // already removed the #preview history entry, so don't re-pop.
+  const modal = document.getElementById('preview-modal');
+  if (modal && !modal.classList.contains('hidden')) {
+    modal.classList.add('hidden');
+    document.getElementById('copy-toast')?.classList.add('hidden');
+    return;
+  }
+  // Map any other popstate to the right screen.
   if (e.state?.screen === 'result' && screens.result) {
     show('result', { fromPop: true });
   } else if (screens.mic) {
@@ -764,13 +771,10 @@ async function saveQuote() {
   }
 }
 
-/* ───── Download as PDF (browser print → save as PDF) ───── */
-function downloadQuote() {
+/* ───── Quote summary builder (shared by preview + print + SMS) ───── */
+function buildQuoteSummary() {
   const state = window._voiceState;
   const price = Number.isFinite(state.user_price) ? state.user_price : Math.round(state.price?.suggested_price || 0);
-  if (!price || price <= 0) { flashError('set a price first'); return; }
-  if (!state.client_name) { focusClientInput('Add a client name to download'); return; }
-
   const job = state.enriched_job || state.parsed_job || {};
   const industryLabel = (state.industry || 'service').replace(/-/g, ' ');
   const detailParts = [];
@@ -779,32 +783,174 @@ function downloadQuote() {
   if (job.scope_notes) detailParts.push(job.scope_notes);
   const detail = detailParts.join(' · ') || '—';
   const addons = (state.final_addons && state.final_addons.length)
-    ? state.final_addons.map(k => k.replace(/_/g, ' ')).join(', ')
-    : null;
-
-  const dollars = (n) => '$' + Math.round(n).toLocaleString();
+    ? state.final_addons.map(k => k.replace(/_/g, ' '))
+    : [];
   const dateStr = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
   const id = state.analyze_id || ('TX-' + Math.random().toString(36).slice(2, 8).toUpperCase());
+  state.analyze_id = id;
+  return { price, job, industryLabel, detail, addons, dateStr, id, state };
+}
 
-  $('#pq-id').textContent = id;
-  $('#pq-id-footer').textContent = id;
-  $('#pq-date').textContent = dateStr;
-  $('#pq-client').textContent = state.client_name;
-  $('#pq-provider').textContent = state.provider_name || 'Independent contractor';
-  $('#pq-total').textContent = dollars(price);
+/* ───── Show preview modal (replaces immediate window.print) ───── */
+function downloadQuote() {
+  const state = window._voiceState;
+  const price = Number.isFinite(state.user_price) ? state.user_price : Math.round(state.price?.suggested_price || 0);
+  if (!price || price <= 0) { flashError('set a price first'); return; }
+  if (!state.client_name) { focusClientInput('Add a client name to download'); return; }
+  openPreview();
+}
 
-  const linesEl = $('#pq-lines');
-  linesEl.innerHTML = `
+function openPreview() {
+  const s = buildQuoteSummary();
+  const dollars = (n) => '$' + Math.round(n).toLocaleString();
+
+  // Render line-by-line preview
+  const card = document.getElementById('preview-card');
+  card.innerHTML = `
+    <div class="preview-section">
+      <div class="preview-key">Prepared for</div>
+      <div class="preview-val">${escapeHtml(s.state.client_name)}</div>
+    </div>
+    ${s.state.provider_name ? `
+      <div class="preview-section">
+        <div class="preview-key">From</div>
+        <div class="preview-val">${escapeHtml(s.state.provider_name)}</div>
+      </div>
+    ` : ''}
+    <div class="preview-section">
+      <div class="preview-key">Service</div>
+      <div class="preview-line">
+        <span class="preview-line-label">${escapeHtml(s.industryLabel)} — ${escapeHtml(s.detail)}</span>
+        <span class="preview-line-amount">${dollars(s.price)}</span>
+      </div>
+      ${s.addons.length ? `
+        <div class="preview-line">
+          <span class="preview-line-label" style="font-size:13px;color:var(--ink-soft)">Includes: ${escapeHtml(s.addons.join(', '))}</span>
+          <span class="preview-line-amount" style="font-size:13px;color:var(--ink-soft)">included</span>
+        </div>
+      ` : ''}
+    </div>
+    <div class="preview-total">
+      <span class="preview-total-label">Total</span>
+      <span class="preview-total-amount">${dollars(s.price)}</span>
+    </div>
+    <div class="preview-section" style="margin-top:14px;font-size:12px;color:var(--muted)">
+      <div>Quote ${escapeHtml(s.id)} · ${escapeHtml(s.dateStr)}</div>
+      <div style="margin-top:4px">Valid 30 days from issue. Final invoice may adjust if scope changes on site.</div>
+    </div>
+  `;
+
+  // Show modal
+  const modal = document.getElementById('preview-modal');
+  modal.classList.remove('hidden');
+  // Push history state so iOS swipe-back closes the modal first
+  try { history.pushState({ modal: 'preview' }, '', '#preview'); } catch {}
+}
+
+function closePreview() {
+  const modal = document.getElementById('preview-modal');
+  if (!modal || modal.classList.contains('hidden')) return;
+  modal.classList.add('hidden');
+  // Hide the toast in case it was visible
+  document.getElementById('copy-toast')?.classList.add('hidden');
+  // Pop our history state if it's still on top
+  if (history.state?.modal === 'preview') {
+    try { history.back(); } catch {}
+  }
+}
+
+/* ───── Build SMS-friendly text from current state ───── */
+function buildSmsText() {
+  const s = buildQuoteSummary();
+  const dollars = (n) => '$' + Math.round(n).toLocaleString();
+  const lines = [];
+  lines.push(`Quote from ${s.state.provider_name || 'pquote.ai'}`);
+  lines.push(`For: ${s.state.client_name}`);
+  lines.push(`Date: ${s.dateStr}`);
+  lines.push('');
+  lines.push(`Service: ${s.industryLabel}`);
+  if (s.detail && s.detail !== '—') lines.push(`Details: ${s.detail}`);
+  if (s.addons.length) lines.push(`Includes: ${s.addons.join(', ')}`);
+  lines.push('');
+  lines.push(`TOTAL: ${dollars(s.price)}`);
+  lines.push('');
+  lines.push(`Quote ${s.id} · valid 30 days`);
+  lines.push(`Reply to accept.`);
+  return lines.join('\n');
+}
+
+async function copyAsSmsText() {
+  const text = buildSmsText();
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // Fallback: use a temporary textarea
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    showCopyToast();
+  } catch (err) {
+    showCopyToast('Copy failed — try again');
+  }
+}
+
+function showCopyToast(message = 'Copied to clipboard ✓') {
+  const toast = document.getElementById('copy-toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.remove('hidden');
+  clearTimeout(window._copyToastTimer);
+  window._copyToastTimer = setTimeout(() => toast.classList.add('hidden'), 1800);
+}
+
+/* ───── Print path: fill the print-only document and trigger window.print() ───── */
+function saveAsPdf() {
+  const s = buildQuoteSummary();
+  const dollars = (n) => '$' + Math.round(n).toLocaleString();
+  const addonsLine = s.addons.length
+    ? `<br><span style="color:#777;font-size:12px">includes: ${escapeHtml(s.addons.join(', '))}</span>`
+    : '';
+
+  $('#pq-id').textContent = s.id;
+  $('#pq-id-footer').textContent = s.id;
+  $('#pq-date').textContent = s.dateStr;
+  $('#pq-client').textContent = s.state.client_name;
+  $('#pq-provider').textContent = s.state.provider_name || 'Independent contractor';
+  $('#pq-total').textContent = dollars(s.price);
+
+  $('#pq-lines').innerHTML = `
     <tr>
-      <td><strong>${escapeHtml(industryLabel)}</strong></td>
-      <td>${escapeHtml(detail)}${addons ? `<br><span style="color:#777;font-size:12px">includes: ${escapeHtml(addons)}</span>` : ''}</td>
-      <td class="pq-amt">${dollars(price)}</td>
+      <td><strong>${escapeHtml(s.industryLabel)}</strong></td>
+      <td>${escapeHtml(s.detail)}${addonsLine}</td>
+      <td class="pq-amt">${dollars(s.price)}</td>
     </tr>
   `;
 
-  // Trigger native print dialog. Mobile users get "Save as PDF" / Share PDF.
-  setTimeout(() => window.print(), 80);
+  // Close the modal first so it doesn't interfere with the print preview, then print
+  closePreview();
+  setTimeout(() => window.print(), 200);
 }
+
+/* ───── Wire modal close + actions on first load ───── */
+(function wirePreviewModal() {
+  const modal = document.getElementById('preview-modal');
+  if (!modal) return;
+  modal.querySelectorAll('[data-close]').forEach(el => {
+    el.addEventListener('click', (e) => { e.preventDefault(); closePreview(); });
+  });
+  document.getElementById('preview-copy-btn')?.addEventListener('click', copyAsSmsText);
+  document.getElementById('preview-pdf-btn')?.addEventListener('click', saveAsPdf);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) closePreview();
+  });
+})();
 
 function focusClientInput(msg) {
   flashError(msg);

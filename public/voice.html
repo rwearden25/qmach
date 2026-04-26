@@ -123,6 +123,45 @@
 </main>
 
 <!-- ═══════════════════════════════════════════════════════
+     QUOTE PREVIEW MODAL
+     Opens when user taps DOWNLOAD on the result card. Shows a
+     line-by-line preview of the quote, then offers two actions:
+     copy as SMS-friendly text, or save as PDF (browser print).
+═══════════════════════════════════════════════════════ -->
+<div id="preview-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="preview-title">
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-sheet">
+    <header class="modal-head">
+      <div>
+        <div class="modal-eyebrow">Quote preview</div>
+        <h2 class="modal-title" id="preview-title">Looks good?</h2>
+      </div>
+      <button type="button" class="modal-close" aria-label="Close" data-close>×</button>
+    </header>
+
+    <section class="modal-body">
+      <div class="preview-card" id="preview-card">
+        <!-- populated by JS -->
+      </div>
+    </section>
+
+    <div class="toast hidden" id="copy-toast">Copied to clipboard ✓</div>
+
+    <footer class="modal-actions">
+      <button type="button" id="preview-copy-btn" class="modal-btn primary">
+        <span class="modal-btn-icon" aria-hidden="true">⇪</span>
+        <span>Copy as text<small>for SMS or email</small></span>
+      </button>
+      <button type="button" id="preview-pdf-btn" class="modal-btn">
+        <span class="modal-btn-icon" aria-hidden="true">⤓</span>
+        <span>Save as PDF<small>print to a file</small></span>
+      </button>
+      <button type="button" class="modal-btn ghost" data-close>Back to edit</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
      PRINT-ONLY: clean quote document
      Hidden on screen, rendered on @media print so users get
      a polished PDF when they tap DOWNLOAD QUOTE.
