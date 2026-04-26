@@ -879,13 +879,32 @@ function buildSmsText() {
   return lines.join('\n');
 }
 
+/* ───── Share or copy the SMS-friendly quote text ─────
+   Prefers Web Share API on mobile (Android Chrome / iOS Safari 12.1+
+   surface a native share sheet → WhatsApp / SMS / Mail / etc). Falls back
+   to clipboard when Web Share isn't available (most desktops).
+*/
 async function copyAsSmsText() {
   const text = buildSmsText();
+  const state = window._voiceState;
+  const title = `Quote for ${state?.client_name || 'you'}`;
+
+  // Web Share API path (mobile-native)
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text });
+      return; // share sheet handled it
+    } catch (err) {
+      // User canceled or share failed — fall through to clipboard
+      if (err?.name === 'AbortError') return;
+    }
+  }
+
+  // Clipboard fallback
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
     } else {
-      // Fallback: use a temporary textarea
       const ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
@@ -900,6 +919,17 @@ async function copyAsSmsText() {
     showCopyToast('Copy failed — try again');
   }
 }
+
+/* Update the share-button label based on capability so users know what
+   tapping it will do — "Share quote" on mobile (share sheet) vs "Copy
+   as text" on desktop (clipboard). */
+(function adaptShareLabel() {
+  if (!navigator.share) return;
+  const label = document.getElementById('copy-btn-label');
+  const sub = document.getElementById('copy-btn-sub');
+  if (label) label.textContent = 'Share quote';
+  if (sub) sub.textContent = 'send via SMS, email, or app';
+})();
 
 function showCopyToast(message = 'Copied to clipboard ✓') {
   const toast = document.getElementById('copy-toast');
