@@ -69,6 +69,22 @@ db.exec(`
     created_at    INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+  -- Voice-endpoint spend counters. Persisted (was in-memory) so a Railway
+  -- restart doesn't reset the daily kill-switch or hand every guest fresh
+  -- quota. Keys are namespaced strings:
+  --   daily:YYYY-MM-DD  → server-wide daily voice call count (UTC)
+  --   ip:<addr>         → per-IP guest analyses (24h window)
+  --   gid:<cookie>      → per-cookie guest analyses (24h window)
+  --   user:<userId>     → per-authenticated-user analyses (24h window)
+  -- first_at is when the row was opened; readers expire rows past their window.
+  CREATE TABLE IF NOT EXISTS voice_quota (
+    key      TEXT PRIMARY KEY,
+    count    INTEGER NOT NULL DEFAULT 0,
+    first_at INTEGER NOT NULL,
+    last_at  INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_voice_quota_first_at ON voice_quota(first_at);
 `);
 
 console.log(`SQLite database initialized at: ${DB_PATH}`);
