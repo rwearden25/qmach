@@ -195,7 +195,8 @@ body {
 }
 .ex-tile.fading { opacity: 0; transform: translateY(6px); }
 .ex-tile-head { display: flex; align-items: center; gap: 12px; }
-.ex-icon { font-size: 28px; }
+.ex-icon { font-size: 28px; line-height: 1; display: inline-flex; align-items: center; }
+.ex-icon svg { width: 28px; height: 28px; stroke-width: 1.75; color: var(--accent); }
 .ex-svc {
   font-family: var(--serif); font-size: 17px; font-weight: 700; color: var(--dark);
 }
@@ -231,7 +232,8 @@ body {
   font-family: var(--mono); font-size: 16px; font-weight: 500;
   margin: 16px auto; box-shadow: 0 4px 16px rgba(58,94,48,.25);
 }
-.step-icon { font-size: 28px; margin-bottom: 8px; }
+.step-icon { font-size: 28px; margin-bottom: 8px; line-height: 1; display: flex; justify-content: center; }
+.step-icon svg { width: 32px; height: 32px; stroke-width: 1.75; color: var(--accent); }
 .step-name {
   font-family: var(--serif); font-size: 16px; font-weight: 700;
   color: var(--dark); margin-bottom: 4px;
@@ -256,7 +258,8 @@ body {
   background: var(--accent); opacity: 0; transition: opacity .2s;
 }
 .feat-card:hover::before { opacity: 1; }
-.feat-icon { font-size: 32px; margin-bottom: 16px; }
+.feat-icon { font-size: 32px; margin-bottom: 16px; line-height: 1; display: flex; }
+.feat-icon svg { width: 36px; height: 36px; stroke-width: 1.75; color: var(--accent); }
 .feat-title {
   font-family: var(--serif); font-size: 18px; font-weight: 700;
   color: var(--dark); margin-bottom: 8px;
@@ -462,31 +465,31 @@ body {
     <p class="section-sub">From truck to quote in under a minute. Every step is built for gloves, sunlight, and zero patience for complicated software.</p>
     <div class="steps-grid">
       <div class="step-card">
-        <div class="step-icon">📍</div>
+        <div class="step-icon"><i data-lucide="map-pin">📍</i></div>
         <div class="step-num">1</div>
         <div class="step-name">Address</div>
         <div class="step-desc">Search or GPS. Auto-fills from your client list.</div>
       </div>
       <div class="step-card">
-        <div class="step-icon">💦</div>
+        <div class="step-icon"><i data-lucide="droplets">💦</i></div>
         <div class="step-num">2</div>
         <div class="step-name">Service</div>
         <div class="step-desc">Tap the job type. Pressure washing, striping, roofing — one tap.</div>
       </div>
       <div class="step-card">
-        <div class="step-icon">🛰️</div>
+        <div class="step-icon"><i data-lucide="satellite">🛰️</i></div>
         <div class="step-num">3</div>
         <div class="step-name">Measure</div>
         <div class="step-desc">Draw on satellite or type it. Converts sq ft, sq yd, acres automatically.</div>
       </div>
       <div class="step-card">
-        <div class="step-icon">💰</div>
+        <div class="step-icon"><i data-lucide="banknote">💰</i></div>
         <div class="step-num">4</div>
         <div class="step-name">Price</div>
         <div class="step-desc">Quick-tap your rate or let AI suggest. Remembers your last price per service.</div>
       </div>
       <div class="step-card">
-        <div class="step-icon">📤</div>
+        <div class="step-icon"><i data-lucide="send">📤</i></div>
         <div class="step-num">5</div>
         <div class="step-name">Send</div>
         <div class="step-desc">Text, email, PDF, or copy. Tax calculated. Disclaimer included. Professional.</div>
@@ -503,27 +506,27 @@ body {
     <p class="section-sub">No training manuals. No onboarding calls. Open it and start quoting.</p>
     <div class="features-grid">
       <div class="feat-card">
-        <div class="feat-icon">🛰️</div>
+        <div class="feat-icon"><i data-lucide="satellite">🛰️</i></div>
         <div class="feat-title">Satellite Drawing</div>
         <div class="feat-desc">Full-screen Mapbox satellite view. Tap the corners of the work area. Area calculated instantly using real-world geometry — no turf.js, no dependencies, no broken CSP.</div>
       </div>
       <div class="feat-card">
-        <div class="feat-icon">🧠</div>
+        <div class="feat-icon"><i data-lucide="brain">🧠</i></div>
         <div class="feat-title">AI Price Suggestions</div>
         <div class="feat-desc">Not sure what to charge? AI analyzes your service type, area, and location to suggest low, market, and premium rates. One tap to apply.</div>
       </div>
       <div class="feat-card">
-        <div class="feat-icon">💾</div>
+        <div class="feat-icon"><i data-lucide="save">💾</i></div>
         <div class="feat-title">Remembers Everything</div>
         <div class="feat-desc">Your last price per service. Your clients and their addresses. Your tax rate. Even your in-progress quote if the app closes. Zero retyping.</div>
       </div>
       <div class="feat-card">
-        <div class="feat-icon">📄</div>
+        <div class="feat-icon"><i data-lucide="file-text">📄</i></div>
         <div class="feat-title">Professional PDFs</div>
         <div class="feat-desc">Branded estimates with line items, tax breakdown, scope of work, and legal disclaimer. Print or save as PDF. Looks like you hired a designer.</div>
       </div>
       <div class="feat-card wide">
-        <div class="feat-icon">📱</div>
+        <div class="feat-icon"><i data-lucide="smartphone">📱</i></div>
         <div class="feat-title">Built for Phones, Not Desktops</div>
         <div class="feat-desc">Big touch targets. 16px inputs (no iOS zoom). Haptic feedback. Works in direct sunlight with high-contrast Outdoor Pro colors. Install as a PWA and it feels native. No app store. No updates. Just works.</div>
       </div>
@@ -637,21 +640,27 @@ body {
   </div>
 </footer>
 
+<!-- Lucide icons — line-style SVGs replacing the original emoji. The
+     <i data-lucide="..."> markers above also keep emoji as inner text so
+     if this CDN load ever fails the page still shows recognizable icons. -->
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 <script>
 (function () {
+  // icon = Lucide name; emoji kept alongside as graceful fallback if Lucide
+  // fails to load (we render the emoji in place of the SVG marker).
   const EXAMPLES = [
-    { icon: '💦', svc: 'Pressure Washing',   meta: '12,400 sq ft',              client: 'Restaurant parking lot',  total: '$1,488' },
-    { icon: '🅿️', svc: 'Lot Striping',        meta: '2,100 lin ft · 48 stalls',  client: 'Retail center re-stripe',  total: '$528'   },
-    { icon: '🛣️', svc: 'Sealcoating',         meta: '8,900 sq ft',               client: 'Coffee shop drive aisle',  total: '$1,068' },
-    { icon: '🎨', svc: 'Exterior Painting',  meta: '3,200 sq ft',               client: 'Strip mall facade',        total: '$7,680' },
-    { icon: '🏠', svc: 'Roof Replacement',   meta: '24.5 squares',              client: 'Residential tear-off',     total: '$15,925'},
-    { icon: '🧱', svc: 'Concrete Flatwork',  meta: '1,100 sq ft',               client: 'HOA common area',          total: '$7,700' },
-    { icon: '🌿', svc: 'Sod Install',        meta: '4,500 sq ft',               client: 'Townhome front yard',      total: '$11,250'},
-    { icon: '💦', svc: 'Pressure Washing',   meta: '6,800 sq ft',               client: 'Restaurant dumpster pad',  total: '$816'   },
-    { icon: '🛣️', svc: 'Driveway Sealcoat',  meta: '3,200 sq ft',               client: 'Single-family home',       total: '$640'   },
-    { icon: '🎨', svc: 'Interior Painting',  meta: '2,800 sq ft',               client: 'Office turnover',          total: '$4,480' },
-    { icon: '🅿️', svc: 'New Lot Layout',      meta: '1,450 lin ft · 32 stalls',  client: 'Office park',              total: '$385'   },
-    { icon: '🏠', svc: 'Flat Roof Recoat',   meta: '32 squares',                client: 'Commercial warehouse',     total: '$28,800'}
+    { icon: 'droplets',        emoji: '💦', svc: 'Pressure Washing',   meta: '12,400 sq ft',              client: 'Restaurant parking lot',  total: '$1,488' },
+    { icon: 'square-parking',  emoji: '🅿️', svc: 'Lot Striping',        meta: '2,100 lin ft · 48 stalls',  client: 'Retail center re-stripe',  total: '$528'   },
+    { icon: 'route',           emoji: '🛣️', svc: 'Sealcoating',         meta: '8,900 sq ft',               client: 'Coffee shop drive aisle',  total: '$1,068' },
+    { icon: 'paintbrush',      emoji: '🎨', svc: 'Exterior Painting',  meta: '3,200 sq ft',               client: 'Strip mall facade',        total: '$7,680' },
+    { icon: 'home',            emoji: '🏠', svc: 'Roof Replacement',   meta: '24.5 squares',              client: 'Residential tear-off',     total: '$15,925'},
+    { icon: 'brick-wall',      emoji: '🧱', svc: 'Concrete Flatwork',  meta: '1,100 sq ft',               client: 'HOA common area',          total: '$7,700' },
+    { icon: 'leaf',            emoji: '🌿', svc: 'Sod Install',        meta: '4,500 sq ft',               client: 'Townhome front yard',      total: '$11,250'},
+    { icon: 'droplets',        emoji: '💦', svc: 'Pressure Washing',   meta: '6,800 sq ft',               client: 'Restaurant dumpster pad',  total: '$816'   },
+    { icon: 'route',           emoji: '🛣️', svc: 'Driveway Sealcoat',  meta: '3,200 sq ft',               client: 'Single-family home',       total: '$640'   },
+    { icon: 'paintbrush',      emoji: '🎨', svc: 'Interior Painting',  meta: '2,800 sq ft',               client: 'Office turnover',          total: '$4,480' },
+    { icon: 'square-parking',  emoji: '🅿️', svc: 'New Lot Layout',      meta: '1,450 lin ft · 32 stalls',  client: 'Office park',              total: '$385'   },
+    { icon: 'home',            emoji: '🏠', svc: 'Flat Roof Recoat',   meta: '32 squares',                client: 'Commercial warehouse',     total: '$28,800'}
   ];
   const tiles = document.querySelectorAll('.ex-tile');
   if (!tiles.length) return;
@@ -659,15 +668,25 @@ body {
   function paint(tile, ex) {
     tile.innerHTML =
       '<div>' +
-        '<div class="ex-tile-head"><span class="ex-icon">' + ex.icon + '</span><span class="ex-svc">' + ex.svc + '</span></div>' +
+        '<div class="ex-tile-head"><span class="ex-icon"><i data-lucide="' + ex.icon + '">' + ex.emoji + '</i></span><span class="ex-svc">' + ex.svc + '</span></div>' +
         '<div class="ex-meta">' + ex.meta + '</div>' +
         '<div class="ex-client">' + ex.client + '</div>' +
       '</div>' +
       '<div class="ex-total">' + ex.total + '</div>';
   }
+  // Convert any <i data-lucide> elements (initial markers + tile contents)
+  // to inline SVGs. Re-run after every repaint since paint() drops & rewrites
+  // the tile innerHTML. Guarded so an in-flight CDN failure doesn't break
+  // the rotation — the emoji stays visible if lucide is undefined.
+  function renderIcons() {
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      window.lucide.createIcons();
+    }
+  }
   // Initial render — no fade, just populate
   tiles.forEach((tile, i) => paint(tile, EXAMPLES[i % EXAMPLES.length]));
   offset = tiles.length;
+  renderIcons();
   // FAQ toggles — inline onclick="" is blocked by Helmet's default
   // script-src-attr 'none', so we attach listeners properly.
   document.querySelectorAll('.faq-q').forEach(q => {
@@ -680,6 +699,7 @@ body {
       tiles.forEach((tile, i) => paint(tile, EXAMPLES[(offset + i) % EXAMPLES.length]));
       tiles.forEach(t => t.classList.remove('fading'));
       offset = (offset + tiles.length) % EXAMPLES.length;
+      renderIcons();
     }, 320);
   }, 5000);
 })();
