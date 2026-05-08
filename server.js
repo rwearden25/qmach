@@ -178,17 +178,22 @@ const voiceLimiter = rateLimit({
 });
 app.use('/api/voice/', voiceLimiter);
 
-// ── Guest quota for unauthenticated voice analyses
-//    Defense-in-depth: track usage by BOTH (a) signed httpOnly cookie that
-//    identifies the browser instance, and (b) the request IP. We take the
-//    MAX of both counters when checking the quota — so to bypass the limit
-//    a guest must change BOTH their browser/cookies AND their IP. Plus a
-//    server-wide daily kill-switch (VOICE_DAILY_CAP env) caps total token
-//    spend even if both per-guest signals are evaded by a coordinated proxy
-//    attack. Anthropic's own console spend cap is the ultimate ceiling.
+// ── Voice quota counters — SQLite-backed (table: voice_quota in db/database.js)
+//    Persistence matters: when these were in-memory Maps, every Railway
+//    restart reset every counter, which meant the "absolute daily ceiling"
+//    layer wasn't actually a ceiling — auto-deploy on push to main reset
+//    the counter on every push, and a coordinated attack could drain
+//    multiple full-day caps in an hour by triggering restarts.
+//
+//    Defense-in-depth (see docs/voice-security.md for full layer breakdown):
+//      ip:<addr>         → per-IP guest analyses (24h)
+//      gid:<cookie>      → per-cookie guest analyses (24h)
+//      MAX(ip,gid)       → enforced for guests so bypass needs BOTH rotated
+//      user:<userId>     → per-authenticated-user analyses (24h) — added so
+//                          one signed-in user can't drain the daily budget
+//      daily:YYYY-MM-DD  → server-wide kill switch across all callers
 const GUEST_VOICE_LIMIT  = 2;
 const GUEST_VOICE_WINDOW = 24 * 60 * 60 * 1000; // 24h
-const guestVoiceUsage    = new Map(); // key → { count, firstAt, lastAt }
 
 // Cookie signing — uses an env secret if set, otherwise a random per-boot
 // secret. Per-boot is fine because cookies only need to be valid for the
@@ -233,32 +238,48 @@ function parseCookies(req) {
   return out;
 }
 
-function readGuestVoice(key) {
-  const rec = guestVoiceUsage.get(key);
-  if (!rec) return 0;
-  if (Date.now() - rec.firstAt > GUEST_VOICE_WINDOW) {
-    guestVoiceUsage.delete(key);
+// SQL prepared statements for the voice_quota table. better-sqlite3 is
+// synchronous so the read-then-write pattern is race-free without explicit
+// transactions for this volume.
+const readQuotaStmt   = db.prepare('SELECT count, first_at FROM voice_quota WHERE key = ?');
+const insertQuotaStmt = db.prepare('INSERT INTO voice_quota (key, count, first_at, last_at) VALUES (?, 1, ?, ?)');
+const resetQuotaStmt  = db.prepare('UPDATE voice_quota SET count = 1, first_at = ?, last_at = ? WHERE key = ?');
+const incQuotaStmt    = db.prepare('UPDATE voice_quota SET count = count + 1, last_at = ? WHERE key = ?');
+const deleteQuotaStmt = db.prepare('DELETE FROM voice_quota WHERE key = ?');
+const pruneQuotaStmt  = db.prepare('DELETE FROM voice_quota WHERE first_at < ?');
+
+function readVoiceQuota(key, windowMs) {
+  const row = readQuotaStmt.get(key);
+  if (!row) return 0;
+  if (Date.now() - row.first_at > windowMs) {
+    deleteQuotaStmt.run(key);
     return 0;
   }
-  return rec.count;
+  return row.count;
 }
-function bumpGuestVoice(key) {
+function bumpVoiceQuota(key, windowMs) {
   const now = Date.now();
-  const rec = guestVoiceUsage.get(key);
-  if (!rec || now - rec.firstAt > GUEST_VOICE_WINDOW) {
-    guestVoiceUsage.set(key, { count: 1, firstAt: now, lastAt: now });
+  const row = readQuotaStmt.get(key);
+  if (!row) {
+    insertQuotaStmt.run(key, now, now);
     return 1;
   }
-  rec.count++;
-  rec.lastAt = now;
-  return rec.count;
-}
-// Periodic cleanup so the Map doesn't grow unbounded.
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, rec] of guestVoiceUsage) {
-    if (now - rec.firstAt > GUEST_VOICE_WINDOW) guestVoiceUsage.delete(k);
+  if (now - row.first_at > windowMs) {
+    resetQuotaStmt.run(now, now, key);
+    return 1;
   }
+  incQuotaStmt.run(now, key);
+  return row.count + 1;
+}
+
+// Backwards-compatible names — the rest of server.js still calls these.
+function readGuestVoice(key) { return readVoiceQuota(key, GUEST_VOICE_WINDOW); }
+function bumpGuestVoice(key) { return bumpVoiceQuota(key, GUEST_VOICE_WINDOW); }
+
+// Prune rows older than 7 days (covers the longest window we use plus
+// generous slack for daily:YYYY-MM-DD historical rows).
+setInterval(() => {
+  try { pruneQuotaStmt.run(Date.now() - 7 * 24 * 60 * 60 * 1000); } catch {}
 }, 60 * 60 * 1000);
 
 // ── Server-wide daily voice cap (token-spend ceiling)
@@ -267,20 +288,22 @@ setInterval(() => {
 //    capacity, try again tomorrow" instead of burning more tokens. Default
 //    of 500 ≈ $15/day worst case at Opus 4.7 rates; raise/lower via env.
 const VOICE_DAILY_CAP = parseInt(process.env.VOICE_DAILY_CAP || '500', 10);
-let voiceDayKey = '';
-let voiceDayCount = 0;
+function todayUtcKey() { return 'daily:' + new Date().toISOString().slice(0, 10); }
 function checkVoiceDailyCap() {
-  const today = new Date().toISOString().slice(0, 10);
-  if (today !== voiceDayKey) {
-    voiceDayKey = today;
-    voiceDayCount = 0;
-  }
-  return voiceDayCount < VOICE_DAILY_CAP;
+  // 48h window so the row stays alive for the full UTC day even at edges.
+  return readVoiceQuota(todayUtcKey(), 48 * 60 * 60 * 1000) < VOICE_DAILY_CAP;
 }
 function bumpVoiceDaily() {
-  checkVoiceDailyCap();
-  voiceDayCount++;
+  bumpVoiceQuota(todayUtcKey(), 48 * 60 * 60 * 1000);
 }
+
+// ── Per-authenticated-user daily voice cap
+//    Guests are bounded by IP+cookie (layers 2-4); without a per-user cap a
+//    single signed-in user could drain the whole VOICE_DAILY_CAP budget on
+//    their own. USER_VOICE_LIMIT is generous (25/day default) — meant to
+//    catch runaway scripts and accidents, not to gate normal usage.
+const USER_VOICE_LIMIT  = parseInt(process.env.USER_VOICE_LIMIT || '25', 10);
+const USER_VOICE_WINDOW = 24 * 60 * 60 * 1000;
 
 function ensureGuestCookie(req, res) {
   const cookies = parseCookies(req);
@@ -1012,7 +1035,6 @@ app.post('/api/voice/analyze', async (req, res) => {
     // ── Guest quota — anonymous users get GUEST_VOICE_LIMIT analyses per
     // (cookie ⨉ IP) per 24h. We take the MAX of the two counters so to
     // bypass the limit a guest must rotate BOTH browser/cookies AND IP.
-    // Authenticated users (req.userId set) bypass this check.
     const isGuest = !req.userId;
     let guestId = null;
     if (isGuest) {
@@ -1026,6 +1048,18 @@ app.post('/api/voice/analyze', async (req, res) => {
           message: `You've used your ${GUEST_VOICE_LIMIT} free quotes. Sign up for pquote to keep going.`,
           remaining: 0,
           limit: GUEST_VOICE_LIMIT,
+        });
+      }
+    } else {
+      // ── Per-user quota — bounds a single signed-in user from draining
+      // the global VOICE_DAILY_CAP on their own (script bug, abuse, etc).
+      const userUsed = readVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
+      if (userUsed >= USER_VOICE_LIMIT) {
+        return res.status(429).json({
+          error: 'user_limit_reached',
+          message: `You've used ${USER_VOICE_LIMIT} voice quotes in 24h — try again tomorrow.`,
+          remaining: 0,
+          limit: USER_VOICE_LIMIT,
         });
       }
     }
@@ -1096,6 +1130,8 @@ Return ONLY this JSON:
         limit: GUEST_VOICE_LIMIT,
         remaining: Math.max(0, GUEST_VOICE_LIMIT - used),
       };
+    } else {
+      bumpVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
     }
     res.json(parsed);
   } catch (err) {
@@ -1120,6 +1156,20 @@ app.post('/api/voice/price', async (req, res) => {
         error: 'daily_cap_reached',
         message: "Voice quotes are at capacity for today. Try again tomorrow.",
       });
+    }
+
+    // Per-user cap also applies to price calls — a runaway client refining
+    // the same quote in a tight loop is exactly the abuse case this catches.
+    if (req.userId) {
+      const userUsed = readVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
+      if (userUsed >= USER_VOICE_LIMIT) {
+        return res.status(429).json({
+          error: 'user_limit_reached',
+          message: `You've used ${USER_VOICE_LIMIT} voice quotes in 24h — try again tomorrow.`,
+          remaining: 0,
+          limit: USER_VOICE_LIMIT,
+        });
+      }
     }
 
     const examples = getRecentQuotesForIndustry(req.userId, industry, 5);
@@ -1158,6 +1208,7 @@ Return ONLY this JSON:
       return res.status(500).json({ error: 'AI returned invalid JSON', raw });
     }
     bumpVoiceDaily(); // count toward server-wide daily cap
+    if (req.userId) bumpVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
     res.json(parsed);
   } catch (err) {
     console.error('AI voice/price error:', err);
@@ -1341,11 +1392,22 @@ app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
   }
 });
 
-// ── Build identifier — bumped on every deploy attempt so /version makes it
-// trivial to tell which build is actually running (vs. what GitHub says is
-// merged). If /version doesn't show this string within ~2min of merge, the
-// Railway container didn't swap and a manual Redeploy is needed.
-const APP_VERSION = '20260426i-cookie-quota-daily-cap';
+// ── Build identifier — derived from the commit SHA so /version is always
+// truthful about which build is running, with no manual bumping. Railway
+// injects RAILWAY_GIT_COMMIT_SHA at runtime; locally we fall back to
+// `git rev-parse` so dev sees a real SHA too. Only returns 'unknown' when
+// neither is available (e.g. running from a tarball outside a git tree).
+const APP_VERSION = (() => {
+  const railwaySha = process.env.RAILWAY_GIT_COMMIT_SHA;
+  if (railwaySha) return railwaySha.slice(0, 7);
+  try {
+    return require('child_process')
+      .execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString().trim();
+  } catch {
+    return 'unknown';
+  }
+})();
 console.log(`[Boot] pquote APP_VERSION = ${APP_VERSION}`);
 
 // ── Health check

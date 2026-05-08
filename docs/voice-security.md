@@ -98,7 +98,7 @@ If you want to add an authenticated per-user quota too, the same `bumpGuestVoice
 
 ## How to verify the stack is live
 
-`/version` returns the active build stamp. As of writing it should include `cookie-quota-daily-cap` once `c6f99fe` is deployed.
+`/version` returns the active build stamp — the short SHA of the deployed commit, derived from `RAILWAY_GIT_COMMIT_SHA` at boot. Compare it against the SHA you expect to be live; if they don't match within ~2 min of merge, the Railway container didn't swap and a manual Redeploy is needed.
 
 To prove the quota works end-to-end on production:
 
