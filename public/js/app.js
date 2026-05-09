@@ -485,7 +485,7 @@ function openMapOverlay() {
 }
 
 // Drops (or repositions) a single pin at the geocoded target address. Without
-// this, opening the map on a cul-de-sac like "11905 Metmora Ct" centered the
+// this, opening the map on a residential cul-de-sac centered the
 // view across five candidate houses with no indication which one was the
 // quote target. The marker is intentionally bright (Mapbox default red) so
 // it shows up against any roof color in satellite-streets-v12 imagery.

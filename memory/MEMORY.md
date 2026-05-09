@@ -1,3 +1,4 @@
 - [Frontend work needs frontend-design treatment](feedback_frontend_design.md) — never default to generic CSS for Ross's UI
 - [Voice quote token-spend defense](reference_voice_token_defense.md) — 6-layer abuse stack on /api/voice/*; `VOICE_DAILY_CAP` env tunes the daily kill-switch
 - [Synology is not actively running](feedback_synology_not_running.md) — don't propose the NAS as a live cron/backup host without confirming it's powered on
+- [Never use personal addresses in demos/promos](feedback_never_use_personal_address.md) — hard rule; use public commercial addresses
