@@ -70,15 +70,46 @@ body {
   padding: 100px 24px 60px; position: relative; overflow: hidden;
   background: linear-gradient(160deg, #1a1816 0%, var(--dark) 40%, #323028 100%);
 }
+/* Hero-background slideshow — full-bleed satellite imagery from Mapbox,
+   rotating every 10s with a slow crossfade. Sits behind a dark overlay so
+   the white headline text remains readable. The images are decorative —
+   even when fully visible they stay below the gradient via opacity. */
+.hero-bg-slideshow {
+  position: absolute; inset: 0; z-index: 0; overflow: hidden;
+  pointer-events: none;
+}
+.hero-bg-img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 1.5s ease-in-out;
+  /* Slow Ken-Burns drift while visible — gives life to the still imagery. */
+  animation: heroBgDrift 22s ease-in-out infinite alternate;
+}
+.hero-bg-img.is-active { opacity: 0.32; }
+@keyframes heroBgDrift {
+  from { transform: scale(1.04) translate(-1%, -1%); }
+  to   { transform: scale(1.08) translate(1%, 1%); }
+}
 .hero::before {
-  content: ''; position: absolute; inset: 0;
+  content: ''; position: absolute; inset: 0; z-index: 1;
   background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.015'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
   opacity: .6;
+  /* Dark vignette overlay so headline + CTAs stay legible above the
+     satellite imagery. Stronger at top + bottom edges. */
+  box-shadow: inset 0 0 200px rgba(0,0,0,.55);
 }
 .hero::after {
   content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 200px;
   background: linear-gradient(transparent, var(--bg));
+  z-index: 1;
 }
+/* All direct hero content sits above the slideshow + vignette overlay.
+   The .hero-bg-slideshow is the only direct child that should NOT be
+   raised — it lives at z-index 0 explicitly. */
+.hero > :not(.hero-bg-slideshow) { position: relative; z-index: 2; }
+
 .hero-badge {
   font-family: var(--mono); font-size: 11px; font-weight: 500;
   color: var(--accent-pale); background: rgba(58,94,48,.15);
@@ -505,6 +536,17 @@ body {
 
 <!-- HERO -->
 <section class="hero">
+  <!-- Rotating satellite-imagery backdrop. JS at the bottom of this file
+       cycles .is-active across the <img> elements every 10s. The first
+       image starts active; rest fade in/out via the CSS transition. -->
+  <div class="hero-bg-slideshow" aria-hidden="true">
+    <img class="hero-bg-img is-active" src="/hero-bg/01-aac.jpg"        alt="" loading="eager"></img>
+    <img class="hero-bg-img"           src="/hero-bg/02-galleria.jpg"   alt="" loading="lazy"></img>
+    <img class="hero-bg-img"           src="/hero-bg/03-stadium-lot.jpg" alt="" loading="lazy"></img>
+    <img class="hero-bg-img"           src="/hero-bg/04-strip-center.jpg" alt="" loading="lazy"></img>
+    <img class="hero-bg-img"           src="/hero-bg/05-freeway.jpg"    alt="" loading="lazy"></img>
+    <img class="hero-bg-img"           src="/hero-bg/06-downtown.jpg"   alt="" loading="lazy"></img>
+  </div>
   <div class="hero-badge">Satellite measurement for trades</div>
   <h1>Measure. Price. Send. <em>60 seconds.</em></h1>
   <p class="hero-sub">Tap the corners of any parking lot, roof, or driveway on satellite imagery. Get sq ft, AI pricing, and a polished PDF — without leaving the truck.</p>
@@ -766,6 +808,24 @@ body {
   document.querySelectorAll('.faq-q').forEach(q => {
     q.addEventListener('click', () => q.parentElement.classList.toggle('open'));
   });
+
+  // Hero background slideshow: cycle .is-active across the <img> elements
+  // every 10s with the CSS opacity transition handling the crossfade.
+  // Pauses when the page is hidden so background tabs don't waste cycles.
+  const heroSlides = document.querySelectorAll('.hero-bg-img');
+  if (heroSlides.length > 1) {
+    let heroIdx = 0;
+    const advanceHero = () => {
+      heroSlides[heroIdx].classList.remove('is-active');
+      heroIdx = (heroIdx + 1) % heroSlides.length;
+      heroSlides[heroIdx].classList.add('is-active');
+    };
+    let heroTimer = setInterval(advanceHero, 10000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { clearInterval(heroTimer); heroTimer = null; }
+      else if (!heroTimer) heroTimer = setInterval(advanceHero, 10000);
+    });
+  }
 
   // Hero promo: tap/click anywhere on the phone frame toggles play/pause.
   // Sync the .is-paused class to the video's actual state so the ▶ overlay
