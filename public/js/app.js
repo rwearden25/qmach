@@ -33,6 +33,7 @@ let address = '', clientName = '', lastLat = null, lastLng = null;
 let editingQuoteId = null, chatHistory = [], aiPriceData = null, debounceTimer = null;
 let map = null, mapReady = false, drawPoints = [];
 let drawnPolygonGeoJSON = null, drawnAreaSqMeters = 0;
+let targetMarker = null; // mapbox pin at the geocoded address — tells the user *which house* on dense residential blocks
 
 // ═══════════════════════════════════════
 //  SUPABASE (Google OAuth)
@@ -476,8 +477,33 @@ function openMapOverlay() {
   if (!map) initMap();
   else { map.resize(); resetMapDraw(); }
   if (lastLat && lastLng && map) {
-    setTimeout(() => map.flyTo({ center: [lastLng, lastLat], zoom: 19, speed: 2 }), 100);
+    setTimeout(() => {
+      map.flyTo({ center: [lastLng, lastLat], zoom: 19, speed: 2 });
+      setTargetMarker(lastLng, lastLat);
+    }, 100);
   }
+}
+
+// Drops (or repositions) a single pin at the geocoded target address. Without
+// this, opening the map on a cul-de-sac like "11905 Metmora Ct" centered the
+// view across five candidate houses with no indication which one was the
+// quote target. The marker is intentionally bright (Mapbox default red) so
+// it shows up against any roof color in satellite-streets-v12 imagery.
+function setTargetMarker(lng, lat) {
+  if (!map || !mapReady) return;
+  if (targetMarker) {
+    targetMarker.setLngLat([lng, lat]);
+    return;
+  }
+  // mapboxgl global is loaded by the same script tag that loads the
+  // satellite tiles, so it's available by the time setTargetMarker runs.
+  if (typeof mapboxgl === 'undefined') return;
+  targetMarker = new mapboxgl.Marker({ color: '#E03131' }) // strong red, max contrast on green/gray rooftops
+    .setLngLat([lng, lat])
+    .addTo(map);
+}
+function clearTargetMarker() {
+  if (targetMarker) { try { targetMarker.remove(); } catch {} targetMarker = null; }
 }
 
 function closeMapOverlay() { el('map-overlay').classList.add('hidden'); }
@@ -500,7 +526,13 @@ function initMap() {
     map.addLayer({ id: 'draw-line', type: 'line', source: 'draw-poly', paint: { 'line-color': '#3A5E30', 'line-width': 3, 'line-dasharray': [3, 2] } });
     map.addSource('draw-pts', { type: 'geojson', data: emptyFC() });
     map.addLayer({ id: 'draw-vertices', type: 'circle', source: 'draw-pts', paint: { 'circle-radius': 7, 'circle-color': '#3A5E30', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-    if (lastLat && lastLng) map.flyTo({ center: [lastLng, lastLat], zoom: 19 });
+    if (lastLat && lastLng) {
+      map.flyTo({ center: [lastLng, lastLat], zoom: 19 });
+      // Drop the target-address pin once the map is actually ready. The
+      // openMapOverlay() call also tries this, but on first open the map
+      // hasn't loaded yet and setTargetMarker bails — this is the catch-up.
+      setTargetMarker(lastLng, lastLat);
+    }
   });
 
   map.on('click', e => {
@@ -1034,15 +1066,22 @@ function geolocateUser() {
 }
 
 function openExternal(type) {
+  // Prefer coordinates over the address string. Mapbox geocodes US addresses
+  // to rooftop accuracy; passing the precise coords to Google Maps drops a
+  // pin EXACTLY on the house, instead of letting Google re-geocode the
+  // address and potentially land the pin in the middle of the cul-de-sac
+  // (which was the previous behavior — bad UX on dense residential blocks).
   const addr = el('inp-address')?.value || '';
-  const q = addr || (lastLat && lastLng ? `${lastLat},${lastLng}` : '');
+  const haveCoords = !!(lastLat && lastLng);
+  const coordsStr  = haveCoords ? `${lastLat},${lastLng}` : '';
+  const q = coordsStr || addr;
   if (!q) { toast('Enter an address first'); return; }
   const urls = {
-    maps: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
-    earth: `https://earth.google.com/web/search/${encodeURIComponent(q)}`,
-    street: lastLat && lastLng
+    maps:   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
+    earth:  `https://earth.google.com/web/search/${encodeURIComponent(q)}`,
+    street: haveCoords
       ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lastLat},${lastLng}`
-      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
   };
   window.open(urls[type], '_blank');
 }
