@@ -1639,3 +1639,106 @@ body {
     transition-duration: .01ms !important;
   }
 }
+
+/* ─── Tier-up gate (anon hits the wall) ────────────────────────────────
+   Two side-by-side cards: email-only path on the left, full signup on
+   the right. Each lists what the user gets AND what they don't get —
+   the asymmetry between tiers is the whole conversion lever. */
+.tier-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  margin-top: 18px;
+}
+@media (max-width: 640px) {
+  .tier-grid { grid-template-columns: 1fr; }
+}
+.tier-card {
+  background: var(--bg-elev-2); border: 1px solid var(--line);
+  border-radius: var(--rad-md); padding: 18px 16px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.tier-card--full { border-color: var(--amber); background: var(--amber-pale, #fff8e0); }
+.tier-card-eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.tier-card-title {
+  font-family: var(--serif); font-size: 22px; font-weight: 700;
+  color: var(--ink); line-height: 1.15;
+}
+.tier-card-list {
+  list-style: none; padding: 0; margin: 4px 0 0;
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 14px; color: var(--ink);
+}
+.tier-card-list li::before {
+  content: "✓"; color: var(--amber); font-weight: 700;
+  margin-right: 8px;
+}
+.tier-card-list--muted li { color: var(--ink-soft); font-size: 13px; }
+.tier-card-list--muted li::before { content: ""; margin: 0; }
+.tier-card-list--muted .tier-x::before {
+  content: "✗"; color: #b85b5b; font-weight: 700; margin-right: 8px;
+}
+.tier-card-list--muted .tier-check::before {
+  content: "✓"; color: var(--amber); font-weight: 700; margin-right: 8px;
+}
+.tier-form { display: flex; gap: 6px; margin-top: 6px; }
+.tier-form-input {
+  flex: 1; min-width: 0;
+  padding: 12px 14px; font-size: 15px; font-family: var(--sans);
+  border: 1px solid var(--line); border-radius: var(--rad-sm);
+  background: var(--bg-elev-1); color: var(--ink);
+}
+.tier-form-input:focus {
+  outline: none; border-color: var(--amber); background: #fff;
+}
+.tier-form-btn {
+  padding: 12px 14px; font-family: var(--mono); font-size: 13px;
+  font-weight: 600; letter-spacing: .3px;
+  background: var(--ink); color: var(--bg-elev-1);
+  border: 1px solid var(--ink); border-radius: var(--rad-sm);
+  cursor: pointer; text-decoration: none; text-align: center;
+  white-space: nowrap;
+}
+.tier-form-btn:hover { background: var(--ink-soft); border-color: var(--ink-soft); }
+.tier-form-btn:disabled { opacity: .6; cursor: not-allowed; }
+.tier-form-btn--primary {
+  background: var(--amber); color: #fff; border-color: var(--amber);
+  width: 100%; padding: 14px; font-size: 14px;
+}
+.tier-form-btn--primary:hover { background: #c57a16; border-color: #c57a16; }
+.tier-form-msg {
+  font-size: 12px; color: #b85b5b; min-height: 14px;
+}
+.tier-link {
+  font-family: var(--mono); font-size: 12px; color: var(--amber);
+  text-decoration: none; text-align: center;
+}
+.tier-link:hover { text-decoration: underline; }
+
+/* ─── Price-blurred state (non-full tier on result screen) ───────────── */
+.price-blurred { padding: 4px 0; }
+.price-blurred-eyebrow {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--ink-soft);
+  margin-bottom: 4px;
+}
+.price-blurred-amount {
+  font-family: var(--serif); font-size: 32px; font-weight: 800;
+  color: var(--ink); line-height: 1.1;
+  letter-spacing: -.5px;
+}
+.price-blurred-cta { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.price-blurred-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 12px 16px; font-family: var(--mono); font-size: 13px;
+  font-weight: 600; letter-spacing: .3px;
+  background: var(--amber); color: #fff;
+  border: 1px solid var(--amber); border-radius: var(--rad-sm);
+  text-decoration: none;
+}
+.price-blurred-btn:hover { background: #c57a16; border-color: #c57a16; }
+.price-blurred-help {
+  font-family: var(--sans); font-size: 12px; color: var(--ink-soft);
+  line-height: 1.5; text-align: center;
+}
