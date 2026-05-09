@@ -335,7 +335,6 @@ async function bootApp() {
   // Quick buttons
   on('btn-gps', geolocateUser);
   on('btn-gmaps', () => openExternal('maps'));
-  on('btn-gearth', () => openExternal('earth'));
   on('btn-street', () => openExternal('street'));
 
   // Measure inputs
@@ -1078,7 +1077,6 @@ function openExternal(type) {
   if (!q) { toast('Enter an address first'); return; }
   const urls = {
     maps:   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,
-    earth:  `https://earth.google.com/web/search/${encodeURIComponent(q)}`,
     street: haveCoords
       ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lastLat},${lastLng}`
       : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`,

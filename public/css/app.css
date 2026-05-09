@@ -308,6 +308,7 @@ textarea:focus { border-color: var(--accent); box-shadow: var(--shadow-sm), 0 0 
   font-size: 9px; font-weight: 500; color: var(--muted);
   text-transform: uppercase; letter-spacing: .5px;
   margin-top: 4px; font-family: var(--mono);
+  line-height: 1.25; /* allows multi-word labels ("Use my location") to wrap to two lines without clipping */
 }
 
 /* ═══ SERVICE LIST ═══ */
