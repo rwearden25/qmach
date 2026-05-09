@@ -153,6 +153,39 @@ body {
   animation: fadeUp .6s ease .4s both;
 }
 
+/* ─── Hero promo video ───
+   Phone-shaped portrait recording. Frame mimics a device — rounded
+   corners, soft glow, dark inset. Sized to fit comfortably below the
+   hero CTAs on mobile without pushing the call-to-action above the fold. */
+.hero-promo {
+  position: relative; z-index: 1;
+  margin-top: 32px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  animation: fadeUp .8s ease .55s both;
+}
+.hero-promo-video {
+  /* 414:896 ≈ 0.462 aspect — match the recording's native ratio so no
+     letterbox bars appear. clamp keeps it readable on small phones and
+     not absurdly large on wide screens. */
+  width: clamp(220px, 60vw, 280px);
+  aspect-ratio: 414 / 896;
+  object-fit: cover;
+  border-radius: 24px;
+  background: #000;
+  box-shadow:
+    0 0 0 6px rgba(255,255,255,.05),    /* device "bezel" hint */
+    0 20px 60px rgba(0,0,0,.55),
+    0 0 80px rgba(58,94,48,.15);         /* subtle accent glow */
+}
+.hero-promo-caption {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: rgba(255,255,255,.35);
+}
+@media (min-width: 900px) {
+  /* On wider viewports, push the video a bit larger but still phone-shaped */
+  .hero-promo-video { width: 300px; }
+}
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
@@ -460,6 +493,16 @@ body {
     <a href="/voice" class="hero-cta-voice"><span class="voice-dot"></span>Voice Quote · NEW</a>
   </div>
   <p class="hero-note">No credit card · Works on any phone</p>
+  <!-- 15s real-flow recording. Phone-shaped portrait so it visually
+       sells "mobile-first" without us saying it. autoplay+muted+playsinline
+       is the iOS combo that lets it auto-start; loop runs it indefinitely. -->
+  <div class="hero-promo">
+    <video class="hero-promo-video"
+           src="/promo.webm"
+           autoplay loop muted playsinline preload="metadata"
+           aria-label="15-second walkthrough of pquote"></video>
+    <div class="hero-promo-caption">Real flow · 15 seconds</div>
+  </div>
 </section>
 
 <!-- EXAMPLES STRIP -->
