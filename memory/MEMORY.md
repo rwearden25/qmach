@@ -1,4 +1,9 @@
 - [Frontend work needs frontend-design treatment](feedback_frontend_design.md) — never default to generic CSS for Ross's UI
-- [Voice quote token-spend defense](reference_voice_token_defense.md) — 6-layer abuse stack on /api/voice/*; `VOICE_DAILY_CAP` env tunes the daily kill-switch
+- [Voice quote token-spend defense](reference_voice_token_defense.md) — layered abuse stack on /api/voice/*; `VOICE_DAILY_CAP` env tunes the daily kill-switch
 - [Synology is not actively running](feedback_synology_not_running.md) — don't propose the NAS as a live cron/backup host without confirming it's powered on
 - [Never use personal addresses in demos/promos](feedback_never_use_personal_address.md) — hard rule; use public commercial addresses
+- [Promo video preferences](feedback_promo_video_preferences.md) — natural pace, full end-to-end, click rings, section labels, tap-to-pause
+- [Playwright gotchas on /app](feedback_playwright_gotchas.md) — service-tile auto-advance, AI-price modal flow, default 30s timeouts, full-tier auth for promos
+- [Promo asset workflow](reference_promo_assets_workflow.md) — where the recording infra lives + how to refresh promo.webm and hero-bg/*.jpg
+- [Materials KB reference](reference_materials_kb.md) — db/materials_seed.json drives materials_kb; add rows to ground AI pricing in real industry numbers
+- [Aspirational pricing-card features](project_aspirational_pricing_features.md) — 4 features struck from the card pending build (margin slider, drag-drop photos w/ AI tagging, auto lot-trace, email-with-PDF)

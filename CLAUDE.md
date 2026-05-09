@@ -77,7 +77,13 @@ The voice endpoints inject **calibration examples** via `db/kb.js` → `getRecen
 
 `db/database.js` opens `better-sqlite3` at `${RAILWAY_VOLUME_MOUNT_PATH}/quotemachine.db` (falls back to `./data/quotemachine.db` for dev). WAL mode + foreign keys on. Schema lives inline in `db/database.js` as `CREATE TABLE IF NOT EXISTS` — there is no migration system; add columns with idempotent `ALTER TABLE` guards in the same file or via `db.exec` on boot.
 
-Tables: `quotes` (per-user, scoped via `user_id`), `sessions` (24 h TTL, capped at 1000 with oldest-evicted-first), `users` (DB signups). `quotes.user_id` references whichever ID source authenticated — `default` (open access), the QMACH_USERS id, the DB users PK, or `g:<email>` (Google).
+Tables: `quotes` (per-user, scoped via `user_id`, soft-delete via `deleted_at`), `sessions` (24 h TTL, capped at 1000 with oldest-evicted-first), `users` (DB signups), `voice_quota` (rate-limit counters), `email_only_signups` (soft-signup marketing list), `materials_kb` (industry application rates / pricing reference, seeded from `db/materials_seed.json` on every boot).
+
+`quotes.user_id` references whichever ID source authenticated — `default` (open access), the QMACH_USERS id, the DB users PK, or `g:<email>` (Google), or `e:<email>` (email-only soft signup).
+
+**Soft-delete on quotes:** `DELETE /api/quotes/:id` sets `deleted_at = Date.now()` by default; pass `?purge=1` to hard-delete. List endpoints filter `deleted_at IS NULL` by default; pass `?include_trash=1` or `?trash_only=1` to see soft-deleted rows. `POST /api/quotes/:id/restore` clears `deleted_at`. Stats and KB calibration both filter on `deleted_at IS NULL` so trash doesn't pollute analytics or AI prompts.
+
+**Materials KB:** `db/kb.js` exports `getMaterialsForIndustry(industry, region='US')` returning seeded application/coverage rates (paint sqft/gal, sealcoat per-sqft, asphalt per-square, etc.). Both `/voice/price` and `/api/ai/suggest-price` inject these rows + the user's own pricing calibration (`getPricingCalibration`) into the Anthropic prompt as priority-ordered grounding: user's actual past pricing first, materials_kb numbers second, generic market range last. To add a row, edit `db/materials_seed.json` and redeploy — UPSERT on the deterministic id refreshes existing entries.
 
 `db/backup.js` runs `VACUUM INTO` snapshots into `<volume>/backups/pquote-YYYY-MM-DD.db` — 30 s after boot then hourly (short-circuits if today's already exists). Retains 14 days. These protect against app-level corruption, not volume loss; pair with `/api/backup/download` for offsite copies.
 
@@ -87,8 +93,19 @@ Railway, single service, Dockerfile-based (`node:20-alpine`, builds `better-sqli
 
 `app.set('trust proxy', 1)` is required so `express-rate-limit` and the per-IP guest quota see the real client IP behind Railway's proxy — don't remove it.
 
+### Landing-page assets
+
+`public/promo.webm` (~1.5 MB, 30 fps VP9) is the rotating hero video showing both the voice-quote and map-quote flows end-to-end. It's tap-to-pause via a `<button>` wrapper around the `<video>` with a ▶ overlay synced to the video's pause/play events.
+
+`public/hero-bg/*.jpg` are six satellite views (Mapbox Static API, public commercial properties only — never residential) cycling every 10 s as the hero backdrop at 32 % opacity behind a vignette.
+
+Both assets are produced by tooling outside the repo at `C:\Users\Ross.Wearden\AppData\Local\Temp\pquote-browser-tests\`. See `docs/promo-video.md` for the re-record runbook. Memory file `reference_promo_assets_workflow.md` has the operational summary.
+
 ## Memory and conventions
 
-`memory/MEMORY.md` is loaded into Claude's context every session. Read it first; it currently flags:
+`memory/MEMORY.md` is loaded into Claude's context every session. Read it first. Key flags currently:
 - Frontend work for Ross uses the `frontend-design` skill, not generic CSS.
-- The `/voice` 6-layer defense is documented and tunable via env, not code, for layers 1 and 5.
+- Never use 11905 Metmora Ct or any personal address in demos / recordings / commits — public commercial addresses only (e.g., 1601 Bryan St, Dallas TX).
+- The Synology NAS is not always powered on — don't propose it as a live cron host without confirming.
+- Promo-video iteration has its own preferences captured (natural pace, end-to-end coverage, click rings, section labels).
+- Playwright /app driving has well-known gotchas (service-tile auto-advance, AI-price modal flow, 30s default timeouts).
