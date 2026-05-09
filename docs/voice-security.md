@@ -129,9 +129,19 @@ curl -s -c /tmp/cj -b /tmp/cj -X POST https://www.pquote.ai/api/voice/analyze \
 - [ ] Railway log monitoring is on (boot logs include `[Boot] pquote APP_VERSION = ...`)
 - [ ] Set up an alert on Railway logs for repeated `daily_cap_reached` 503s — that's the signal someone is actively trying to drain you
 
+## Cloudflare Turnstile (env-gated)
+
+A real human-check is now wired into `/api/voice/analyze` for guests. **It is gated on env vars and ships dormant** — no behavior change until you enable it:
+
+1. Create a site at https://dash.cloudflare.com/?to=/:account/turnstile (free).
+2. Set `TURNSTILE_SITE_KEY` (the public key, sent to the client via `/api/config`) and `TURNSTILE_SECRET_KEY` (server-only) in Railway → pquote service → Variables.
+3. Redeploy. The widget renders on `/voice` for guests; the server now requires a valid token on each guest analyze and responds `403 turnstile_failed` otherwise. Authenticated users skip the check entirely.
+
+Token failure is fail-closed — a network error reaching Cloudflare's siteverify also returns 403 rather than letting guests through. The `/voice/price` refinement loop is exempt (it's not a new quote).
+
 ## Future hardening options (not implemented)
 
-- **hCaptcha / Cloudflare Turnstile on first guest call** — proves the request is from a human; significantly raises the cost of automated abuse. Adds ~1s of UX friction.
+
 - **Per-user authenticated quota** — extend `bumpGuestVoice` to a `userId:<id>` key with a higher limit (e.g. 50/day for free accounts, unlimited for paid).
 - **Token-accounting estimation** — track approximate tokens used per guest/day instead of just call count, since some prompts cost more than others.
 - **Sliding-window cap instead of UTC-day reset** — smoother behavior near midnight; minor UX win, slightly more code.

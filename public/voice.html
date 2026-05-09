@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,700;0,6..96,800;0,6..96,900;1,6..96,700;1,6..96,800&family=Nunito:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/voice.css?v=20260426i">
+<link rel="stylesheet" href="/css/voice.css?v=20260508a">
 <!-- jsPDF for real PDF generation (no print dialog detour). CSP allows cdnjs. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 </head>
@@ -97,6 +97,11 @@
     <canvas id="waveform" class="waveform" width="800" height="60" aria-hidden="true"></canvas>
     <div id="transcript" class="transcript" aria-live="polite"></div>
     <textarea id="transcript-fallback" class="transcript-fallback hidden" placeholder="Tap here, then use the 🎙 on your keyboard to dictate — or just type." rows="4"></textarea>
+    <!-- Turnstile widget mount. Empty by default; voice.js inserts the
+         CF script + renders into here only when /api/config returns a
+         turnstileSiteKey (guests, env-var-gated). When unrendered, the
+         div takes no visual space. -->
+    <div id="turnstile-mount" class="turnstile-mount" aria-live="polite"></div>
     <div class="readout-foot">
       <span id="mic-status" class="mic-status"></span>
       <button id="submit-btn" type="button" class="tx-btn hidden">
@@ -216,6 +221,6 @@
   </footer>
 </section>
 
-<script src="/js/voice.js?v=20260426i"></script>
+<script src="/js/voice.js?v=20260508a"></script>
 </body>
 </html>

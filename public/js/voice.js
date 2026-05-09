@@ -91,20 +91,75 @@ const INDUSTRIES = [
   'custom',
 ];
 
-/* ───── Auth-aware save button label ───── */
+/* ───── Auth + config bootstrap ─────
+   Single network round trip on page load:
+     /api/auth/check  → IS_AUTHED, drives "Save" button label
+     /api/config      → turnstileSiteKey (only present for guests, gated on env)
+   If the site-key is set and we're a guest, lazily load the Cloudflare
+   Turnstile script and render the widget. The submit handler then requires
+   a token before posting /voice/analyze. */
 let IS_AUTHED = false;
+let TURNSTILE_WIDGET_ID = null; // null = inactive (env unset, or authed user)
+
 (async () => {
+  let authJson = null;
   try {
     const r = await fetch('/api/auth/check', { credentials: 'same-origin' });
     if (r.ok) {
-      const j = await r.json();
-      IS_AUTHED = !!(j?.userId || j?.userName);
+      authJson = await r.json();
+      IS_AUTHED = !!(authJson?.userId || authJson?.userName);
     }
   } catch {}
-  // Update save button label based on auth state
   const saveLabel = document.querySelector('#save-btn .dock-btn-label');
   if (saveLabel) saveLabel.textContent = IS_AUTHED ? 'Save quote' : 'Sign in to save';
+
+  if (IS_AUTHED) return; // authed users skip the human-check entirely
+
+  let cfg = null;
+  try {
+    const r = await fetch('/api/config', { credentials: 'same-origin' });
+    if (r.ok) cfg = await r.json();
+  } catch {}
+  const siteKey = cfg?.turnstileSiteKey;
+  if (!siteKey) return; // env unset → no-op, behave as before
+
+  // Inject the CF Turnstile bootstrap. Using the explicit-render onload
+  // callback gives us a deterministic moment to call turnstile.render and
+  // know the widget DOM is ready.
+  window._onTurnstileLoad = function () {
+    const mount = document.getElementById('turnstile-mount');
+    if (!mount || !window.turnstile) return;
+    try {
+      TURNSTILE_WIDGET_ID = window.turnstile.render(mount, {
+        sitekey: siteKey,
+        theme: 'auto',
+        size: 'flexible',
+        // Token expiration / refresh — keep it transparent to the user.
+        'refresh-expired': 'auto',
+      });
+    } catch (err) {
+      console.error('[Turnstile] render failed:', err);
+    }
+  };
+  const s = document.createElement('script');
+  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=_onTurnstileLoad&render=explicit';
+  s.async = true;
+  s.defer = true;
+  document.head.appendChild(s);
 })();
+
+/* Returns the current Turnstile token (or '' if widget inactive). Submission
+   logic uses '' as "Turnstile not in use". Server-side: when the env secret
+   is set, '' is rejected; when unset, anything is fine. */
+function getTurnstileToken() {
+  if (TURNSTILE_WIDGET_ID === null || !window.turnstile) return '';
+  try { return window.turnstile.getResponse(TURNSTILE_WIDGET_ID) || ''; }
+  catch { return ''; }
+}
+function resetTurnstile() {
+  if (TURNSTILE_WIDGET_ID === null || !window.turnstile) return;
+  try { window.turnstile.reset(TURNSTILE_WIDGET_ID); } catch {}
+}
 
 /* ═══════════════════════════════════════════════════════════
    SCREEN 1 — Mic capture
@@ -369,6 +424,19 @@ submitBtn.addEventListener('click', async () => {
   statusEl.classList.remove('error');
   statusEl.textContent = 'Building your quote — one moment…';
 
+  // Turnstile pre-check — if the widget is active and unsolved, refuse to
+  // submit so the user gets a clear local message rather than a server 403.
+  // No-op when TURNSTILE_WIDGET_ID is null (env unset or already authed).
+  const cf_turnstile = getTurnstileToken();
+  if (TURNSTILE_WIDGET_ID !== null && !cf_turnstile) {
+    statusEl.textContent = 'Please complete the human-check first.';
+    statusEl.classList.add('error');
+    submitBtn.disabled = false;
+    submitBtn.querySelector('span').textContent = 'Get my quote';
+    setStatus('idle');
+    return;
+  }
+
   try {
     const res = await fetch('/api/voice/analyze', {
       method: 'POST',
@@ -377,12 +445,23 @@ submitBtn.addEventListener('click', async () => {
       body: JSON.stringify({
         transcript,
         prior_context: window._voiceState?.prior_context || null,
+        cf_turnstile,
       }),
     });
     if (res.status === 403) {
       const err = await safeJson(res);
       if (err?.error === 'guest_limit_reached') {
         showGuestLimitReached(err);
+        submitBtn.disabled = false;
+        submitBtn.querySelector('span').textContent = 'Get my quote';
+        setStatus('idle');
+        return;
+      }
+      if (err?.error === 'turnstile_failed') {
+        // Token expired / invalid — reset the widget and let them retry.
+        resetTurnstile();
+        statusEl.textContent = err.message || 'Human-check failed. Try again.';
+        statusEl.classList.add('error');
         submitBtn.disabled = false;
         submitBtn.querySelector('span').textContent = 'Get my quote';
         setStatus('idle');
@@ -428,6 +507,9 @@ submitBtn.addEventListener('click', async () => {
     setStatus('received');
     renderResult(data);
     show('result');
+    // CF Turnstile tokens are single-use. Reset so the next "talk again"
+    // submission gets a fresh token without a page reload.
+    resetTurnstile();
   } catch (err) {
     statusEl.textContent = `Couldn't build the quote — ${err.message}`;
     statusEl.classList.add('error');

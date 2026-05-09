@@ -118,13 +118,18 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "api.mapbox.com", "cdnjs.cloudflare.com", "cdn.jsdelivr.net"],
+      // challenges.cloudflare.com hosts the Turnstile bootstrap script + iframe.
+      // Always whitelisted (not gated on env vars) so a future deploy with a
+      // site key set doesn't get a CSP-block surprise — leaving CF on the
+      // allowlist is a tiny extension of an already external-script-friendly
+      // policy (Mapbox, jsdelivr, cdnjs all here).
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "api.mapbox.com", "cdnjs.cloudflare.com", "cdn.jsdelivr.net", "challenges.cloudflare.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "api.mapbox.com", "fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:", "*.mapbox.com", "api.mapbox.com"],
       connectSrc: ["'self'", "api.mapbox.com", "events.mapbox.com", "*.tiles.mapbox.com", "*.supabase.co", "cdn.jsdelivr.net"],
       workerSrc: ["'self'", "blob:"],
       fontSrc: ["'self'", "fonts.gstatic.com", "fonts.googleapis.com"],
-      frameSrc: ["'none'"]
+      frameSrc: ["challenges.cloudflare.com"]
     }
   }
 }));
@@ -298,6 +303,44 @@ function checkVoiceDailyCap() {
 }
 function bumpVoiceDaily() {
   bumpVoiceQuota(todayUtcKey(), 48 * 60 * 60 * 1000);
+}
+
+// ── Cloudflare Turnstile (CAPTCHA) — gated on env vars
+//    Set TURNSTILE_SITE_KEY (public, ships to client via /api/config) and
+//    TURNSTILE_SECRET_KEY (server only) to enable a human-check on guest
+//    voice analyze. With both unset, this is a complete no-op and the flow
+//    behaves exactly as before — so deploying the integration is decoupled
+//    from registering a site at https://dash.cloudflare.com/?to=/:account/turnstile.
+//
+//    Why: the cookie+IP MAX layer of the voice defense is partly defeated
+//    by iOS Safari ITP (cookie drops) and CGNAT (shared IPs), so a real
+//    human-check is the proper backstop. We only require it for guests
+//    because authenticated users are bounded by the per-user cap above.
+const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET_KEY || '';
+const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+
+async function verifyTurnstile(token, ip) {
+  if (!TURNSTILE_SECRET) return { ok: true, skipped: true }; // disabled
+  if (!token) return { ok: false, error: 'turnstile_token_missing' };
+  try {
+    const params = new URLSearchParams({ secret: TURNSTILE_SECRET, response: token });
+    if (ip) params.set('remoteip', ip);
+    const r = await fetch(TURNSTILE_VERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    });
+    const data = await r.json().catch(() => ({}));
+    return data?.success
+      ? { ok: true }
+      : { ok: false, error: 'turnstile_invalid', codes: data?.['error-codes'] };
+  } catch (err) {
+    console.error('[Turnstile] verify failed:', err.message);
+    // Fail-closed: a network error talking to CF should not silently let
+    // guests through. If CF is genuinely down, the user can sign up to
+    // bypass the guest gate, or wait it out.
+    return { ok: false, error: 'turnstile_unreachable' };
+  }
 }
 
 // ── Per-authenticated-user daily voice cap
@@ -581,12 +624,40 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
     }
 
     const userName = userData.user_metadata?.full_name || name || userEmail;
+    const emailLc  = userEmail.toLowerCase();
 
-    // Use email as user_id for Google users (prefix with 'g:' to distinguish from password users)
-    const userId = 'g:' + userEmail;
+    // ── Auth source canonicalization
+    //
+    // Without this, a user who first signed up with email/password and later
+    // signed in with Google saw an empty quote list — the DB-user account
+    // owns rows under user_id = <email>, while Google login was minting a
+    // separate user_id = "g:<email>". Now Google login looks up matching
+    // accounts and reuses the existing user_id, so the user stays bound to
+    // the same data regardless of which method they used today.
+    //
+    // Resolution priority (most authoritative first):
+    //   1. DB user with matching email   → user_id = email (unchanged from signup path)
+    //   2. QMACH_USERS entry with id     → user_id = that id (rare; usually bare strings)
+    //   3. New Google user               → user_id = g:<email> (legacy default)
+    let userId;
+    let source;
+    const dbUser = getUserByEmailStmt.get(emailLc);
+    if (dbUser) {
+      userId = dbUser.id;
+      source = 'db_user_link';
+    } else {
+      const envUser = USERS.find(u => (u.id || '').toLowerCase() === emailLc);
+      if (envUser) {
+        userId = envUser.id;
+        source = 'env_user_link';
+      } else {
+        userId = 'g:' + emailLc;
+        source = 'google_new';
+      }
+    }
 
     const token = createSession(userId, userName);
-    console.log(`[Auth] Google login: ${userName} (${userEmail}), sessions active: ${sessionCount()}`);
+    console.log(`[Auth] Google login: ${userName} (${emailLc}) → ${userId} [${source}], sessions active: ${sessionCount()}`);
     res.json({ success: true, token, userId, userName });
   } catch (err) {
     console.error('[Auth] Google auth error:', err.message);
@@ -1035,10 +1106,28 @@ app.post('/api/voice/analyze', async (req, res) => {
       });
     }
 
+    // ── Cloudflare Turnstile (guests only; no-op if secret unset)
+    //    Verifying first means a failing token short-circuits before we
+    //    burn a guest-quota slot or hit the daily counter — a bot can't
+    //    grief other guests by exhausting layers it can't pass anyway.
+    const isGuest = !req.userId;
+    if (isGuest && TURNSTILE_SECRET) {
+      const tsToken = req.body?.cf_turnstile || req.headers['cf-turnstile-response'];
+      const ts = await verifyTurnstile(tsToken, req.ip);
+      if (!ts.ok) {
+        return res.status(403).json({
+          error: 'turnstile_failed',
+          message: ts.error === 'turnstile_token_missing'
+            ? 'Please complete the human-check before submitting.'
+            : 'Human-check failed. Refresh the page and try again.',
+          detail: ts.error,
+        });
+      }
+    }
+
     // ── Guest quota — anonymous users get GUEST_VOICE_LIMIT analyses per
     // (cookie ⨉ IP) per 24h. We take the MAX of the two counters so to
     // bypass the limit a guest must rotate BOTH browser/cookies AND IP.
-    const isGuest = !req.userId;
     let guestId = null;
     if (isGuest) {
       guestId = ensureGuestCookie(req, res);
@@ -1280,11 +1369,43 @@ ${context ? `Current quote context: ${JSON.stringify(context)}` : ''}`;
 });
 
 // ── Config endpoint (send Mapbox token to frontend)
+// Helper: is this request actually from one of our own pages? Used to deny
+// anonymous scraping of /api/config — the response includes the Mapbox
+// public token, which is fine to expose to OUR users but we'd rather not
+// hand it out to a curl loop pulling tokens for free Mapbox usage.
+//
+// Rule: if Origin is set, it must be in CORS_ORIGINS. Else if Referer is
+// set, its hostname must match one of CORS_ORIGINS. If neither header is
+// set, allow — covers legitimate same-origin server-side fetches and avoids
+// breaking unusual but benign clients. The check is pragmatic, not airtight:
+// any browser request will set one of these; a determined scraper can spoof
+// them. Mapbox URL-allowlist on the token itself is the proper backstop.
+function isSameOriginRequest(req) {
+  const origin = req.headers.origin;
+  if (origin) {
+    return CORS_ORIGINS.includes(origin) || CORS_ORIGINS.includes('*');
+  }
+  const referer = req.headers.referer;
+  if (referer) {
+    try {
+      const refOrigin = new URL(referer).origin;
+      return CORS_ORIGINS.includes(refOrigin) || CORS_ORIGINS.includes('*');
+    } catch { return false; }
+  }
+  return true;
+}
+
 app.get('/api/config', (req, res) => {
+  if (!isSameOriginRequest(req)) {
+    return res.status(403).json({ error: 'Not allowed' });
+  }
   res.json({
     mapboxToken: process.env.MAPBOX_TOKEN || '',
     version: '2.0.0',
     pzipEnabled: !!(process.env.PZIP_WEBHOOK_URL && process.env.PZIP_API_KEY),
+    // Frontend uses this to decide whether to render the Turnstile widget.
+    // The actual secret stays on the server; only the public site-key ships.
+    turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '',
   });
 });
 
