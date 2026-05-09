@@ -240,9 +240,10 @@ async function doLogout() {
   authToken = '';
   currentUserId = '';
   chatHistory = [];
-  el('app-shell').classList.add('hidden');
-  showLogin();
-  toast('Signed out');
+  // Send the user to the home page (landing) on sign-out instead of the
+  // in-app login form. Cleaner mental model: signing out = leaving the app.
+  // The landing page has a "Sign in" link if they want to come back.
+  window.location.href = '/';
 }
 
 // ═══════════════════════════════════════
