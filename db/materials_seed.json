@@ -1,0 +1,172 @@
+{
+  "_comment": "Industry-specific application rates and material economics. Loaded by db/database.js seedMaterialsKB() at boot — UPSERT semantics so editing this file + redeploying refreshes the rows. Numbers are typical US industry ranges sourced from public manufacturer datasheets and trade-association rules of thumb. Region defaults to 'US'; per-region rows can be added with a region key. Keep keys stable — the AI prompts reference them by name.",
+
+  "rows": [
+    {
+      "industry": "pressure-washing",
+      "key": "rate_house_exterior_sqft",
+      "label": "Pressure-washing exterior siding (residential, single story)",
+      "value_low": 0.08, "value_mid": 0.18, "value_high": 0.35,
+      "unit": "$/sqft",
+      "source": "Trade range: low for vinyl simple jobs, high for tall multi-story or heavy mildew"
+    },
+    {
+      "industry": "pressure-washing",
+      "key": "rate_concrete_flatwork_sqft",
+      "label": "Concrete flatwork (driveway, patio, pad)",
+      "value_low": 0.10, "value_mid": 0.20, "value_high": 0.35,
+      "unit": "$/sqft",
+      "source": "Higher end for oil/grease lots; commercial parking pads typically $0.10-$0.18"
+    },
+    {
+      "industry": "pressure-washing",
+      "key": "min_call_out",
+      "label": "Minimum call-out / mobilization fee",
+      "value_low": 150, "value_mid": 250, "value_high": 400,
+      "unit": "$ flat",
+      "source": "Most operators won't roll a truck for less than $150-$250"
+    },
+
+    {
+      "industry": "sealcoating",
+      "key": "rate_sqft",
+      "label": "Asphalt sealcoat (refresh)",
+      "value_low": 0.10, "value_mid": 0.18, "value_high": 0.30,
+      "unit": "$/sqft",
+      "source": "PaveScape/SealMaster typical commercial rates; lower end requires economies of scale"
+    },
+    {
+      "industry": "sealcoating",
+      "key": "coverage_per_gal",
+      "label": "Coalcoat/sealer coverage per gallon (single coat, prepped surface)",
+      "value_low": 60, "value_mid": 80, "value_high": 100,
+      "unit": "sqft/gal",
+      "source": "Manufacturer-published; older oxidized lots fall to 50-60"
+    },
+    {
+      "industry": "sealcoating",
+      "key": "crack_fill_linft",
+      "label": "Crack-fill (hot rubberized)",
+      "value_low": 0.50, "value_mid": 1.25, "value_high": 2.50,
+      "unit": "$/linft",
+      "source": "Larger cracks (>1\") and routing pushes toward the high end"
+    },
+
+    {
+      "industry": "parking-lot-striping",
+      "key": "stall_restripe",
+      "label": "Re-stripe per parking stall (single 9'x18' stall, single line)",
+      "value_low": 3, "value_mid": 5, "value_high": 8,
+      "unit": "$/stall",
+      "source": "Simple re-stripe; double-line and ADA stalls cost more"
+    },
+    {
+      "industry": "parking-lot-striping",
+      "key": "stall_new_layout",
+      "label": "New layout per stall (measure, layout, paint)",
+      "value_low": 6, "value_mid": 10, "value_high": 18,
+      "unit": "$/stall",
+      "source": "New layout is 1.5-2.5x re-stripe; includes engineering/layout time"
+    },
+    {
+      "industry": "parking-lot-striping",
+      "key": "ada_stall_premium",
+      "label": "ADA / handicap stall premium (vs. standard restripe)",
+      "value_low": 25, "value_mid": 40, "value_high": 75,
+      "unit": "$ extra/stall",
+      "source": "Includes blue paint, hatched access aisle, sign post stencil"
+    },
+    {
+      "industry": "parking-lot-striping",
+      "key": "linft_line",
+      "label": "Linear footage rate (when bid by lin-ft instead of stalls)",
+      "value_low": 0.15, "value_mid": 0.30, "value_high": 0.50,
+      "unit": "$/linft",
+      "source": "Used for curb paint, fire lanes, traffic arrows — all linear elements"
+    },
+
+    {
+      "industry": "painting",
+      "key": "exterior_sqft",
+      "label": "Exterior wall painting (2 coats, prep included)",
+      "value_low": 1.50, "value_mid": 2.75, "value_high": 4.00,
+      "unit": "$/sqft",
+      "source": "Stucco/wood/cedar pushes high; vinyl and EIFS lower"
+    },
+    {
+      "industry": "painting",
+      "key": "interior_sqft_floor",
+      "label": "Interior painting (typical, by floor area)",
+      "value_low": 1.00, "value_mid": 2.00, "value_high": 3.50,
+      "unit": "$/sqft floor",
+      "source": "Per floor area. Walls + ceiling. Vaulted/textured ceilings push high"
+    },
+    {
+      "industry": "painting",
+      "key": "paint_coverage_per_gal",
+      "label": "Paint coverage per gallon (latex, single coat, smooth surface)",
+      "value_low": 250, "value_mid": 350, "value_high": 400,
+      "unit": "sqft/gal",
+      "source": "Manufacturer specs (Sherwin-Williams, Behr Premium); rough/textured drops to 150-200"
+    },
+
+    {
+      "industry": "roofing",
+      "key": "asphalt_per_square",
+      "label": "Asphalt shingle reroof, complete (per square = 100 sqft)",
+      "value_low": 350, "value_mid": 550, "value_high": 800,
+      "unit": "$/square",
+      "source": "Includes tear-off + underlayment + shingles + flashing. Steep pitch >8/12 adds 15-25%"
+    },
+    {
+      "industry": "roofing",
+      "key": "tear_off_per_square",
+      "label": "Tear-off only (single layer)",
+      "value_low": 75, "value_mid": 110, "value_high": 175,
+      "unit": "$/square",
+      "source": "Multi-layer tear-off adds $50-$80/square per additional layer"
+    },
+    {
+      "industry": "roofing",
+      "key": "flat_roof_recoat_sqft",
+      "label": "Flat / low-slope recoat (silicone or acrylic)",
+      "value_low": 1.50, "value_mid": 3.00, "value_high": 5.50,
+      "unit": "$/sqft",
+      "source": "Silicone runs higher than acrylic; existing TPO/EPDM affects prep cost"
+    },
+
+    {
+      "industry": "concrete",
+      "key": "flatwork_pour_sqft",
+      "label": "New concrete flatwork (4\" thick, sub-base prep, finish)",
+      "value_low": 4.00, "value_mid": 8.00, "value_high": 14.00,
+      "unit": "$/sqft",
+      "source": "Stamped/colored pushes to $14-$20; commercial broom finish on grade is low end"
+    },
+    {
+      "industry": "concrete",
+      "key": "demo_sqft",
+      "label": "Concrete demo + haul-off",
+      "value_low": 2.00, "value_mid": 4.50, "value_high": 8.00,
+      "unit": "$/sqft",
+      "source": "Reinforced or thick (>6\") slabs push high; access difficulty matters"
+    },
+
+    {
+      "industry": "landscaping",
+      "key": "sod_install_sqft",
+      "label": "Sod install (St. Augustine / Bermuda, prepped subgrade)",
+      "value_low": 1.50, "value_mid": 2.75, "value_high": 5.00,
+      "unit": "$/sqft",
+      "source": "Higher for premium grasses (zoysia) and challenging access"
+    },
+    {
+      "industry": "landscaping",
+      "key": "mulch_per_yard",
+      "label": "Hardwood mulch installed (3\" depth)",
+      "value_low": 60, "value_mid": 90, "value_high": 140,
+      "unit": "$/cubic yard",
+      "source": "Color-enhanced and rubber mulch run higher"
+    }
+  ]
+}

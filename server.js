@@ -9,7 +9,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const db = require('./db/database');
-const { getRecentQuotesForIndustry } = require('./db/kb');
+const { getRecentQuotesForIndustry, getPricingCalibration, getMaterialsForIndustry } = require('./db/kb');
 const backup = require('./db/backup');
 
 const app = express();
@@ -430,6 +430,14 @@ try {
     db.exec('ALTER TABLE quotes ADD COLUMN inferred_industry TEXT');
     console.log('[DB] Added inferred_industry column');
   }
+  // Soft-delete: deleted_at is NULL for live quotes, ms-epoch when trashed.
+  // Default-list queries filter on deleted_at IS NULL; a /trash list shows
+  // the others. Restore = set deleted_at back to NULL.
+  if (!cols.includes('deleted_at')) {
+    db.exec('ALTER TABLE quotes ADD COLUMN deleted_at INTEGER');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_quotes_deleted_at ON quotes(deleted_at)');
+    console.log('[DB] Added deleted_at column for soft-delete');
+  }
 } catch (err) {
   console.error('[DB] Migration error:', err.message);
 }
@@ -783,23 +791,29 @@ app.get('/api/quotes', (req, res) => {
   try {
     const { search, limit = 50, offset = 0 } = req.query;
     const userId = req.userId;
+    // Soft-delete filter — caller passes ?include_trash=1 to see trashed
+    // quotes, ?trash_only=1 to see ONLY trashed (a /trash listing). Default
+    // (neither flag) hides trashed quotes from every consumer.
+    const trashOnly    = req.query.trash_only === '1';
+    const includeTrash = req.query.include_trash === '1' || trashOnly;
+    const trashClause  = trashOnly ? 'deleted_at IS NOT NULL'
+                       : (includeTrash ? '1=1' : 'deleted_at IS NULL');
     let quotes;
-    // Project only what the list + export consumers use. Drops polygon_geojson
-    // and ai_narrative (the two heaviest blobs) — loadQuote uses /api/quotes/:id
-    // for the full row.
-    const LIST_COLS = 'id, client_name, project_type, total, created_at, address, line_items';
+    const LIST_COLS = 'id, client_name, project_type, total, created_at, address, line_items, deleted_at';
     if (search) {
       quotes = db.prepare(`
         SELECT ${LIST_COLS} FROM quotes
-        WHERE user_id = ? AND (client_name LIKE ? OR project_type LIKE ? OR address LIKE ? OR notes LIKE ?)
+        WHERE user_id = ? AND ${trashClause}
+          AND (client_name LIKE ? OR project_type LIKE ? OR address LIKE ? OR notes LIKE ?)
         ORDER BY created_at DESC LIMIT ? OFFSET ?
       `).all(userId, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, parseInt(limit), parseInt(offset));
     } else {
       quotes = db.prepare(`
-        SELECT ${LIST_COLS} FROM quotes WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
+        SELECT ${LIST_COLS} FROM quotes WHERE user_id = ? AND ${trashClause}
+        ORDER BY created_at DESC LIMIT ? OFFSET ?
       `).all(userId, parseInt(limit), parseInt(offset));
     }
-    const total = db.prepare('SELECT COUNT(*) as count FROM quotes WHERE user_id = ?').get(userId);
+    const total = db.prepare(`SELECT COUNT(*) as count FROM quotes WHERE user_id = ? AND ${trashClause}`).get(userId);
     res.json({ quotes, total: total.count });
   } catch (err) {
     console.error('GET /api/quotes error:', err);
@@ -890,14 +904,33 @@ app.put('/api/quotes/:id', (req, res) => {
   }
 });
 
-// DELETE quote — must belong to user
+// DELETE quote — soft delete (sets deleted_at). Use ?purge=1 to hard-delete.
+// Soft delete is the default so users can recover from accidental taps via
+// POST /api/quotes/:id/restore. Hard delete is for admin / cleanup workflows.
 app.delete('/api/quotes/:id', (req, res) => {
   try {
-    const result = db.prepare('DELETE FROM quotes WHERE id = ? AND user_id = ?').run(req.params.id, req.userId);
+    const purge = req.query.purge === '1';
+    const result = purge
+      ? db.prepare('DELETE FROM quotes WHERE id = ? AND user_id = ?').run(req.params.id, req.userId)
+      : db.prepare('UPDATE quotes SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL')
+          .run(Date.now(), req.params.id, req.userId);
     if (result.changes === 0) return res.status(404).json({ error: 'Quote not found' });
+    res.json({ success: true, soft: !purge });
+  } catch (err) {
+    console.error('DELETE /api/quotes/:id error:', err);
+    res.status(500).json({ error: 'Failed to delete quote' });
+  }
+});
+
+// Restore a soft-deleted quote.
+app.post('/api/quotes/:id/restore', (req, res) => {
+  try {
+    const r = db.prepare('UPDATE quotes SET deleted_at = NULL WHERE id = ? AND user_id = ?')
+      .run(req.params.id, req.userId);
+    if (r.changes === 0) return res.status(404).json({ error: 'Quote not found' });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to delete quote' });
+    res.status(500).json({ error: 'Failed to restore quote' });
   }
 });
 
@@ -906,10 +939,10 @@ app.get('/api/stats', (req, res) => {
   try {
     const userId = req.userId;
     const stats = {
-      total_quotes: db.prepare('SELECT COUNT(*) as c FROM quotes WHERE user_id = ?').get(userId).c,
-      total_value: db.prepare('SELECT SUM(total) as s FROM quotes WHERE user_id = ?').get(userId).s || 0,
-      avg_quote: db.prepare('SELECT AVG(total) as a FROM quotes WHERE user_id = ?').get(userId).a || 0,
-      this_month: db.prepare(`SELECT COUNT(*) as c FROM quotes WHERE user_id = ? AND created_at >= date('now','start of month')`).get(userId).c,
+      total_quotes: db.prepare('SELECT COUNT(*) as c FROM quotes WHERE user_id = ? AND deleted_at IS NULL').get(userId).c,
+      total_value: db.prepare('SELECT SUM(total) as s FROM quotes WHERE user_id = ? AND deleted_at IS NULL').get(userId).s || 0,
+      avg_quote: db.prepare('SELECT AVG(total) as a FROM quotes WHERE user_id = ? AND deleted_at IS NULL').get(userId).a || 0,
+      this_month: db.prepare(`SELECT COUNT(*) as c FROM quotes WHERE user_id = ? AND deleted_at IS NULL AND created_at >= date('now','start of month')`).get(userId).c,
       // Revenue by type attributes each service to its actual project_type
       // (multi-service quotes used to dump everything onto items[0]'s type).
       // Legacy quotes without line_items fall back to the top-level columns.
@@ -920,6 +953,7 @@ app.get('/api/stats', (req, res) => {
             CAST(COALESCE(json_extract(li.value, '$.subtotal'), 0) AS REAL) AS revenue
           FROM quotes q, json_each(q.line_items) li
           WHERE q.user_id = ?
+            AND q.deleted_at IS NULL
             AND q.line_items IS NOT NULL
             AND q.line_items != ''
             AND q.line_items != '[]'
@@ -927,6 +961,7 @@ app.get('/api/stats', (req, res) => {
           SELECT project_type, total AS revenue
           FROM quotes
           WHERE user_id = ?
+            AND deleted_at IS NULL
             AND (line_items IS NULL OR line_items = '' OR line_items = '[]')
         )
         SELECT project_type, COUNT(*) AS count, SUM(revenue) AS revenue
@@ -1077,7 +1112,14 @@ app.delete('/api/admin/sessions/:token', adminGate, (req, res) => {
 //  AI ROUTES (Claude)
 // ══════════════════════════════════════════
 
-// AI: Suggest pricing based on project type + area
+// AI: Suggest pricing based on project type + area.
+// Now feeds the prompt with two grounding inputs so the suggestion isn't
+// generic vibes:
+//   1. materials_kb rows for the industry — typical application rates,
+//      coverage per gallon, per-square shingle costs, etc.
+//   2. The user's own pricing calibration if they have prior quotes —
+//      avg/min/max per-unit they've actually charged. Strongly anchors
+//      "recommended" toward what THIS user typically charges.
 app.post('/api/ai/suggest-price', async (req, res) => {
   try {
     const { project_type, area, unit, location } = req.body;
@@ -1085,11 +1127,16 @@ app.post('/api/ai/suggest-price', async (req, res) => {
       return res.status(400).json({ error: 'project_type, area, and unit required' });
     }
 
+    const calibration = getPricingCalibration(req.userId, project_type);
+    const materials   = getMaterialsForIndustry(project_type);
+
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-7',
       max_tokens: 512,
-      system: `You are a pricing expert for trades and contracting businesses. 
-You provide realistic market-rate pricing guidance for jobs. 
+      system: `You are a pricing expert for trades and contracting businesses.
+You provide realistic market-rate pricing guidance for jobs.
+When the user has past quotes, ANCHOR your "recommended" price to their actual pricing patterns rather than generic market ranges.
+When materials_kb context is provided, use those rates as ground truth instead of guessing application/coverage rates.
 Always respond with a JSON object only — no markdown, no explanation.`,
       messages: [{
         role: 'user',
@@ -1097,6 +1144,12 @@ Always respond with a JSON object only — no markdown, no explanation.`,
 Project type: ${project_type}
 Area/measurement: ${area} ${unit}
 Location hint: ${location || 'DFW Texas area'}
+
+User's pricing calibration (their actual past pricing — anchor to this when set):
+${JSON.stringify(calibration)}
+
+Materials / application-rate reference (industry-typical numbers — use as ground truth):
+${JSON.stringify(materials)}
 
 Respond ONLY with this JSON structure:
 {
@@ -1107,7 +1160,7 @@ Respond ONLY with this JSON structure:
   "mid_total": 0.00,
   "high_total": 0.00,
   "recommended_per_unit": 0.00,
-  "reasoning": "brief 1-2 sentence explanation",
+  "reasoning": "brief 1-2 sentence explanation. Mention if anchored to user's past pricing.",
   "factors": ["factor1", "factor2", "factor3"]
 }`
       }]
@@ -1354,15 +1407,19 @@ app.post('/api/voice/price', async (req, res) => {
       }
     }
 
-    const examples = getRecentQuotesForIndustry(req.userId, industry, 5);
+    const examples    = getRecentQuotesForIndustry(req.userId, industry, 5);
+    const calibration = getPricingCalibration(req.userId, industry);
+    const materials   = getMaterialsForIndustry(industry);
 
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-7',
       max_tokens: 400,
       system: `You are Q, a pricing assistant for trades on pquote.
-Suggest a fair ballpark price for the job. When the user has past similar quotes,
-calibrate to their actual pricing patterns. Otherwise use realistic market rates
-(default location: DFW Texas area).
+Suggest a fair ballpark price for the job.
+Priority order for grounding the price:
+  1. The user's pricing calibration (if present) — anchor to their avg per-unit.
+  2. Materials_kb application/coverage rates — use as ground truth, never invent.
+  3. DFW Texas area market range otherwise.
 Always respond with a JSON object only — no markdown, no commentary.`,
       messages: [{
         role: 'user',
@@ -1370,8 +1427,14 @@ Always respond with a JSON object only — no markdown, no commentary.`,
 Parsed job: ${JSON.stringify(parsed_job)}
 Selected add-ons: ${JSON.stringify(addons || [])}
 
-User's recent similar jobs (calibration signal — their actual prices):
+User's recent similar jobs (calibration examples):
 ${JSON.stringify(examples, null, 2)}
+
+User's pricing calibration summary (anchor your "suggested_price" to avg_per_unit when set):
+${JSON.stringify(calibration)}
+
+Materials / application-rate reference (industry-typical, use as ground truth):
+${JSON.stringify(materials)}
 
 Return ONLY this JSON:
 {

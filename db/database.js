@@ -86,6 +86,31 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_voice_quota_first_at ON voice_quota(first_at);
 
+  -- Reusable materials / application-rate knowledge base (seeded from
+  -- a JSON file at boot — see seedMaterialsKB in server.js). Used by
+  -- the AI prompts on /voice/analyze, /voice/price, and /api/ai/suggest-price
+  -- so suggested pricing reflects real material economics rather than
+  -- generic "what does Q know from training data" guesses.
+  --
+  -- key       — short stable identifier ("paint_coverage_sqft_per_gal")
+  -- low/mid/high — tier values (typical industry range)
+  -- unit      — what the value is denominated in
+  -- region    — 'US' for now; reserved for "DFW", "Northeast", etc.
+  CREATE TABLE IF NOT EXISTS materials_kb (
+    id         TEXT PRIMARY KEY,
+    industry   TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    value_low  REAL,
+    value_mid  REAL,
+    value_high REAL,
+    unit       TEXT,
+    region     TEXT NOT NULL DEFAULT 'US',
+    source     TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_materials_kb_industry ON materials_kb(industry, region);
+
   -- Soft (email-only) signups. The conversion funnel has three tiers:
   --   anon       → 1 voice quote, range-only pricing, no PDF
   --   email_only → unlimited (per per-user cap) quotes, range-only pricing, watermarked PDF
@@ -100,5 +125,53 @@ db.exec(`
 `);
 
 console.log(`SQLite database initialized at: ${DB_PATH}`);
+
+// ── Seed materials_kb from db/materials_seed.json on every boot. UPSERT
+// semantics so editing the JSON + redeploying refreshes the rows
+// (deterministic id from industry+key). Safe to run on startup; the
+// table is small (<200 rows expected).
+try {
+  const seedPath = path.join(__dirname, 'materials_seed.json');
+  if (fs.existsSync(seedPath)) {
+    const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+    const upsert = db.prepare(`
+      INSERT INTO materials_kb (id, industry, key, label, value_low, value_mid, value_high, unit, region, source, created_at)
+      VALUES (@id, @industry, @key, @label, @value_low, @value_mid, @value_high, @unit, @region, @source, @created_at)
+      ON CONFLICT(id) DO UPDATE SET
+        label      = excluded.label,
+        value_low  = excluded.value_low,
+        value_mid  = excluded.value_mid,
+        value_high = excluded.value_high,
+        unit       = excluded.unit,
+        region     = excluded.region,
+        source     = excluded.source
+    `);
+    const now = Date.now();
+    let n = 0;
+    db.transaction(() => {
+      for (const r of seed.rows || []) {
+        if (!r.industry || !r.key) continue;
+        const region = r.region || 'US';
+        upsert.run({
+          id: `${r.industry}:${r.key}:${region}`,
+          industry: r.industry,
+          key: r.key,
+          label: r.label || r.key,
+          value_low:  r.value_low  ?? null,
+          value_mid:  r.value_mid  ?? null,
+          value_high: r.value_high ?? null,
+          unit: r.unit || '',
+          region,
+          source: r.source || '',
+          created_at: now,
+        });
+        n++;
+      }
+    })();
+    console.log(`[KB] materials_kb seeded (${n} rows)`);
+  }
+} catch (err) {
+  console.error('[KB] materials_kb seed failed:', err.message);
+}
 
 module.exports = db;
