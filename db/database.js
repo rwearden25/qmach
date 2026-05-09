@@ -85,6 +85,18 @@ db.exec(`
     last_at  INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_voice_quota_first_at ON voice_quota(first_at);
+
+  -- Soft (email-only) signups. The conversion funnel has three tiers:
+  --   anon       → 1 voice quote, range-only pricing, no PDF
+  --   email_only → unlimited (per per-user cap) quotes, range-only pricing, watermarked PDF
+  --   full       → email + password (or Google), precise pricing, clean PDF
+  -- This table just tracks the marketing list. Sessions for these users
+  -- are minted with user_id = 'e:<email>' (mirrors the 'g:' Google convention).
+  CREATE TABLE IF NOT EXISTS email_only_signups (
+    email      TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL,
+    last_seen  INTEGER NOT NULL
+  );
 `);
 
 console.log(`SQLite database initialized at: ${DB_PATH}`);

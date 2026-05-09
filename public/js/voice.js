@@ -93,12 +93,13 @@ const INDUSTRIES = [
 
 /* ───── Auth + config bootstrap ─────
    Single network round trip on page load:
-     /api/auth/check  → IS_AUTHED, drives "Save" button label
+     /api/auth/check  → IS_AUTHED, USER_TIER, drives "Save" button label
      /api/config      → turnstileSiteKey (only present for guests, gated on env)
    If the site-key is set and we're a guest, lazily load the Cloudflare
    Turnstile script and render the widget. The submit handler then requires
    a token before posting /voice/analyze. */
 let IS_AUTHED = false;
+let USER_TIER = 'anon'; // 'anon' | 'email_only' | 'full' — drives price blur, PDF watermark, save gating
 let TURNSTILE_WIDGET_ID = null; // null = inactive (env unset, or authed user)
 
 (async () => {
@@ -108,12 +109,12 @@ let TURNSTILE_WIDGET_ID = null; // null = inactive (env unset, or authed user)
     if (r.ok) {
       authJson = await r.json();
       IS_AUTHED = !!(authJson?.userId || authJson?.userName);
+      USER_TIER = authJson?.tier || (IS_AUTHED ? 'full' : 'anon');
     }
   } catch {}
-  const saveLabel = document.querySelector('#save-btn .dock-btn-label');
-  if (saveLabel) saveLabel.textContent = IS_AUTHED ? 'Save quote' : 'Sign in to save';
+  updateSaveButtonLabel();
 
-  if (IS_AUTHED) return; // authed users skip the human-check entirely
+  if (USER_TIER === 'full') return; // full-tier users skip the human-check entirely
 
   let cfg = null;
   try {
@@ -147,6 +148,16 @@ let TURNSTILE_WIDGET_ID = null; // null = inactive (env unset, or authed user)
   s.defer = true;
   document.head.appendChild(s);
 })();
+
+/* Update the bottom-dock Save button label based on current tier. Called
+   on init and after email-only signup so the UI reflects the new state. */
+function updateSaveButtonLabel() {
+  const saveLabel = document.querySelector('#save-btn .dock-btn-label');
+  if (!saveLabel) return;
+  if (USER_TIER === 'full')        saveLabel.textContent = 'Save quote';
+  else if (USER_TIER === 'email_only') saveLabel.textContent = 'Sign up to save';
+  else                              saveLabel.textContent = 'Sign in to save';
+}
 
 /* Returns the current Turnstile token (or '' if widget inactive). Submission
    logic uses '' as "Turnstile not in use". Server-side: when the env secret
@@ -570,51 +581,106 @@ function showUserLimitReached(payload) {
   document.querySelector('.readout')?.classList.add('hidden');
 }
 
-/* ───── Guest-limit reached: full-bleed sign-up nudge ───── */
+/* ───── Guest-limit reached: tier-up wall with two clear paths ─────
+   Anon users see two options side-by-side:
+     1. Drop an email (soft signup) — unlocks more range-only quotes + watermarked PDF
+     2. Full sign-up — unlocks precise pricing + clean PDF + saved history
+   Each option lists exactly what unlocks — the user understands the trade-off
+   before they commit to anything. ───── */
 function showGuestLimitReached(payload) {
-  // Replace Screen 1's prompt area with a clear next-step CTA
   const promptWrap = document.querySelector('.prompt-wrap');
   if (!promptWrap) {
-    alert(payload?.message || 'Free quote limit reached. Sign up to keep going.');
+    alert(payload?.message || 'Free quote used. Drop an email or sign up to keep going.');
     return;
   }
+  const unlocks = payload?.unlocks || {
+    email_only: ['More voice quotes', 'PDF download (watermarked)'],
+    full:       ['Precise prices', 'Clean PDF', 'Saved quote history'],
+  };
+  const liEmail = unlocks.email_only.map(s => `<li>${escapeHtml(s)}</li>`).join('');
+  const liFull  = unlocks.full.map(s => `<li>${escapeHtml(s)}</li>`).join('');
   promptWrap.innerHTML = `
-    <p class="prompt-eyebrow">Free quotes used</p>
-    <h1 class="prompt-line">You're <em>done</em> for today.</h1>
-    <p class="prompt-help">${escapeHtml(payload?.message || 'Sign up for pquote to keep quoting — first account is free.')}</p>
-    <div class="examples" style="border-left-color: var(--amber)">
-      <div class="examples-label">Free with an account</div>
-      <ul class="examples-list">
-        <li>Unlimited voice quotes</li>
-        <li>Save and resend any quote</li>
-        <li>Q learns your pricing over time</li>
-      </ul>
-      <div style="margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap;">
-        <a href="/app" style="
-          flex: 1; min-width: 140px;
-          display: inline-flex; align-items: center; justify-content: center;
-          padding: 14px 18px;
-          font-family: var(--sans); font-size: 14px; font-weight: 700;
-          letter-spacing: .02em;
-          background: linear-gradient(180deg, var(--amber-soft), var(--amber));
-          color: #FFFFFF; border: 1px solid var(--amber);
-          border-radius: var(--rad-md); text-decoration: none;
-          box-shadow: var(--shadow-amber);
-        ">Sign up — free</a>
-        <a href="/app" style="
-          flex: 1; min-width: 140px;
-          display: inline-flex; align-items: center; justify-content: center;
-          padding: 14px 18px;
-          font-family: var(--sans); font-size: 14px; font-weight: 700;
-          background: transparent; color: var(--amber); border: 1px solid var(--amber);
-          border-radius: var(--rad-md); text-decoration: none;
-        ">Sign in</a>
+    <p class="prompt-eyebrow">That's your free quote</p>
+    <h1 class="prompt-line">Want <em>more</em>?</h1>
+    <p class="prompt-help">${escapeHtml(payload?.message || "Pick a path. Email gets you more quotes; signing up gets you the real deal.")}</p>
+
+    <div class="tier-grid">
+      <div class="tier-card tier-card--email">
+        <div class="tier-card-eyebrow">Just give us an email</div>
+        <div class="tier-card-title">Keep quoting (free)</div>
+        <ul class="tier-card-list">${liEmail}</ul>
+        <ul class="tier-card-list tier-card-list--muted">
+          <li class="tier-x">Range-only pricing — no exact number</li>
+          <li class="tier-x">PDF has a "free preview" watermark</li>
+        </ul>
+        <form class="tier-form" id="email-only-form" autocomplete="on">
+          <input type="email" id="email-only-input" required
+                 placeholder="you@company.com"
+                 autocomplete="email" inputmode="email"
+                 class="tier-form-input" />
+          <button type="submit" class="tier-form-btn" id="email-only-submit">Unlock more →</button>
+        </form>
+        <div class="tier-form-msg" id="email-only-msg"></div>
+      </div>
+
+      <div class="tier-card tier-card--full">
+        <div class="tier-card-eyebrow">Or sign up properly</div>
+        <div class="tier-card-title">Full pquote — $9.99/mo</div>
+        <ul class="tier-card-list">${liFull}</ul>
+        <ul class="tier-card-list tier-card-list--muted">
+          <li class="tier-check">7-day free trial · no card</li>
+        </ul>
+        <a href="/app" class="tier-form-btn tier-form-btn--primary">Start free trial →</a>
+        <a href="/app" class="tier-link">Already have an account? Sign in</a>
       </div>
     </div>
   `;
-  // Hide the mic stage and the readout — they're not actionable now
   document.querySelector('.mic-stage')?.classList.add('hidden');
   document.querySelector('.readout')?.classList.add('hidden');
+  wireEmailOnlyForm();
+}
+
+/* Wires the email-only soft-signup form. On success: stash session token,
+   update USER_TIER, and reload the page so the user lands back on a fresh
+   mic screen with their new tier-applied UI. */
+function wireEmailOnlyForm() {
+  const form   = document.getElementById('email-only-form');
+  const input  = document.getElementById('email-only-input');
+  const btn    = document.getElementById('email-only-submit');
+  const msgEl  = document.getElementById('email-only-msg');
+  if (!form) return;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = (input.value || '').trim().toLowerCase();
+    if (!email) return;
+    btn.disabled = true;
+    btn.textContent = 'Unlocking…';
+    msgEl.textContent = '';
+    try {
+      const r = await fetch('/api/auth/email-only', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ email }),
+      });
+      const j = await safeJson(r) || {};
+      if (!r.ok || !j.success) {
+        msgEl.textContent = j.error || 'Sign-up failed. Try again.';
+        btn.disabled = false;
+        btn.textContent = 'Unlock more →';
+        return;
+      }
+      // We got a session — reload so the rest of the page reinitializes
+      // with the new tier state and fresh quota.
+      USER_TIER = j.tier || 'email_only';
+      try { sessionStorage.setItem('qmach_token', j.token); } catch {}
+      window.location.reload();
+    } catch (err) {
+      msgEl.textContent = 'Network error. Try again.';
+      btn.disabled = false;
+      btn.textContent = 'Unlock more →';
+    }
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -873,7 +939,38 @@ async function fetchPrice() {
     state.price = data;
     state.enriched_job = enrichedJob;
     state.final_addons = addons;
+
+    if (data.price_blurred) {
+      // Non-full tier: no precise number. Show a range banner + a clear
+      // sign-up CTA explaining what they unlock by upgrading. The midpoint
+      // is used internally so downstream code (PDF, share text) has *some*
+      // number to work with — it gets watermarked and the range is also
+      // shown verbatim, so there's no pretense it's the real quote.
+      const lo = Math.round(data.range.low);
+      const hi = Math.round(data.range.high);
+      state.user_price = Math.round((lo + hi) / 2);
+      state.price_blurred = true;
+
+      section.innerHTML = `
+        <div class="price-blurred">
+          <div class="price-blurred-eyebrow">Estimated range</div>
+          <div class="price-blurred-amount">$${lo.toLocaleString()} – $${hi.toLocaleString()}</div>
+          <div class="price-blurred-cta">
+            <a href="/app" class="price-blurred-btn">Sign up to see exact price →</a>
+            <div class="price-blurred-help">Free 7-day trial · no card. Includes precise pricing, clean PDFs, and saved history.</div>
+          </div>
+          <details class="price-reasoning">
+            <summary>Why this range?</summary>
+            <p>${escapeHtml(data.reasoning || '')}</p>
+          </details>
+        </div>
+      `;
+      refreshDockState();
+      return;
+    }
+
     state.user_price = Math.round(data.suggested_price);
+    state.price_blurred = false;
 
     section.innerHTML = `
       <div class="price-input-wrap">
@@ -1023,13 +1120,31 @@ function buildQuoteSummary() {
   return { price, job, industryLabel, detail, addons, dateStr, id, state };
 }
 
-/* ───── Show preview modal (replaces immediate window.print) ───── */
+/* ───── Show preview modal (replaces immediate window.print) ─────
+   Anon tier: PDF download is gated entirely. They see a clear "give us
+   an email or sign up" message instead. Email-only tier: downloads work
+   but the PDF gets a "FREE PREVIEW" watermark drawn by saveAsPdf(). */
 function downloadQuote() {
+  if (USER_TIER === 'anon') {
+    showPdfBlockedForAnon();
+    return;
+  }
   const state = window._voiceState;
   const price = Number.isFinite(state.user_price) ? state.user_price : Math.round(state.price?.suggested_price || 0);
   if (!price || price <= 0) { flashError('set a price first'); return; }
   if (!state.client_name) { focusClientInput('Add a client name to download'); return; }
   openPreview();
+}
+
+/* Anon-tier PDF gate: friendly modal-style alert that tells the user
+   exactly which path unlocks the download. Plain alert keeps this small;
+   if the UX deserves more polish later, swap for a styled modal. */
+function showPdfBlockedForAnon() {
+  alert(
+    "PDF download is for email-signup or full account users.\n\n" +
+    "Drop your email at the top of the page (after your free quote) for a watermarked PDF, " +
+    "or start a 7-day free trial at /app for clean PDFs and exact pricing."
+  );
 }
 
 function openPreview() {
@@ -1311,6 +1426,33 @@ function saveAsPdf() {
   doc.setTextColor(150);
   doc.text('Generated via pquote.ai · Voice quote', M, doc.internal.pageSize.getHeight() - 36);
   doc.text(s.id, W - M, doc.internal.pageSize.getHeight() - 36, { align: 'right' });
+
+  // ── Watermark (email-only tier — shows the user this is a preview and
+  // the source on a clean PDF requires a real account). Drawn LAST so it
+  // sits above the line-item content. Light gray, large, rotated 30°.
+  if (USER_TIER === 'email_only') {
+    const H = doc.internal.pageSize.getHeight();
+    doc.saveGraphicsState();
+    try {
+      doc.setGState(new doc.GState({ opacity: 0.13 }));
+    } catch { /* older jsPDF — opacity unsupported, fall through with light gray */ }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(72);
+    doc.setTextColor(120);
+    doc.text('FREE PREVIEW', W / 2, H / 2, { align: 'center', angle: 30 });
+    doc.restoreGraphicsState();
+
+    // Also a small footer line so the watermark intent is obvious in case
+    // a viewer renders the rotated text poorly (some PDF viewers ignore
+    // angle on text fragments).
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(180, 50, 50);
+    doc.text(
+      'FREE PREVIEW · Sign up at pquote.ai for a clean PDF and the precise quote price.',
+      W / 2, H - 16, { align: 'center' }
+    );
+  }
 
   // Trigger download
   const filename = `quote-${(s.state.client_name || 'voice')

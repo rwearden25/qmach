@@ -82,6 +82,26 @@ const insertUserStmt     = db.prepare('INSERT INTO users (id, email, password_ha
 const getUserByEmailStmt = db.prepare('SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = ?');
 const countUsersStmt     = db.prepare('SELECT COUNT(*) AS n FROM users');
 
+// Email-only "soft signup" — captures an email for the marketing list and
+// upgrades the caller from the 1-quote anon cap to the regular per-user cap.
+// They get range-only pricing and a watermarked PDF until they upgrade to
+// a full account (email + password or Google sign-in).
+const upsertEmailOnlyStmt = db.prepare(`
+  INSERT INTO email_only_signups (email, created_at, last_seen) VALUES (?, ?, ?)
+  ON CONFLICT(email) DO UPDATE SET last_seen = excluded.last_seen
+`);
+const countEmailOnlyStmt = db.prepare('SELECT COUNT(*) AS n FROM email_only_signups');
+
+// User tier — drives pricing precision, PDF watermark, and quote-cap level.
+//   'full'        — req.userId is set and not a soft signup (DB user, env user, Google)
+//   'email_only'  — req.userId starts with 'e:' (soft signup via /api/auth/email-only)
+//   'anon'        — no req.userId at all
+function getUserTier(req) {
+  if (!req.userId) return 'anon';
+  if (typeof req.userId === 'string' && req.userId.startsWith('e:')) return 'email_only';
+  return 'full';
+}
+
 // Open-access check: honored by the auth middleware and /api/auth/check.
 // Returns true only when BOTH env-configured users (QMACH_USERS/PASSWORD)
 // AND the DB users table are empty — a fresh install with no accounts yet.
@@ -197,7 +217,11 @@ app.use('/api/voice/', voiceLimiter);
 //      user:<userId>     → per-authenticated-user analyses (24h) — added so
 //                          one signed-in user can't drain the daily budget
 //      daily:YYYY-MM-DD  → server-wide kill switch across all callers
-const GUEST_VOICE_LIMIT  = 2;
+// Anon guests get ONE quote — see the user's last quote, taste the product,
+// then either give up an email (email_only tier) or sign up properly. The
+// previous "2 free quotes" was generous for testing but blew up conversion
+// pressure at the wall.
+const GUEST_VOICE_LIMIT  = 1;
 const GUEST_VOICE_WINDOW = 24 * 60 * 60 * 1000; // 24h
 
 // Cookie signing — uses an env secret if set, otherwise a random per-boot
@@ -577,14 +601,60 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-// ── Auth check — also returns user info
+// ── Auth check — returns user info + tier so the frontend can blur prices,
+// hide/watermark the PDF, and pick the right CTA copy.
 app.get('/api/auth/check', (req, res) => {
-  if (isOpenAccess()) return res.json({ valid: true, userId: 'default', userName: 'Admin' });
+  if (isOpenAccess()) {
+    return res.json({ valid: true, userId: 'default', userName: 'Admin', tier: 'full' });
+  }
   const sess = getSession(req);
   if (sess) {
-    return res.json({ valid: true, userId: sess.userId, userName: sess.userName });
+    const tier = (typeof sess.userId === 'string' && sess.userId.startsWith('e:'))
+      ? 'email_only'
+      : 'full';
+    return res.json({ valid: true, userId: sess.userId, userName: sess.userName, tier });
   }
-  res.status(401).json({ valid: false });
+  res.json({ valid: false, tier: 'anon' });
+});
+
+// ── Email-only "soft signup" — captures an email after the anon user hits
+// the 1-quote cap. Creates a session under user_id = 'e:<email>' so the
+// caller bypasses the guest gate but still sits in the conversion funnel
+// (range-only pricing, watermarked PDF). Doesn't insert into the `users`
+// table — that's reserved for full signups with passwords. Quotes saved by
+// email-only users belong to 'e:<email>'; if they later sign up with the
+// same email + password, they'll get a different user_id (<email>) and the
+// soft-signup quotes won't follow. Acceptable trade-off vs. allowing email
+// collisions across tiers — the email-only tier is intentionally sticky to
+// push real signup, not a long-term identity.
+const emailOnlyLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  skipSuccessfulRequests: false,
+  message: { success: false, error: 'Too many requests — try again in an hour.' },
+});
+app.post('/api/auth/email-only', emailOnlyLimiter, (req, res) => {
+  try {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!EMAIL_RE.test(email)) {
+      return res.status(400).json({ success: false, error: 'Please enter a valid email.' });
+    }
+    const now = Date.now();
+    upsertEmailOnlyStmt.run(email, now, now);
+    const userId = 'e:' + email;
+    const token  = createSession(userId, email);
+    console.log(`[Auth] Email-only signup: ${email} (sessions active: ${sessionCount()})`);
+    res.json({
+      success: true,
+      token,
+      userId,
+      userName: email,
+      tier: 'email_only',
+    });
+  } catch (err) {
+    console.error('[Auth] Email-only signup error:', err);
+    res.status(500).json({ success: false, error: 'Sign-up failed' });
+  }
 });
 
 // ── Google OAuth — validate Supabase token and create pquote session
@@ -1135,11 +1205,21 @@ app.post('/api/voice/analyze', async (req, res) => {
       const cookieUsed = readGuestVoice(`gid:${guestId}`);
       const used       = Math.max(ipUsed, cookieUsed);
       if (used >= GUEST_VOICE_LIMIT) {
+        // Anonymous user has used their one free taste. Let the frontend
+        // present two options: drop an email (soft signup, unlocks more
+        // range-only quotes + watermarked PDF) or full signup (precise
+        // pricing, clean PDF, save history).
         return res.status(403).json({
           error: 'guest_limit_reached',
-          message: `You've used your ${GUEST_VOICE_LIMIT} free quotes. Sign up for pquote to keep going.`,
+          message: `That's your free quote. Drop an email for a few more, or sign up for the real thing.`,
           remaining: 0,
           limit: GUEST_VOICE_LIMIT,
+          // What the next tiers unlock — frontend uses these to render the
+          // gate UI without hardcoding the same copy on the client.
+          unlocks: {
+            email_only: ['More voice quotes', 'PDF download (watermarked)'],
+            full:       ['Precise prices, not just ranges', 'Clean PDF (no watermark)', 'Saved quote history', 'Map / satellite tracing on /app'],
+          },
         });
       }
     } else {
@@ -1225,6 +1305,9 @@ Return ONLY this JSON:
     } else {
       bumpVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
     }
+    // Tier marker so the frontend can render range-only pricing + watermark
+    // PDFs for non-full tiers without an extra /api/auth/check round-trip.
+    parsed.__tier = getUserTier(req);
     res.json(parsed);
   } catch (err) {
     console.error('AI voice/analyze error:', err);
@@ -1301,6 +1384,15 @@ Return ONLY this JSON:
     }
     bumpVoiceDaily(); // count toward server-wide daily cap
     if (req.userId) bumpVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
+    // Tier-based pricing precision. Anon + email-only see range only — the
+    // precise number is the conversion lever. Full-tier users (DB password,
+    // Google, env-configured) see the exact suggested_price.
+    const tier = getUserTier(req);
+    parsed.__tier = tier;
+    if (tier !== 'full') {
+      parsed.suggested_price = null;
+      parsed.price_blurred   = true;
+    }
     res.json(parsed);
   } catch (err) {
     console.error('AI voice/price error:', err);
