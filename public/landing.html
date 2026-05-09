@@ -155,14 +155,19 @@ body {
 
 /* ─── Hero promo video ───
    Phone-shaped portrait recording. Frame mimics a device — rounded
-   corners, soft glow, dark inset. Sized to fit comfortably below the
-   hero CTAs on mobile without pushing the call-to-action above the fold. */
+   corners, soft glow, dark inset. Tap/click toggles play/pause so
+   viewers can hold on a frame they want to read. */
 .hero-promo {
   position: relative; z-index: 1;
   margin-top: 32px;
   display: flex; flex-direction: column; align-items: center; gap: 10px;
   animation: fadeUp .8s ease .55s both;
+  /* Reset button styles since we made it a <button> */
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; color: inherit;
+  -webkit-tap-highlight-color: transparent;
 }
+.hero-promo:focus-visible { outline: 2px solid var(--accent-pale); outline-offset: 6px; border-radius: 28px; }
 .hero-promo-video {
   /* 414:896 ≈ 0.462 aspect — match the recording's native ratio so no
      letterbox bars appear. clamp keeps it readable on small phones and
@@ -173,16 +178,31 @@ body {
   border-radius: 24px;
   background: #000;
   box-shadow:
-    0 0 0 6px rgba(255,255,255,.05),    /* device "bezel" hint */
+    0 0 0 6px rgba(255,255,255,.05),
     0 20px 60px rgba(0,0,0,.55),
-    0 0 80px rgba(58,94,48,.15);         /* subtle accent glow */
+    0 0 80px rgba(58,94,48,.15);
+  display: block;
 }
+/* ▶ play indicator overlay — visible only when video is paused.
+   Centered over the phone frame, semi-transparent dark backdrop with
+   a big play glyph, fades in/out on state change. */
+.hero-promo-pause-icon {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 56px; color: white;
+  background: rgba(0,0,0,0.45);
+  border-radius: 24px;
+  opacity: 0;
+  transition: opacity .2s ease;
+  pointer-events: none;
+  text-shadow: 0 4px 24px rgba(0,0,0,.5);
+}
+.hero-promo.is-paused .hero-promo-pause-icon { opacity: 1; }
 .hero-promo-caption {
   font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
   text-transform: uppercase; color: rgba(255,255,255,.35);
 }
 @media (min-width: 900px) {
-  /* On wider viewports, push the video a bit larger but still phone-shaped */
   .hero-promo-video { width: 300px; }
 }
 
@@ -493,16 +513,20 @@ body {
     <a href="/voice" class="hero-cta-voice"><span class="voice-dot"></span>Voice Quote · NEW</a>
   </div>
   <p class="hero-note">No credit card · Works on any phone</p>
-  <!-- 15s real-flow recording. Phone-shaped portrait so it visually
-       sells "mobile-first" without us saying it. autoplay+muted+playsinline
-       is the iOS combo that lets it auto-start; loop runs it indefinitely. -->
-  <div class="hero-promo">
+  <!-- Real-flow recording. Phone-shaped portrait so it visually sells
+       "mobile-first" without us saying it. autoplay+muted+playsinline
+       is the iOS combo that lets it auto-start; loop runs it indefinitely.
+       Tap/click anywhere on the frame toggles play/pause so viewers can
+       hold on a screen they want to read. ▶ overlay appears when paused. -->
+  <button class="hero-promo" id="hero-promo" type="button" aria-label="Tap to pause or play">
     <video class="hero-promo-video"
+           id="hero-promo-video"
            src="/promo.webm"
            autoplay loop muted playsinline preload="metadata"
-           aria-label="15-second walkthrough of pquote"></video>
-    <div class="hero-promo-caption">Real flow · 15 seconds</div>
-  </div>
+           aria-label="Walkthrough of pquote"></video>
+    <span class="hero-promo-pause-icon" aria-hidden="true">▶</span>
+    <span class="hero-promo-caption">Tap to pause · Real flow</span>
+  </button>
 </section>
 
 <!-- EXAMPLES STRIP -->
@@ -742,6 +766,21 @@ body {
   document.querySelectorAll('.faq-q').forEach(q => {
     q.addEventListener('click', () => q.parentElement.classList.toggle('open'));
   });
+
+  // Hero promo: tap/click anywhere on the phone frame toggles play/pause.
+  // Sync the .is-paused class to the video's actual state so the ▶ overlay
+  // accurately reflects what's playing — covers cases where the browser
+  // pauses on its own (Low Power Mode, tab off-screen, etc.).
+  const promoBtn = document.getElementById('hero-promo');
+  const promoVid = document.getElementById('hero-promo-video');
+  if (promoBtn && promoVid) {
+    promoBtn.addEventListener('click', () => {
+      if (promoVid.paused) promoVid.play().catch(() => {});
+      else promoVid.pause();
+    });
+    promoVid.addEventListener('pause', () => promoBtn.classList.add('is-paused'));
+    promoVid.addEventListener('play', () => promoBtn.classList.remove('is-paused'));
+  }
   // Rotate every 5s with a short fade
   setInterval(() => {
     tiles.forEach(t => t.classList.add('fading'));
