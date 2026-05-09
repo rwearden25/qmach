@@ -322,13 +322,35 @@ body {
   text-transform: uppercase; letter-spacing: 1.2px;
   padding: 5px 16px; border-radius: 50px; margin-bottom: 20px;
 }
+.price-heading {
+  font-family: var(--serif); font-size: 36px; font-weight: 800;
+  color: var(--dark); letter-spacing: -0.5px; line-height: 1; text-align: left;
+  margin-bottom: 6px;
+}
+.price-subhead {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  text-align: left; margin-bottom: 24px; letter-spacing: .2px;
+}
 .price-amount {
   font-family: var(--serif); font-size: 56px; font-weight: 800;
-  color: var(--dark); line-height: 1;
+  color: var(--dark); line-height: 1; text-align: left; margin-top: 8px;
 }
 .price-amount span { font-size: 20px; font-weight: 600; color: var(--muted); }
 .price-period { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 4px; }
 .price-desc { font-size: 15px; color: var(--muted); margin: 16px 0 24px; line-height: 1.6; }
+.price-foot {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin: 12px 0 24px; gap: 12px;
+}
+.price-trial {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  letter-spacing: .3px;
+}
+.price-link {
+  font-family: var(--mono); font-size: 11px; color: var(--accent);
+  text-decoration: none; letter-spacing: .3px; font-weight: 600;
+}
+.price-link:hover { text-decoration: underline; }
 .price-features { text-align: left; margin-bottom: 28px; }
 .price-feat {
   display: flex; align-items: flex-start; gap: 10px;
@@ -563,23 +585,27 @@ body {
   <div class="container" style="text-align:center">
     <div class="section-label">Pricing</div>
     <div class="section-title">Simple. No surprises.</div>
-    <p class="section-sub" style="margin-left:auto;margin-right:auto">Start free. Upgrade when you're ready. No contracts, no cancellation fees.</p>
+    <p class="section-sub" style="margin-left:auto;margin-right:auto">Start with a 7-day free trial. No credit card required.</p>
     <div class="price-card">
-      <div class="price-badge">Everything included</div>
-      <div class="price-amount">Free<span> beta</span></div>
-      <div class="price-period">While in early access</div>
-      <div class="price-desc">Full access to every feature. We're building this with our users — your feedback shapes what comes next.</div>
+      <div class="price-heading">pquote</div>
+      <div class="price-subhead">Quoting generator · pquote.ai</div>
       <div class="price-features">
-        <div class="price-feat"><span class="check">✓</span> Unlimited quotes</div>
-        <div class="price-feat"><span class="check">✓</span> Satellite map drawing</div>
-        <div class="price-feat"><span class="check">✓</span> AI price suggestions</div>
-        <div class="price-feat"><span class="check">✓</span> Professional PDF generation</div>
-        <div class="price-feat"><span class="check">✓</span> Client memory & auto-fill</div>
-        <div class="price-feat"><span class="check">✓</span> SMS, email & clipboard sharing</div>
-        <div class="price-feat"><span class="check">✓</span> Tax calculation & legal disclaimer</div>
-        <div class="price-feat"><span class="check">✓</span> Auto-save drafts</div>
+        <div class="price-feat"><span class="check">✓</span> Mapbox satellite with auto lot-trace</div>
+        <div class="price-feat"><span class="check">✓</span> Square footage calculated from address</div>
+        <div class="price-feat"><span class="check">✓</span> Drag-and-drop photos with AI scope tagging</div>
+        <div class="price-feat"><span class="check">✓</span> Margin slider with live total math</div>
+        <div class="price-feat"><span class="check">✓</span> Numbered, branded PDF estimates</div>
+        <div class="price-feat"><span class="check">✓</span> One-click email with PDF attached</div>
+        <div class="price-feat"><span class="check">✓</span> Quote history per customer</div>
+        <div class="price-feat"><span class="check">✓</span> Service catalog with reusable line items</div>
+        <div class="price-feat"><span class="check">✓</span> Google sign-in, multi-user from day one</div>
       </div>
-      <a href="/app" class="price-cta">Start Quoting Free →</a>
+      <div class="price-amount">$9<span>.99 / mo</span></div>
+      <div class="price-foot">
+        <span class="price-trial">7-day free trial · no card</span>
+        <a href="/app" class="price-link">pquote.ai →</a>
+      </div>
+      <a href="/app" class="price-cta">Start 7-day free trial →</a>
     </div>
   </div>
 </section>
