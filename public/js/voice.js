@@ -126,7 +126,10 @@ let TURNSTILE_WIDGET_ID = null; // null = inactive (env unset, or authed user)
   } catch {}
   updateSaveButtonLabel();
 
-  if (USER_TIER === 'full') return; // full-tier users skip the human-check entirely
+  // Any authenticated tier (email-only OR full) skips the Turnstile widget.
+  // The server-side enforcement also keys on !req.userId, so showing the
+  // widget to email-only users would be a UX wart with no security value.
+  if (USER_TIER !== 'anon') return;
 
   let cfg = null;
   try {
