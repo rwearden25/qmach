@@ -399,6 +399,16 @@ submitBtn.addEventListener('click', async () => {
         return;
       }
     }
+    if (res.status === 429) {
+      const err = await safeJson(res);
+      if (err?.error === 'user_limit_reached') {
+        showUserLimitReached(err);
+        submitBtn.disabled = false;
+        submitBtn.querySelector('span').textContent = 'Get my quote';
+        setStatus('idle');
+        return;
+      }
+    }
     if (!res.ok) {
       const err = await safeJson(res);
       throw new Error(err?.error || `analyze ${res.status}`);
@@ -447,6 +457,30 @@ function showDailyCapReached(payload) {
       <ul class="examples-list">
         <li>Already have an account? Signed-in users get priority.</li>
         <li>Use the satellite measure tool at <a href="/app" style="color:var(--amber);font-weight:700">/app</a></li>
+      </ul>
+    </div>
+  `;
+  document.querySelector('.mic-stage')?.classList.add('hidden');
+  document.querySelector('.readout')?.classList.add('hidden');
+}
+
+/* ───── Per-user 24h cap reached (signed-in users) ───── */
+function showUserLimitReached(payload) {
+  const promptWrap = document.querySelector('.prompt-wrap');
+  if (!promptWrap) {
+    alert(payload?.message || 'Daily voice quote cap reached — try again tomorrow.');
+    return;
+  }
+  const limit = payload?.limit;
+  promptWrap.innerHTML = `
+    <p class="prompt-eyebrow">Daily cap reached</p>
+    <h1 class="prompt-line">Back <em>tomorrow</em>.</h1>
+    <p class="prompt-help">${escapeHtml(payload?.message || `You've used your ${limit || 25} voice quotes for the day. They reset every 24h.`)}</p>
+    <div class="examples" style="border-left-color: var(--amber)">
+      <div class="examples-label">In the meantime</div>
+      <ul class="examples-list">
+        <li>Use the satellite measure tool at <a href="/app" style="color:var(--amber);font-weight:700">/app</a></li>
+        <li>Existing saved quotes are always editable from the app</li>
       </ul>
     </div>
   `;
@@ -740,6 +774,15 @@ async function fetchPrice() {
     });
     if (!res.ok) {
       const err = await safeJson(res);
+      // Map structured rate-limit responses to a readable message — the
+      // generic catch branch below shows err.message, and "user_limit_reached"
+      // would otherwise leak as raw text.
+      if (res.status === 429 && err?.error === 'user_limit_reached') {
+        throw new Error(err.message || `Daily voice quote cap reached.`);
+      }
+      if (res.status === 503 && err?.error === 'daily_cap_reached') {
+        throw new Error(err.message || `Voice quotes are at capacity for today.`);
+      }
       throw new Error(err?.error || `price ${res.status}`);
     }
     const data = await res.json();

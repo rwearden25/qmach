@@ -1,0 +1,20 @@
+# Keep the Docker build context small WITHOUT excluding .git.
+#
+# server.js's APP_VERSION falls back to `git rev-parse --short HEAD` when
+# RAILWAY_GIT_COMMIT_SHA isn't set. That fallback only works because .git
+# gets copied into the container. Adding `.git` to this file would silently
+# regress /version to "unknown" on any deploy target that doesn't set the
+# RAILWAY_GIT_COMMIT_SHA env var. If you really need to drop .git, switch
+# the Dockerfile to bake the SHA via an ARG instead.
+
+node_modules
+.env
+.env.local
+data
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+npm-debug.log
+.vscode
+.idea
