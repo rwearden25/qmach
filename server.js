@@ -276,10 +276,13 @@ function bumpVoiceQuota(key, windowMs) {
 function readGuestVoice(key) { return readVoiceQuota(key, GUEST_VOICE_WINDOW); }
 function bumpGuestVoice(key) { return bumpVoiceQuota(key, GUEST_VOICE_WINDOW); }
 
-// Prune rows older than 7 days (covers the longest window we use plus
-// generous slack for daily:YYYY-MM-DD historical rows).
+// Prune rows older than 48h. The longest active window is 24h (per-IP/cookie/user)
+// and daily:YYYY-MM-DD rows are dead weight after their day rolls over, so 48h
+// is plenty of slack. The earlier 7-day window let stale single-visit IP/cookie
+// rows accumulate unboundedly under traffic — every distinct guest IP that
+// never came back sat in the table for a week.
 setInterval(() => {
-  try { pruneQuotaStmt.run(Date.now() - 7 * 24 * 60 * 60 * 1000); } catch {}
+  try { pruneQuotaStmt.run(Date.now() - 48 * 60 * 60 * 1000); } catch {}
 }, 60 * 60 * 1000);
 
 // ── Server-wide daily voice cap (token-spend ceiling)
