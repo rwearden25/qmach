@@ -736,18 +736,22 @@ app.post('/api/auth/google', authLimiter, async (req, res) => {
 });
 
 // ── Auth middleware — protect all /api/ routes except auth + config + health
-//    Attaches req.userId for downstream route handlers
+//    Attaches req.userId for downstream route handlers.
+//
+//    "Open" paths don't REQUIRE auth, but we still attempt session resolution
+//    on them so endpoints can flex behavior when the caller is signed in.
+//    /voice/analyze and /voice/price specifically need this — without it,
+//    full-tier users get treated as anon (blurred prices, Turnstile gate,
+//    no per-user cap, no KB calibration). Required paths still 401 if no
+//    session is found.
 app.use('/api/', (req, res, next) => {
-  // Skip auth for these paths.
-  // /voice/analyze and /voice/price are open so users can try the voice
-  // quote flow without an account — saving still requires login (the
-  // natural conversion nudge). Rate limited via aiLimiter above.
-  const open = [
-    '/auth', '/auth/check', '/auth/google', '/auth/login', '/auth/signup', '/auth/logout',
+  const openPaths = new Set([
+    '/auth', '/auth/check', '/auth/google', '/auth/login', '/auth/signup',
+    '/auth/logout', '/auth/email-only',
     '/config',
     '/voice/analyze', '/voice/price',
-  ];
-  if (open.includes(req.path)) return next();
+  ]);
+  const isOpen = openPaths.has(req.path);
 
   // Fresh install with zero users anywhere — grant open access so the app
   // boots without config. Flips to "auth required" the moment any user
@@ -757,6 +761,8 @@ app.use('/api/', (req, res, next) => {
     return next();
   }
 
+  // Always try the session — when present, attaches req.userId/userName so
+  // open-path handlers (analyze/price) can branch on tier.
   const sess = getSession(req);
   if (sess) {
     req.userId = sess.userId;
@@ -764,6 +770,7 @@ app.use('/api/', (req, res, next) => {
     return next();
   }
 
+  if (isOpen) return next();
   res.status(401).json({ error: 'Unauthorized — please log in' });
 });
 

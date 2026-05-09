@@ -91,6 +91,18 @@ const INDUSTRIES = [
   'custom',
 ];
 
+/* Pulls the session token from sessionStorage and returns it as a header
+   object the fetch API can spread into request init. The server's
+   getSession() only honors `x-auth-token` (not cookies), so every call
+   that should be tier-aware needs to include this. Returns {} when no
+   token is present, which is fine — open paths still respond, just as
+   if the caller were anon. */
+function authHeaders() {
+  let t = '';
+  try { t = sessionStorage.getItem('qmach_token') || ''; } catch {}
+  return t ? { 'x-auth-token': t } : {};
+}
+
 /* ───── Auth + config bootstrap ─────
    Single network round trip on page load:
      /api/auth/check  → IS_AUTHED, USER_TIER, drives "Save" button label
@@ -105,7 +117,7 @@ let TURNSTILE_WIDGET_ID = null; // null = inactive (env unset, or authed user)
 (async () => {
   let authJson = null;
   try {
-    const r = await fetch('/api/auth/check', { credentials: 'same-origin' });
+    const r = await fetch('/api/auth/check', { credentials: 'same-origin', headers: authHeaders() });
     if (r.ok) {
       authJson = await r.json();
       IS_AUTHED = !!(authJson?.userId || authJson?.userName);
@@ -451,7 +463,7 @@ submitBtn.addEventListener('click', async () => {
   try {
     const res = await fetch('/api/voice/analyze', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       credentials: 'same-origin',
       body: JSON.stringify({
         transcript,
@@ -916,7 +928,7 @@ async function fetchPrice() {
   try {
     const res = await fetch('/api/voice/price', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       credentials: 'same-origin',
       body: JSON.stringify({ industry: state.industry, parsed_job: enrichedJob, addons }),
     });
@@ -1077,7 +1089,7 @@ async function saveQuote() {
   try {
     const res = await fetch('/api/quotes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       credentials: 'same-origin',
       body: JSON.stringify(body),
     });
@@ -1555,7 +1567,7 @@ function stashDraftAndPromptSignIn(quoteBody) {
       sessionStorage.removeItem('voice_pending_save');
       return;
     }
-    fetch('/api/auth/check', { credentials: 'same-origin' })
+    fetch('/api/auth/check', { credentials: 'same-origin', headers: authHeaders() })
       .then(r => r.ok ? r.json() : null)
       .then(j => {
         if (!j?.userId && !j?.userName) return;
@@ -1602,7 +1614,7 @@ function showRestoreBanner(stash) {
     try {
       const res = await fetch('/api/quotes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         credentials: 'same-origin',
         body: JSON.stringify(stash.body),
       });
