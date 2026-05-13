@@ -76,7 +76,12 @@ db.exec(`
     stripe_subscription_id TEXT,
     plan                   TEXT NOT NULL DEFAULT 'free',
     subscription_status    TEXT,
-    current_period_end     INTEGER
+    current_period_end     INTEGER,
+    -- Business preferences set from /account. Drive PDF header, AI pricing
+    -- region, and default tax rate so the user doesn't reconfigure per quote.
+    business_name          TEXT,
+    default_tax_rate       REAL,
+    default_region         TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
   -- idx_users_stripe_customer is created in server.js AFTER the ALTER TABLE

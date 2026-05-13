@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="pquote — Account settings">
+<title>pquote — Account</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800;900&family=Nunito:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════
+   pquote Account — Field Workbench
+   Same Rugged Precision palette as /billing
+═══════════════════════════════════════ */
+:root {
+  --bg:          #F2F0EB;
+  --bg2:         #E4E2DA;
+  --paper:       #FAF8F2;
+  --dark:        #2A2824;
+  --text:        #2A2824;
+  --muted:       #4E4C46;
+  --faint:       #8A877E;
+  --light:       #F2F0EB;
+  --accent:      #3A5E30;
+  --accent-hover:#2E4E24;
+  --accent-pale: #E0EDDA;
+  --accent-dim:  rgba(58,94,48,.12);
+  --stamp:       #B83A2E;
+  --border:      #C4C0B6;
+  --border-soft: #DCD8CE;
+  --white:       #FFFFFF;
+  --red:         #8E2E32;
+  --red-pale:    #F2E6E6;
+  --serif:       'Playfair Display', Georgia, serif;
+  --sans:        'Nunito', system-ui, sans-serif;
+  --mono:        'DM Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--sans); color: var(--text);
+  background: var(--bg);
+  background-image:
+    radial-gradient(circle at 18% 12%, rgba(58,94,48,.06), transparent 55%),
+    radial-gradient(circle at 90% 88%, rgba(184,58,46,.04), transparent 60%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* ═══ NAV ═══ */
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+  background: rgba(42,40,36,.95); backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.nav-logo {
+  font-family: var(--serif); font-size: 22px; font-weight: 700;
+  color: var(--light); text-decoration: none;
+}
+.nav-logo span { color: var(--accent-pale); font-weight: 400; }
+.nav-links { display: flex; gap: 4px; align-items: center; }
+.nav-link {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .8px; padding: 8px 14px; border-radius: 6px;
+  text-decoration: none; transition: all .15s; font-weight: 500;
+  color: rgba(255,255,255,.55); border: 1px solid transparent;
+}
+.nav-link:hover { color: rgba(255,255,255,.9); }
+.nav-link.active { color: var(--accent-pale); border-color: rgba(224,237,218,.18); }
+
+/* ═══ PAGE FRAME ═══ */
+.wrap {
+  max-width: 720px; margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+.eyebrow {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--muted);
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 18px;
+}
+.eyebrow::before, .eyebrow::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+  max-width: 60px;
+}
+
+h1.page-title {
+  font-family: var(--serif); font-weight: 800;
+  font-size: clamp(36px, 6vw, 56px); line-height: 1;
+  letter-spacing: -1px; color: var(--dark);
+  text-align: center;
+}
+h1.page-title em {
+  font-style: italic; color: var(--accent); font-weight: 600;
+}
+.subtitle {
+  text-align: center;
+  font-size: 14px; color: var(--muted); margin: 12px auto 0;
+  max-width: 460px; line-height: 1.6;
+}
+
+/* ═══ UPGRADE BANNER (free users only) ═══ */
+.upgrade-banner {
+  margin-top: 36px;
+  background: linear-gradient(135deg, var(--dark) 0%, #3A3832 50%, var(--dark) 100%);
+  color: var(--light);
+  border-radius: 14px;
+  padding: 28px 32px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 20px 48px -20px rgba(42,40,36,.4);
+}
+.upgrade-banner::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: linear-gradient(90deg, var(--accent), #4A7E40, var(--accent));
+}
+.upgrade-banner::after {
+  content: '★'; position: absolute;
+  top: 24px; right: 32px;
+  font-size: 120px; color: rgba(224,237,218,.04);
+  pointer-events: none;
+  font-family: var(--serif);
+}
+.upgrade-banner-tag {
+  display: inline-block;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 1.6px; text-transform: uppercase;
+  color: var(--accent-pale);
+  background: rgba(58,94,48,.3);
+  padding: 4px 10px; border-radius: 4px;
+  margin-bottom: 12px;
+}
+.upgrade-banner-title {
+  font-family: var(--serif); font-size: 28px; font-weight: 700;
+  line-height: 1.15; letter-spacing: -.5px;
+  margin-bottom: 8px;
+}
+.upgrade-banner-title em { color: var(--accent-pale); font-style: italic; font-weight: 400; }
+.upgrade-banner-desc {
+  font-size: 14px; color: rgba(242,240,235,.7);
+  line-height: 1.6; max-width: 440px;
+  margin-bottom: 20px;
+}
+.upgrade-feats {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  margin-bottom: 22px; font-family: var(--mono);
+  font-size: 11px; color: rgba(242,240,235,.7);
+  letter-spacing: .2px;
+}
+.upgrade-feat::before {
+  content: '✓'; color: var(--accent-pale); font-weight: 700; margin-right: 5px;
+}
+.upgrade-banner-row {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.upgrade-btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 22px;
+  font-family: var(--mono); font-size: 13px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 1.2px;
+  background: var(--accent); color: var(--white);
+  border: none; border-radius: 8px;
+  cursor: pointer; text-decoration: none;
+  box-shadow: 0 8px 24px -6px rgba(58,94,48,.55);
+  transition: all .18s;
+}
+.upgrade-btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.upgrade-btn .arrow { transition: transform .18s; }
+.upgrade-btn:hover .arrow { transform: translateX(3px); }
+.upgrade-price {
+  font-family: var(--mono); font-size: 12px;
+  color: rgba(242,240,235,.55); letter-spacing: .5px;
+}
+
+/* ═══ PRO BADGE (Pro users) ═══ */
+.pro-badge-row {
+  margin-top: 36px;
+  display: flex; align-items: center; gap: 14px;
+  padding: 18px 22px;
+  background: var(--paper);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px -10px rgba(58,94,48,.3);
+}
+.pro-badge-row .pro-stamp {
+  font-family: var(--mono); font-weight: 500;
+  font-size: 11px; letter-spacing: 2px;
+  padding: 6px 12px; border: 2px solid var(--accent);
+  border-radius: 4px; color: var(--accent);
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+  flex-shrink: 0;
+}
+.pro-badge-body { flex: 1; }
+.pro-badge-title {
+  font-family: var(--serif); font-size: 18px; font-weight: 700; color: var(--dark);
+  margin-bottom: 2px;
+}
+.pro-badge-meta {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  letter-spacing: .3px;
+}
+.pro-badge-link {
+  font-family: var(--mono); font-size: 11px;
+  letter-spacing: .8px; text-transform: uppercase;
+  color: var(--accent); text-decoration: none;
+  padding: 8px 14px; border: 1px solid var(--accent);
+  border-radius: 6px;
+  white-space: nowrap;
+  transition: all .15s;
+}
+.pro-badge-link:hover { background: var(--accent); color: var(--white); }
+
+/* ═══ SECTION CARD ═══ */
+.section {
+  margin-top: 24px;
+  background: var(--paper);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 28px 30px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 12px 28px -16px rgba(42,40,36,.18);
+}
+.section-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 22px; padding-bottom: 14px;
+  border-bottom: 1px dashed var(--border);
+  gap: 14px;
+}
+.section-title {
+  font-family: var(--serif); font-size: 22px; font-weight: 700;
+  color: var(--dark); letter-spacing: -.3px;
+}
+.section-hint {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--faint);
+}
+
+/* ═══ FORM ROWS ═══ */
+.field-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: 1fr 1fr;
+}
+.field-grid .field-full { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-label {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted);
+}
+.field-input {
+  width: 100%; padding: 12px 14px;
+  background: var(--white);
+  border: 1.5px solid var(--border-soft);
+  border-radius: 7px;
+  font-family: var(--sans); font-size: 15px; color: var(--dark);
+  outline: none; transition: all .15s;
+}
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(58,94,48,.12);
+}
+.field-input:disabled {
+  background: var(--bg2); color: var(--muted); cursor: not-allowed;
+}
+.field-input::placeholder { color: var(--faint); }
+.field-hint {
+  font-family: var(--mono); font-size: 10px; color: var(--faint);
+  letter-spacing: .3px; margin-top: 2px;
+}
+
+.section-actions {
+  display: flex; justify-content: flex-end; align-items: center;
+  gap: 12px; margin-top: 22px;
+}
+.section-actions .save-msg {
+  font-family: var(--mono); font-size: 11px;
+  letter-spacing: .5px; color: var(--accent); margin-right: auto;
+  opacity: 0; transition: opacity .25s;
+}
+.section-actions .save-msg.show { opacity: 1; }
+.section-actions .save-msg.error { color: var(--red); }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 22px; border-radius: 7px;
+  font-family: var(--mono); font-size: 12px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 1.2px;
+  cursor: pointer; border: none; transition: all .15s;
+  text-decoration: none;
+}
+.btn.primary {
+  background: var(--accent); color: var(--white);
+  box-shadow: 0 6px 18px -6px rgba(58,94,48,.45);
+}
+.btn.primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn.primary:disabled { background: var(--faint); cursor: not-allowed; transform: none; box-shadow: none; }
+.btn.ghost {
+  background: transparent; color: var(--dark);
+  border: 1.5px solid var(--border);
+}
+.btn.ghost:hover { background: var(--bg2); border-color: var(--dark); }
+
+/* ═══ DANGER ZONE ═══ */
+.danger-zone {
+  margin-top: 24px;
+  background: var(--paper);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 22px 26px;
+}
+.danger-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px;
+}
+.danger-text {
+  font-family: var(--sans); font-size: 13px; color: var(--muted);
+  line-height: 1.55;
+}
+.danger-text strong { color: var(--dark); }
+.btn.danger {
+  background: transparent; color: var(--red);
+  border: 1.5px solid var(--red);
+}
+.btn.danger:hover { background: var(--red); color: var(--white); }
+
+/* ═══ GATE / LOADING ═══ */
+.gate, .loading {
+  margin-top: 40px;
+  background: var(--paper);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 56px 36px; text-align: center;
+}
+.gate h2 {
+  font-family: var(--serif); font-weight: 700;
+  font-size: 26px; color: var(--dark); margin-bottom: 10px;
+}
+.gate p { color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 420px; margin: 0 auto 22px; }
+.loading-row { display: flex; justify-content: center; gap: 10px; margin-bottom: 16px; }
+.loading-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); opacity: .4;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.loading-row .loading-dot:nth-child(2) { animation-delay: .2s; }
+.loading-row .loading-dot:nth-child(3) { animation-delay: .4s; }
+.loading-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--faint);
+}
+@keyframes pulse {
+  0%, 80%, 100% { opacity: .25; transform: scale(.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* ═══ TOAST ═══ */
+.toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 20px;
+  background: var(--dark); color: var(--light);
+  border-radius: 8px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .3px;
+  box-shadow: 0 12px 32px -8px rgba(42,40,36,.5);
+  z-index: 500;
+  opacity: 0; pointer-events: none;
+  transition: opacity .22s, transform .22s;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(-2px); pointer-events: auto; }
+.toast.error { background: var(--red); }
+
+/* ═══ FOOTER ═══ */
+.foot {
+  text-align: center; padding: 28px 24px 40px;
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: 1.5px; text-transform: uppercase; color: var(--faint);
+}
+.foot a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--border); }
+.foot a:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 600px) {
+  .wrap { padding: 28px 16px 64px; }
+  .section { padding: 22px 20px; }
+  .upgrade-banner { padding: 24px 22px; }
+  .upgrade-banner::after { font-size: 80px; right: 18px; top: 14px; }
+  .field-grid { grid-template-columns: 1fr; }
+  .section-actions { flex-direction: column-reverse; align-items: stretch; }
+  .section-actions .btn { width: 100%; justify-content: center; }
+  .section-actions .save-msg { margin-right: 0; text-align: center; }
+  .pro-badge-row { flex-direction: column; align-items: flex-start; }
+  .pro-badge-link { width: 100%; text-align: center; }
+  .danger-row { flex-direction: column; align-items: stretch; gap: 14px; }
+  .danger-row .btn { width: 100%; justify-content: center; }
+}
+
+/* Entry animation */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.eyebrow, h1.page-title, .subtitle, .upgrade-banner, .pro-badge-row, .section, .danger-zone, .gate {
+  animation: rise .5s ease forwards;
+  opacity: 0;
+}
+.eyebrow      { animation-delay: .05s; }
+h1.page-title { animation-delay: .12s; }
+.subtitle     { animation-delay: .2s; }
+.upgrade-banner, .pro-badge-row { animation-delay: .28s; }
+.section:nth-of-type(1) { animation-delay: .36s; }
+.section:nth-of-type(2) { animation-delay: .44s; }
+.section:nth-of-type(3) { animation-delay: .52s; }
+.danger-zone  { animation-delay: .6s; }
+.gate         { animation-delay: .2s; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-logo">p<span>quote</span></a>
+  <div class="nav-links">
+    <a href="/app" class="nav-link">App</a>
+    <a href="/account" class="nav-link active">Account</a>
+    <a href="/billing" class="nav-link">Billing</a>
+  </div>
+</nav>
+
+<main class="wrap" id="wrap">
+  <div class="eyebrow">Account · Settings</div>
+  <h1 class="page-title">Your <em>account</em>.</h1>
+  <p class="subtitle">Manage your profile, password, and business preferences. Subscription lives on the <a href="/billing" style="color:var(--accent);border-bottom:1px solid currentColor;text-decoration:none">billing page</a>.</p>
+
+  <div id="content">
+    <div class="loading">
+      <div class="loading-row"><div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div></div>
+      <div class="loading-label">Loading your account…</div>
+    </div>
+  </div>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<footer class="foot">
+  pquote — Field quotes in 60 seconds &nbsp;·&nbsp; <a href="/app">Back to app</a>
+</footer>
+
+<script>
+'use strict';
+
+const AUTH_KEY = 'qmach_token';
+const authToken = sessionStorage.getItem(AUTH_KEY) || '';
+const $content = document.getElementById('content');
+const $toast = document.getElementById('toast');
+
+function toast(msg, isError) {
+  $toast.textContent = msg;
+  $toast.classList.toggle('error', !!isError);
+  $toast.classList.add('show');
+  setTimeout(() => $toast.classList.remove('show'), 2800);
+}
+
+function authFetch(url, opts = {}) {
+  return fetch(url, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(opts.headers || {}),
+      ...(authToken ? { 'x-auth-token': authToken } : {}),
+    },
+  });
+}
+
+async function loadAccount() {
+  if (!authToken) return renderGate('Sign in to manage your account.');
+
+  // Fetch profile + billing status in parallel — billing tells us whether
+  // to render the Upgrade banner or the Pro badge at the top.
+  let profile, billing;
+  try {
+    const [pRes, bRes] = await Promise.all([
+      authFetch('/api/account'),
+      authFetch('/api/billing/status'),
+    ]);
+    if (pRes.status === 401) return renderGate('Sign in to manage your account.');
+    if (pRes.status === 403) {
+      const err = await pRes.json().catch(() => ({}));
+      return renderError(err.message || 'Account settings require an email-registered account.');
+    }
+    if (!pRes.ok) return renderError('Could not load your account. Try refreshing.');
+    profile = await pRes.json();
+    billing = bRes.ok ? await bRes.json() : { plan: 'free', configured: false };
+  } catch {
+    return renderError('Could not reach the server. Refresh in a moment.');
+  }
+
+  renderAccount(profile, billing);
+}
+
+function renderGate(msg) {
+  $content.innerHTML = `
+    <div class="gate">
+      <h2>Sign in to manage your account</h2>
+      <p>${msg}</p>
+      <a href="/app" class="btn primary">Sign in <span class="arrow">→</span></a>
+    </div>`;
+}
+
+function renderError(msg) {
+  $content.innerHTML = `
+    <div class="gate">
+      <h2>Something's off</h2>
+      <p>${msg}</p>
+      <a href="/app" class="btn ghost">Back to app</a>
+    </div>`;
+}
+
+function renderAccount(p, b) {
+  const isPro = (b.plan || p.plan) === 'pro';
+  const billingReady = !!b.configured;
+
+  // ── Top section: Upgrade banner OR Pro badge
+  const topBlock = isPro
+    ? `<section class="pro-badge-row">
+         <div class="pro-stamp">Pro Active</div>
+         <div class="pro-badge-body">
+           <div class="pro-badge-title">You're on pquote Pro</div>
+           <div class="pro-badge-meta">Unlimited quotes &amp; AI · branded PDFs · pzip integration</div>
+         </div>
+         <a href="/billing" class="pro-badge-link">Manage →</a>
+       </section>`
+    : `<section class="upgrade-banner">
+         <div class="upgrade-banner-tag">Free plan</div>
+         <div class="upgrade-banner-title">Unlock everything with <em>Pro</em>.</div>
+         <div class="upgrade-banner-desc">5 quotes &amp; 5 AI actions per month not enough? Pro removes every cap, adds branded PDFs, and unlocks the pzip invoice integration.</div>
+         <div class="upgrade-feats">
+           <span class="upgrade-feat">Unlimited quotes</span>
+           <span class="upgrade-feat">Unlimited AI</span>
+           <span class="upgrade-feat">Branded PDFs</span>
+           <span class="upgrade-feat">pzip integration</span>
+           <span class="upgrade-feat">Cancel anytime</span>
+         </div>
+         <div class="upgrade-banner-row">
+           <button type="button" class="upgrade-btn" id="upgrade-btn" ${billingReady ? '' : 'disabled'}>
+             ${billingReady ? 'Upgrade to Pro' : 'Upgrade coming soon'}
+             <span class="arrow">→</span>
+           </button>
+           <span class="upgrade-price">$9.99 / mo · cancel anytime</span>
+         </div>
+       </section>`;
+
+  // ── Section 1: Profile
+  const profileBlock = `
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">Profile</h2>
+        <span class="section-hint">Your name &amp; email</span>
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <label class="field-label" for="f-first">First name</label>
+          <input class="field-input" id="f-first" type="text" autocomplete="given-name" value="${escapeAttr(p.first_name)}">
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-last">Last name</label>
+          <input class="field-input" id="f-last" type="text" autocomplete="family-name" value="${escapeAttr(p.last_name)}">
+        </div>
+        <div class="field field-full">
+          <label class="field-label" for="f-email">Email</label>
+          <input class="field-input" id="f-email" type="email" disabled value="${escapeAttr(p.email)}">
+          <div class="field-hint">Email isn't editable here — contact support to change it</div>
+        </div>
+      </div>
+      <div class="section-actions">
+        <span class="save-msg" id="profile-msg"></span>
+        <button type="button" class="btn primary" id="save-profile">Save changes</button>
+      </div>
+    </section>`;
+
+  // ── Section 2: Business preferences
+  const bizBlock = `
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">Business preferences</h2>
+        <span class="section-hint">Drives PDFs &amp; AI pricing</span>
+      </div>
+      <div class="field-grid">
+        <div class="field field-full">
+          <label class="field-label" for="f-biz">Business name</label>
+          <input class="field-input" id="f-biz" type="text" placeholder="e.g. Standard Power Washing" value="${escapeAttr(p.business_name || '')}">
+          <div class="field-hint">Shown on branded PDFs (Pro)</div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-tax">Default tax rate (%)</label>
+          <input class="field-input" id="f-tax" type="number" inputmode="decimal" min="0" max="30" step="0.01" placeholder="0" value="${p.default_tax_rate != null ? p.default_tax_rate : ''}">
+          <div class="field-hint">Pre-fills the tax field on new quotes</div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="f-region">Default region</label>
+          <input class="field-input" id="f-region" type="text" placeholder="DFW Texas" value="${escapeAttr(p.default_region || '')}">
+          <div class="field-hint">Hints AI pricing for your market</div>
+        </div>
+      </div>
+      <div class="section-actions">
+        <span class="save-msg" id="biz-msg"></span>
+        <button type="button" class="btn primary" id="save-biz">Save changes</button>
+      </div>
+    </section>`;
+
+  // ── Section 3: Password
+  const passBlock = `
+    <section class="section">
+      <div class="section-head">
+        <h2 class="section-title">Password</h2>
+        <span class="section-hint">Change your sign-in password</span>
+      </div>
+      <div class="field-grid">
+        <div class="field field-full">
+          <label class="field-label" for="p-current">Current password</label>
+          <input class="field-input" id="p-current" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <div class="field field-full">
+          <label class="field-label" for="p-new">New password</label>
+          <input class="field-input" id="p-new" type="password" autocomplete="new-password" placeholder="••••••••">
+          <div class="field-hint">8–72 chars · 1 uppercase · 1 number · 1 special character</div>
+        </div>
+        <div class="field field-full">
+          <label class="field-label" for="p-confirm">Confirm new password</label>
+          <input class="field-input" id="p-confirm" type="password" autocomplete="new-password" placeholder="••••••••">
+        </div>
+      </div>
+      <div class="section-actions">
+        <span class="save-msg" id="pass-msg"></span>
+        <button type="button" class="btn primary" id="save-pass">Update password</button>
+      </div>
+    </section>`;
+
+  // ── Danger zone: sign out
+  const dangerBlock = `
+    <section class="danger-zone">
+      <div class="danger-row">
+        <div class="danger-text">
+          <strong>Sign out of this device.</strong><br>
+          You'll need to enter your email and password again to come back.
+        </div>
+        <button type="button" class="btn danger" id="signout-btn">Sign out</button>
+      </div>
+    </section>`;
+
+  $content.innerHTML = topBlock + profileBlock + bizBlock + passBlock + dangerBlock;
+  wireForms(p);
+}
+
+function wireForms(profile) {
+  // Upgrade button → checkout (return_to='app' so success lands in /app)
+  document.getElementById('upgrade-btn')?.addEventListener('click', startCheckout);
+
+  document.getElementById('save-profile')?.addEventListener('click', saveProfile);
+  document.getElementById('save-biz')?.addEventListener('click', saveBusiness);
+  document.getElementById('save-pass')?.addEventListener('click', changePassword);
+  document.getElementById('signout-btn')?.addEventListener('click', signOut);
+
+  // Keep biz fields in sync with profile object for save() (pre-fill from
+  // server, user edits, save round-trips the latest state).
+  window._profile = profile;
+}
+
+async function startCheckout(e) {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.innerHTML = 'Opening checkout…';
+  try {
+    const r = await authFetch('/api/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ return_to: 'app' }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.url) {
+      location.href = d.url;
+      return;
+    }
+    toast(d.error || 'Could not start checkout', true);
+    btn.disabled = false;
+    btn.innerHTML = 'Upgrade to Pro <span class="arrow">→</span>';
+  } catch {
+    toast('Connection error', true);
+    btn.disabled = false;
+    btn.innerHTML = 'Upgrade to Pro <span class="arrow">→</span>';
+  }
+}
+
+async function saveProfile(e) {
+  const btn = e.currentTarget;
+  const msg = document.getElementById('profile-msg');
+  const first = document.getElementById('f-first').value.trim();
+  const last  = document.getElementById('f-last').value.trim();
+  if (!first || !last) { showFieldMsg(msg, 'First and last name required', true); return; }
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const p = window._profile || {};
+    const r = await authFetch('/api/account', {
+      method: 'PUT',
+      body: JSON.stringify({
+        first_name: first, last_name: last,
+        business_name:    p.business_name,
+        default_tax_rate: p.default_tax_rate,
+        default_region:   p.default_region,
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showFieldMsg(msg, d.error || 'Save failed', true); }
+    else {
+      // Update sessionStorage name so the header dropdown stays in sync
+      // when the user navigates back to /app.
+      const newName = `${first} ${last}`.trim();
+      try { sessionStorage.setItem('qmach_user_name', newName); } catch {}
+      if (window._profile) {
+        window._profile.first_name = first;
+        window._profile.last_name  = last;
+      }
+      showFieldMsg(msg, 'Saved ✓');
+    }
+  } catch { showFieldMsg(msg, 'Connection error', true); }
+  btn.disabled = false; btn.textContent = 'Save changes';
+}
+
+async function saveBusiness(e) {
+  const btn = e.currentTarget;
+  const msg = document.getElementById('biz-msg');
+  const biz    = document.getElementById('f-biz').value.trim();
+  const tax    = document.getElementById('f-tax').value;
+  const region = document.getElementById('f-region').value.trim();
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const p = window._profile || {};
+    const r = await authFetch('/api/account', {
+      method: 'PUT',
+      body: JSON.stringify({
+        first_name: p.first_name, last_name: p.last_name,
+        business_name: biz,
+        default_tax_rate: tax === '' ? null : Number(tax),
+        default_region: region,
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showFieldMsg(msg, d.error || 'Save failed', true); }
+    else {
+      if (window._profile) {
+        window._profile.business_name    = biz;
+        window._profile.default_tax_rate = tax === '' ? null : Number(tax);
+        window._profile.default_region   = region;
+      }
+      showFieldMsg(msg, 'Saved ✓');
+    }
+  } catch { showFieldMsg(msg, 'Connection error', true); }
+  btn.disabled = false; btn.textContent = 'Save changes';
+}
+
+async function changePassword(e) {
+  const btn = e.currentTarget;
+  const msg = document.getElementById('pass-msg');
+  const cur = document.getElementById('p-current').value;
+  const nw  = document.getElementById('p-new').value;
+  const cf  = document.getElementById('p-confirm').value;
+
+  if (!cur || !nw)            { showFieldMsg(msg, 'All fields required', true); return; }
+  if (nw !== cf)              { showFieldMsg(msg, 'New passwords don\'t match', true); return; }
+  if (nw.length < 8 || nw.length > 72 || !/[A-Z]/.test(nw) || !/[0-9]/.test(nw) || !/[^A-Za-z0-9]/.test(nw)) {
+    showFieldMsg(msg, '8–72 chars · 1 uppercase · 1 number · 1 special character', true);
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Updating…';
+  try {
+    const r = await authFetch('/api/account/password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: cur, new_password: nw }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showFieldMsg(msg, d.error || 'Update failed', true); }
+    else {
+      showFieldMsg(msg, 'Password updated ✓');
+      document.getElementById('p-current').value = '';
+      document.getElementById('p-new').value     = '';
+      document.getElementById('p-confirm').value = '';
+    }
+  } catch { showFieldMsg(msg, 'Connection error', true); }
+  btn.disabled = false; btn.textContent = 'Update password';
+}
+
+async function signOut() {
+  try {
+    await authFetch('/api/auth/logout', { method: 'POST' });
+  } catch {}
+  try {
+    sessionStorage.removeItem('qmach_token');
+    sessionStorage.removeItem('qmach_user_name');
+  } catch {}
+  location.href = '/app';
+}
+
+function showFieldMsg(el, msg, isError) {
+  el.textContent = msg;
+  el.classList.add('show');
+  el.classList.toggle('error', !!isError);
+  setTimeout(() => el.classList.remove('show'), 3200);
+}
+
+function escapeAttr(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+
+loadAccount();
+</script>
+</body>
+</html>
