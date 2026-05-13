@@ -110,6 +110,8 @@ body { display: flex; flex-direction: column; }
   font-family: var(--mono); letter-spacing: .3px; text-align: left;
 }
 .login-error { color: var(--red); font-size: 13px; font-weight: 600; margin-top: 12px; min-height: 18px; }
+.turnstile-host { margin: 14px 0 4px; min-height: 65px; display: flex; justify-content: center; }
+.turnstile-host:empty { min-height: 0; margin: 0; }
 
 /* Google Sign-In button */
 .btn-google {

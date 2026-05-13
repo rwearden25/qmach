@@ -128,6 +128,53 @@ let recording = false;
 let finalTranscript = '';
 let waveformRAF = null;
 
+// ── Turnstile (captcha for guest voice analyses). Renders once the CF script
+// loads AND /api/config has returned a sitekey. Token is read at submit time
+// and cleared on success/error so each analysis requires a fresh challenge.
+// The `window._turnstileReady` flag is set by the inline shim in <head> when
+// CF's async script loads — we self-queue via window._turnstileQueue if we
+// get here first. Render is idempotent and safe to call repeatedly.
+let turnstileSiteKey = '';
+let voiceTurnstileWidgetId = null;
+let voiceTurnstileToken = '';
+function renderVoiceTurnstile() {
+  if (!window._turnstileReady || !window.turnstile) {
+    (window._turnstileQueue = window._turnstileQueue || []).push(renderVoiceTurnstile);
+    return;
+  }
+  if (!turnstileSiteKey) return;
+  const host = document.getElementById('voice-turnstile');
+  if (!host) return;
+  if (voiceTurnstileWidgetId !== null) return;
+  try {
+    voiceTurnstileWidgetId = window.turnstile.render(host, {
+      sitekey: turnstileSiteKey,
+      theme: 'auto',
+      size: 'flexible',
+      callback:           (token) => { voiceTurnstileToken = token; },
+      'expired-callback': () => { voiceTurnstileToken = ''; },
+      'error-callback':   () => { voiceTurnstileToken = ''; },
+    });
+  } catch (e) { console.warn('Turnstile render failed:', e); }
+}
+function resetVoiceTurnstile() {
+  voiceTurnstileToken = '';
+  if (voiceTurnstileWidgetId !== null && window.turnstile) {
+    try { window.turnstile.reset(voiceTurnstileWidgetId); } catch {}
+  }
+}
+// Kick off config fetch immediately — the captcha widget can render before
+// the user finishes recording. /api/config is in the auth-middleware open list.
+(async () => {
+  try {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    if (cfg.turnstileSiteKey) {
+      turnstileSiteKey = cfg.turnstileSiteKey;
+      renderVoiceTurnstile();
+    }
+  } catch { /* server unreachable — voice page still works, captcha just won't gate */ }
+})();
+
 function buildRecognition() {
   const r = new SR();
   // iOS Safari is broken with continuous=true (stops after first utterance and
@@ -369,6 +416,18 @@ submitBtn.addEventListener('click', async () => {
   statusEl.classList.remove('error');
   statusEl.textContent = 'Building your quote — one moment…';
 
+  // If the captcha is configured server-side, require a token before we burn
+  // anything else. The widget callback populates voiceTurnstileToken; if the
+  // user hasn't completed it, abort with a friendly nudge.
+  if (turnstileSiteKey && !voiceTurnstileToken) {
+    setStatus('error');
+    statusEl.classList.add('error');
+    statusEl.textContent = 'Please complete the captcha before submitting.';
+    submitBtn.disabled = false;
+    submitBtn.querySelector('span').textContent = 'Get my quote';
+    return;
+  }
+
   try {
     const res = await fetch('/api/voice/analyze', {
       method: 'POST',
@@ -377,8 +436,21 @@ submitBtn.addEventListener('click', async () => {
       body: JSON.stringify({
         transcript,
         prior_context: window._voiceState?.prior_context || null,
+        turnstile_token: voiceTurnstileToken,
       }),
     });
+    if (res.status === 400) {
+      const err = await safeJson(res);
+      if (err?.error === 'captcha_failed') {
+        setStatus('error');
+        statusEl.classList.add('error');
+        statusEl.textContent = err.message || 'Captcha check failed — please retry.';
+        resetVoiceTurnstile();
+        submitBtn.disabled = false;
+        submitBtn.querySelector('span').textContent = 'Get my quote';
+        return;
+      }
+    }
     if (res.status === 403) {
       const err = await safeJson(res);
       if (err?.error === 'guest_limit_reached') {
@@ -418,12 +490,17 @@ submitBtn.addEventListener('click', async () => {
     setStatus('received');
     renderResult(data);
     show('result');
+    // Captcha tokens are single-use. Reset so "Talk to Q again" requires a
+    // fresh challenge — Q will route through this same handler on its next
+    // turn and the new token will be picked up at submit time.
+    resetVoiceTurnstile();
   } catch (err) {
     statusEl.textContent = `Couldn't build the quote — ${err.message}`;
     statusEl.classList.add('error');
     submitBtn.disabled = false;
     submitBtn.querySelector('span').textContent = 'Get my quote';
     setStatus('error');
+    resetVoiceTurnstile();
   }
 });
 

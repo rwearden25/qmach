@@ -13,6 +13,21 @@
 <link rel="stylesheet" href="/css/voice.css?v=20260426i">
 <!-- jsPDF for real PDF generation (no print dialog detour). CSP allows cdnjs. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<!-- Cloudflare Turnstile — captcha for guest voice analyses. Site key comes
+     from /api/config so we can rotate widgets without editing HTML.
+     The shim below guards a race: voice.js loads at end-of-body, the CF script
+     is async — so CF can finish first and call an undefined onload. The shim
+     queues callers until voice.js drains the queue. -->
+<script>
+  window._turnstileQueue = [];
+  window._turnstileReady = false;
+  window.onTurnstileLoaded = function () {
+    window._turnstileReady = true;
+    var q = window._turnstileQueue; window._turnstileQueue = [];
+    q.forEach(function (fn) { try { fn(); } catch (e) {} });
+  };
+</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoaded" async defer></script>
 </head>
 <body>
 
@@ -99,6 +114,7 @@
     <textarea id="transcript-fallback" class="transcript-fallback hidden" placeholder="Tap here, then use the 🎙 on your keyboard to dictate — or just type." rows="4"></textarea>
     <div class="readout-foot">
       <span id="mic-status" class="mic-status"></span>
+      <div id="voice-turnstile" class="turnstile-host"></div>
       <button id="submit-btn" type="button" class="tx-btn hidden">
         <span>Get my quote</span>
         <span class="tx-arrow">→</span>

@@ -530,12 +530,17 @@ body {
 
 .readout-foot {
   display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 12px 16px;
   background: linear-gradient(180deg, var(--bg-elev-3), var(--bg-recess));
   border-top: 1px solid var(--line);
   min-height: 50px;
 }
+/* Turnstile widget wraps to its own line above the status+button row when
+   rendered. Collapses to zero when captcha is disabled server-side. */
+.turnstile-host { flex-basis: 100%; order: -1; display: flex; justify-content: center; }
+.turnstile-host:empty { display: none; }
 .mic-status {
   font-family: var(--sans);
   font-size: 13px;

@@ -35,6 +35,63 @@ let map = null, mapReady = false, drawPoints = [];
 let drawnPolygonGeoJSON = null, drawnAreaSqMeters = 0;
 
 // ═══════════════════════════════════════
+//  TURNSTILE (signup captcha)
+// ═══════════════════════════════════════
+// Sitekey arrives from /api/config (prefetched on DOMContentLoaded). The
+// `window._turnstileReady` flag is set by the inline shim in <head> when CF's
+// async script loads — we self-queue via window._turnstileQueue if we get here
+// first. Render is idempotent and safe to call repeatedly.
+let turnstileSiteKey = '';
+let signupTurnstileWidgetId = null;
+let signupTurnstileToken = '';
+
+function renderSignupTurnstile() {
+  // Queue ourselves if CF script hasn't loaded yet; the shim drains the
+  // queue once window.turnstile is available.
+  if (!window._turnstileReady || !window.turnstile) {
+    (window._turnstileQueue = window._turnstileQueue || []).push(renderSignupTurnstile);
+    return;
+  }
+  if (!turnstileSiteKey) return;                    // captcha not configured server-side
+  const host = el('signup-turnstile');
+  if (!host || host.offsetParent === null) return;  // panel still hidden
+  if (signupTurnstileWidgetId !== null) return;     // already rendered — idempotent
+  try {
+    signupTurnstileWidgetId = window.turnstile.render(host, {
+      sitekey: turnstileSiteKey,
+      theme: 'light',
+      size: 'flexible',
+      callback:           (token) => { signupTurnstileToken = token; },
+      'expired-callback': () => { signupTurnstileToken = ''; },
+      'error-callback':   () => { signupTurnstileToken = ''; },
+    });
+  } catch (e) { console.warn('Turnstile render failed:', e); }
+}
+function resetSignupTurnstile() {
+  signupTurnstileToken = '';
+  if (signupTurnstileWidgetId !== null && window.turnstile) {
+    try { window.turnstile.reset(signupTurnstileWidgetId); } catch {}
+  }
+}
+
+// Pre-fetch /api/config before the user even tries to sign in, so we know the
+// Turnstile sitekey by the time they open the signup panel. /api/config is
+// in the auth-middleware open list so this works pre-login.
+async function prefetchPublicConfig() {
+  try {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    if (cfg.mapboxToken) mapboxToken = cfg.mapboxToken;
+    if (typeof cfg.pzipEnabled === 'boolean') pzipEnabled = cfg.pzipEnabled;
+    if (cfg.turnstileSiteKey) {
+      turnstileSiteKey = cfg.turnstileSiteKey;
+      // If the panel happens to already be open when config arrives, render
+      // now. Otherwise this is a no-op until showSignup() calls it again.
+      renderSignupTurnstile();
+    }
+  } catch { /* server unreachable — leave defaults */ }
+}
+
+// ═══════════════════════════════════════
 //  SUPABASE (Google OAuth)
 // ═══════════════════════════════════════
 const SUPABASE_URL = 'https://ywqidkugtavzqqhehppg.supabase.co';
@@ -190,11 +247,21 @@ async function doSignup() {
     return;
   }
 
+  // Cloudflare Turnstile token (empty when captcha disabled server-side — the
+  // backend treats it as a no-op in that case).
+  if (turnstileSiteKey && !signupTurnstileToken) {
+    err.textContent = 'Please complete the captcha above';
+    return;
+  }
+
   btn.disabled = true; btn.textContent = 'Creating...'; err.textContent = '';
   try {
     const r = await fetch('/api/auth/signup', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ first_name: firstName, last_name: lastName, email, password })
+      body: JSON.stringify({
+        first_name: firstName, last_name: lastName, email, password,
+        turnstile_token: signupTurnstileToken,
+      })
     });
     const d = await r.json().catch(() => ({}));
     if (r.ok && d.success) {
@@ -204,8 +271,14 @@ async function doSignup() {
       hideLogin(); bootApp();
     } else {
       err.textContent = d.error || 'Signup failed';
+      // Captcha tokens are single-use. Reset on any failure so retries
+      // don't reuse the consumed token.
+      resetSignupTurnstile();
     }
-  } catch { err.textContent = 'Connection error'; }
+  } catch {
+    err.textContent = 'Connection error';
+    resetSignupTurnstile();
+  }
   btn.disabled = false; btn.textContent = 'Create Account';
 }
 
@@ -213,6 +286,7 @@ function showSignup() {
   el('auth-signin')?.classList.add('hidden');
   el('auth-signup')?.classList.remove('hidden');
   el('signup-first')?.focus();
+  renderSignupTurnstile(); // safe to call repeatedly — no-op if already rendered
 }
 function showSignin() {
   el('auth-signup')?.classList.add('hidden');
@@ -248,6 +322,8 @@ async function doLogout() {
 //  BOOT
 // ═══════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  // Kick off non-blocking — done by the time the user opens the signup panel.
+  prefetchPublicConfig();
   on('login-btn', doLogin);
   on('btn-google', googleSignIn);
   on('signup-btn', doSignup);

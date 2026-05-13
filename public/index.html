@@ -17,6 +17,21 @@
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Cloudflare Turnstile — captcha for signup. Site key comes from /api/config
+     so we can rotate widgets without editing HTML. Sets window.turnstile when ready.
+     The shim below guards a race: app.js loads at end-of-body, the CF script is
+     async — so CF can finish first and call an undefined onload. The shim queues
+     callers until app.js drains the queue. -->
+<script>
+  window._turnstileQueue = [];
+  window._turnstileReady = false;
+  window.onTurnstileLoaded = function () {
+    window._turnstileReady = true;
+    var q = window._turnstileQueue; window._turnstileQueue = [];
+    q.forEach(function (fn) { try { fn(); } catch (e) {} });
+  };
+</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoaded" async defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Nunito:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/app.css">
@@ -55,6 +70,7 @@
       <input type="email" id="signup-email" class="auth-input" placeholder="Email" autocomplete="email" inputmode="email">
       <input type="password" id="signup-password" class="auth-input" placeholder="Password" autocomplete="new-password">
       <div class="auth-hint">8–72 chars · 1 uppercase · 1 number · 1 special character</div>
+      <div id="signup-turnstile" class="turnstile-host"></div>
       <button id="signup-btn" class="auth-submit">Create Account</button>
       <div id="signup-error" class="login-error"></div>
       <div class="auth-toggle">

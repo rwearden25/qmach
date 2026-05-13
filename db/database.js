@@ -60,15 +60,26 @@ db.exec(`
   -- Registered users (email + bcrypt password). The older env-based
   -- QMACH_USERS flow is still honored in server.js as a fallback; new
   -- signups land here. user_id in quotes/sessions = the user's email.
+  --
+  -- Billing columns are populated by Stripe webhook events. plan is the
+  -- product slug ('free' | 'pro'), subscription_status mirrors the Stripe
+  -- subscription.status value, and current_period_end is a unix-ms
+  -- timestamp used by /api/billing/status to render the renewal date.
   CREATE TABLE IF NOT EXISTS users (
-    id            TEXT PRIMARY KEY,
-    email         TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    first_name    TEXT NOT NULL,
-    last_name     TEXT NOT NULL,
-    created_at    INTEGER NOT NULL
+    id                     TEXT PRIMARY KEY,
+    email                  TEXT UNIQUE NOT NULL,
+    password_hash          TEXT NOT NULL,
+    first_name             TEXT NOT NULL,
+    last_name              TEXT NOT NULL,
+    created_at             INTEGER NOT NULL,
+    stripe_customer_id     TEXT,
+    stripe_subscription_id TEXT,
+    plan                   TEXT NOT NULL DEFAULT 'free',
+    subscription_status    TEXT,
+    current_period_end     INTEGER
   );
-  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+  CREATE INDEX IF NOT EXISTS idx_users_email           ON users(email);
+  CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id);
 `);
 
 console.log(`SQLite database initialized at: ${DB_PATH}`);
