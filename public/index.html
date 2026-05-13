@@ -55,6 +55,28 @@
       <input type="email" id="signup-email" class="auth-input" placeholder="Email" autocomplete="email" inputmode="email">
       <input type="password" id="signup-password" class="auth-input" placeholder="Password" autocomplete="new-password">
       <div class="auth-hint">8–72 chars · 1 uppercase · 1 number · 1 special character</div>
+
+      <!-- Plan picker — revealed by setupSignupPlanPicker() once /api/config
+           confirms Stripe is wired. Defaults to Pro (drives conversion).
+           Pro path chains signup → /api/billing/checkout → Stripe Checkout. -->
+      <div id="signup-plan-picker" class="plan-picker hidden">
+        <div class="plan-picker-label">Choose your plan</div>
+        <label class="plan-opt" data-plan="free">
+          <input type="radio" name="signup-plan" value="free">
+          <div class="plan-opt-body">
+            <div class="plan-opt-head"><span class="plan-opt-name">Free</span><span class="plan-opt-price">$0</span></div>
+            <div class="plan-opt-meta">5 quotes &amp; 5 AI actions / month</div>
+          </div>
+        </label>
+        <label class="plan-opt is-recommended" data-plan="pro">
+          <input type="radio" name="signup-plan" value="pro" checked>
+          <div class="plan-opt-body">
+            <div class="plan-opt-head"><span class="plan-opt-name">Pro <span class="plan-opt-tag">Recommended</span></span><span class="plan-opt-price">$9.99<small>/mo</small></span></div>
+            <div class="plan-opt-meta">Unlimited quotes &amp; AI · branded PDFs · cancel anytime</div>
+          </div>
+        </label>
+      </div>
+
       <button id="signup-btn" class="auth-submit">Create Account</button>
       <div id="signup-error" class="login-error"></div>
       <div class="auth-toggle">

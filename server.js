@@ -1387,12 +1387,19 @@ app.post('/api/billing/checkout', async (req, res) => {
     }
 
     const base = resolveBaseUrl(req);
+    // Client can hint where to land after Checkout. 'app' routes signup-flow
+    // upgrades straight into the app instead of the standalone receipt page.
+    // Any other value (or missing) uses the default /billing receipt page.
+    const returnTo = String(req.body?.return_to || '');
+    const successPath = returnTo === 'app'
+      ? '/app?subscribed=1'
+      : BILLING_SUCCESS_PATH;
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
       client_reference_id: u.id,
       line_items: [{ price: STRIPE_PRICE_PRO, quantity: 1 }],
-      success_url: base + BILLING_SUCCESS_PATH + (BILLING_SUCCESS_PATH.includes('?') ? '&' : '?') + 'session_id={CHECKOUT_SESSION_ID}',
+      success_url: base + successPath + (successPath.includes('?') ? '&' : '?') + 'session_id={CHECKOUT_SESSION_ID}',
       cancel_url:  base + BILLING_CANCEL_PATH,
       allow_promotion_codes: true,
     });
@@ -1919,6 +1926,10 @@ app.get('/api/config', (req, res) => {
     // Frontend uses this to decide whether to render the Turnstile widget.
     // The actual secret stays on the server; only the public site-key ships.
     turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || '',
+    // Signup form uses this to decide whether to render the Pro option on
+    // the plan picker. False = no Stripe wiring on this deploy, so signup
+    // can only create free accounts.
+    billingConfigured: !!(stripe && STRIPE_PRICE_PRO),
   });
 });
 

@@ -111,6 +111,75 @@ body { display: flex; flex-direction: column; }
 }
 .login-error { color: var(--red); font-size: 13px; font-weight: 600; margin-top: 12px; min-height: 18px; }
 
+/* Signup plan picker — only revealed when Stripe is wired server-side
+   (billingConfigured). Two stacked radio cards, Pro is selected by
+   default to drive conversion. */
+.plan-picker { margin: 16px 0 4px; }
+.plan-picker.hidden { display: none; }
+.plan-picker-label {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 1.4px; text-transform: uppercase; color: var(--muted);
+  margin-bottom: 8px; text-align: left;
+}
+.plan-opt {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 13px; margin-bottom: 8px;
+  background: var(--bg);
+  border: 1.5px solid var(--border-lt);
+  border-radius: var(--radius-sm);
+  cursor: pointer; transition: all .15s;
+  position: relative;
+}
+.plan-opt:hover { border-color: var(--border); background: var(--white); }
+.plan-opt input[type="radio"] {
+  appearance: none; -webkit-appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border); background: var(--white);
+  margin: 3px 0 0 0; flex-shrink: 0; cursor: pointer;
+  position: relative; transition: border-color .15s;
+}
+.plan-opt input[type="radio"]:checked {
+  border-color: var(--accent);
+}
+.plan-opt input[type="radio"]:checked::after {
+  content: ''; position: absolute;
+  inset: 2px; border-radius: 50%; background: var(--accent);
+}
+.plan-opt:has(input:checked) {
+  background: var(--white);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(58,94,48,.1);
+}
+.plan-opt.is-recommended:has(input:checked) {
+  box-shadow: 0 0 0 3px rgba(58,94,48,.14), 0 2px 8px rgba(58,94,48,.1);
+}
+.plan-opt-body { flex: 1; min-width: 0; text-align: left; }
+.plan-opt-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 6px; margin-bottom: 2px;
+}
+.plan-opt-name {
+  font-family: var(--serif); font-size: 16px; font-weight: 700;
+  color: var(--dark); letter-spacing: -.2px;
+}
+.plan-opt-tag {
+  display: inline-block;
+  font-family: var(--mono); font-size: 8px; font-weight: 500;
+  letter-spacing: 1px; text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(58,94,48,.12);
+  padding: 2px 6px; border-radius: 3px;
+  margin-left: 4px; vertical-align: 2px;
+}
+.plan-opt-price {
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  color: var(--dark); white-space: nowrap;
+}
+.plan-opt-price small { font-size: 10px; color: var(--muted); font-weight: 400; }
+.plan-opt-meta {
+  font-size: 11px; color: var(--muted); line-height: 1.4;
+}
+
 /* First-run nudge that points at the 🤖 AI button in the header. Auto-dismisses
    after a few seconds, on AI button click, or via the × control. */
 .ai-hint {

@@ -26,6 +26,7 @@ let authToken = sessionStorage.getItem('qmach_token') || '';
 let currentUserId = '';
 let mapboxToken = '';
 let pzipEnabled = false;
+let billingConfigured = false; // set by fetchPublicConfigPreLogin() pre-signup
 let step = 0;
 let items = [];                // completed line items [{service, area, unit, price}]
 let current = { service: null, area: '', unit: 'sqft', price: '' };
@@ -191,29 +192,90 @@ async function doSignup() {
     return;
   }
 
-  btn.disabled = true; btn.textContent = 'Creating...'; err.textContent = '';
+  // Plan choice — radio defaults to 'pro' when picker is visible (billing
+  // configured), and is irrelevant otherwise.
+  const selectedPlan = document.querySelector('input[name="signup-plan"]:checked')?.value || 'free';
+  const wantsPro = selectedPlan === 'pro' && billingConfigured;
+
+  btn.disabled = true;
+  btn.textContent = wantsPro ? 'Creating account…' : 'Creating...';
+  err.textContent = '';
   try {
     const r = await fetch('/api/auth/signup', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ first_name: firstName, last_name: lastName, email, password })
     });
     const d = await r.json().catch(() => ({}));
-    if (r.ok && d.success) {
-      authToken = d.token;
-      currentUserId = d.userId || '';
-      sessionStorage.setItem('qmach_token', authToken);
-      hideLogin(); bootApp();
-    } else {
+    if (!r.ok || !d.success) {
       err.textContent = d.error || 'Signup failed';
+      btn.disabled = false; btn.textContent = 'Create Account';
+      return;
     }
-  } catch { err.textContent = 'Connection error'; }
-  btn.disabled = false; btn.textContent = 'Create Account';
+
+    authToken = d.token;
+    currentUserId = d.userId || '';
+    sessionStorage.setItem('qmach_token', authToken);
+
+    if (wantsPro) {
+      // Chain straight to Stripe Checkout. return_to='app' lands the user
+      // in /app?subscribed=1 after pay, not the standalone billing receipt.
+      btn.textContent = 'Opening checkout…';
+      try {
+        const cr = await fetch('/api/billing/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-auth-token': authToken },
+          body: JSON.stringify({ return_to: 'app' }),
+        });
+        const cd = await cr.json().catch(() => ({}));
+        if (cr.ok && cd.url) {
+          location.href = cd.url; // hand off to Stripe — no need to clear UI
+          return;
+        }
+        // Checkout failed but account is created. Drop into the app and
+        // surface a soft nudge — they can upgrade later from /billing.
+        err.textContent = 'Account created. Couldn’t open checkout — you can upgrade from /billing.';
+        hideLogin(); bootApp();
+      } catch {
+        err.textContent = 'Account created, but checkout connection failed. Upgrade from /billing when ready.';
+        hideLogin(); bootApp();
+      }
+      return;
+    }
+
+    // Free signup — straight into the app.
+    hideLogin(); bootApp();
+  } catch {
+    err.textContent = 'Connection error';
+    btn.disabled = false; btn.textContent = 'Create Account';
+  }
 }
 
 function showSignup() {
   el('auth-signin')?.classList.add('hidden');
   el('auth-signup')?.classList.remove('hidden');
   el('signup-first')?.focus();
+  syncSignupPlanPicker();
+}
+
+// Reveal the plan picker only when Stripe is wired server-side. Called from
+// showSignup() and from fetchPublicConfigPreLogin() once config arrives.
+function syncSignupPlanPicker() {
+  const picker = el('signup-plan-picker');
+  if (!picker) return;
+  picker.classList.toggle('hidden', !billingConfigured);
+}
+
+// Pre-login fetch of /api/config — populates billingConfigured (and could
+// populate other public fields in the future) so the signup form can show
+// the right options before the user authenticates.
+async function fetchPublicConfigPreLogin() {
+  try {
+    const r = await fetch('/api/config');
+    if (!r.ok) return;
+    const cfg = await r.json();
+    billingConfigured = !!cfg.billingConfigured;
+    syncSignupPlanPicker();
+  } catch { /* server unreachable — picker stays hidden, user gets free signup */ }
 }
 function showSignin() {
   el('auth-signup')?.classList.add('hidden');
@@ -250,6 +312,8 @@ async function doLogout() {
 //  BOOT
 // ═══════════════════════════════════════
 document.addEventListener('DOMContentLoaded', async () => {
+  // Non-blocking — picker will reveal as soon as config returns.
+  fetchPublicConfigPreLogin();
   on('login-btn', doLogin);
   on('btn-google', googleSignIn);
   on('signup-btn', doSignup);
@@ -275,6 +339,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function bootApp() {
   el('app-shell').classList.remove('hidden');
   renderServiceList();
+
+  // Signup → Pro return path: Stripe sent the user to /app?subscribed=1.
+  // Show a welcoming toast and clear the param so a refresh doesn't repeat
+  // it. (Webhook updates users.plan to 'pro' in the background — the
+  // setupBillingPill() call below will reflect that within a few seconds.)
+  if (new URLSearchParams(location.search).get('subscribed') === '1') {
+    toast('Welcome to Pro 🎉 Your subscription is active.');
+    history.replaceState(null, '', location.pathname);
+  }
 
   // Header tabs
   document.querySelectorAll('.htab').forEach(btn =>
