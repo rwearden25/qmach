@@ -111,6 +111,72 @@ body { display: flex; flex-direction: column; }
 }
 .login-error { color: var(--red); font-size: 13px; font-weight: 600; margin-top: 12px; min-height: 18px; }
 
+/* First-run nudge that points at the 🤖 AI button in the header. Auto-dismisses
+   after a few seconds, on AI button click, or via the × control. */
+.ai-hint {
+  position: fixed;
+  top: 58px;
+  right: 56px;
+  z-index: 90;
+  max-width: 300px;
+  padding: 10px 32px 10px 12px;
+  background: var(--dark);
+  color: var(--light);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: .2px;
+  display: flex; align-items: flex-start; gap: 8px;
+  box-shadow: 0 14px 36px -10px rgba(42,40,36,.45), 0 4px 10px -4px rgba(42,40,36,.25);
+  animation: aiHintIn .55s cubic-bezier(.2,.9,.25,1) both;
+}
+.ai-hint::before {
+  content: '';
+  position: absolute;
+  top: -6px; right: 16px;
+  width: 11px; height: 11px;
+  background: var(--dark);
+  border-top: 1px solid var(--accent);
+  border-left: 1px solid var(--accent);
+  transform: rotate(45deg);
+}
+.ai-hint-tag {
+  font-size: 9px; font-weight: 500;
+  letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--accent-pale);
+  background: rgba(58,94,48,.25);
+  border: 1px solid rgba(224,237,218,.18);
+  padding: 3px 7px; border-radius: 3px;
+  flex-shrink: 0; margin-top: 1px;
+}
+.ai-hint-text { color: rgba(242,240,235,.92); }
+.ai-hint-text strong { color: var(--accent-pale); font-weight: 600; white-space: nowrap; }
+.ai-hint-close {
+  position: absolute; top: 4px; right: 6px;
+  width: 22px; height: 22px;
+  background: none; border: none;
+  color: rgba(242,240,235,.45);
+  font-size: 18px; line-height: 1;
+  cursor: pointer; padding: 0;
+  transition: color .15s;
+}
+.ai-hint-close:hover { color: var(--light); }
+.ai-hint.hidden { display: none; }
+.ai-hint.dismissing { animation: aiHintOut .35s ease forwards; pointer-events: none; }
+@keyframes aiHintIn {
+  from { opacity: 0; transform: translateY(-6px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+@keyframes aiHintOut {
+  to { opacity: 0; transform: translateY(-4px); }
+}
+@media (max-width: 480px) {
+  .ai-hint { right: 12px; left: 12px; max-width: none; }
+  .ai-hint::before { right: 56px; }
+}
+
 /* Google Sign-In button */
 .btn-google {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -173,6 +239,52 @@ header {
 .header-ai-btn span { text-transform: uppercase; }
 .header-ai-btn:hover { background: var(--accent-hover); }
 .header-ai-btn:active { transform: scale(.95); }
+
+/* Plan pill — sits between the tabs and the AI button. Two states:
+   - free: dashed accent border, "★ Upgrade" — pulses subtly to nudge
+   - pro:  filled accent, "✓ Pro" — calm/confident, no animation
+   Toggle via .is-free / .is-pro classes set by setupBillingPill(). */
+.plan-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: .8px; text-transform: uppercase;
+  padding: 6px 11px;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: all .15s;
+}
+.plan-pill.is-free {
+  color: var(--accent-pale);
+  background: rgba(58,94,48,.18);
+  border: 1px dashed rgba(224,237,218,.55);
+  animation: planPillPulse 2.6s ease-in-out infinite;
+}
+.plan-pill.is-free:hover {
+  background: rgba(58,94,48,.32);
+  border-color: var(--accent-pale);
+  transform: translateY(-1px);
+  animation: none;
+}
+.plan-pill.is-pro {
+  color: var(--accent-pale);
+  background: rgba(58,94,48,.28);
+  border: 1px solid rgba(224,237,218,.25);
+}
+.plan-pill.is-pro:hover {
+  background: rgba(58,94,48,.45);
+  border-color: var(--accent-pale);
+}
+.plan-pill .pill-glyph { font-size: 11px; line-height: 1; }
+@keyframes planPillPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224,237,218,0); }
+  50%      { box-shadow: 0 0 0 4px rgba(224,237,218,.12); }
+}
+@media (max-width: 480px) {
+  .plan-pill { padding: 5px 8px; font-size: 9px; letter-spacing: .6px; }
+  .plan-pill .pill-label { display: none; }
+  .plan-pill .pill-glyph { font-size: 12px; }
+}
 
 .header-logout-btn {
   background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);

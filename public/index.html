@@ -73,9 +73,20 @@
       <button class="htab" id="htab-saved" data-view="saved">📋 Saved</button>
       <button class="htab" id="htab-stats" data-view="stats">📊 Stats</button>
     </div>
+    <!-- Billing pill — populated by setupBillingPill() once /api/billing/status
+         resolves. Stays hidden until then so we don't flash 'Free' on Pro users. -->
+    <a id="plan-pill" class="plan-pill hidden" href="/billing" title="Manage subscription"></a>
     <button class="header-ai-btn" id="btn-ai-chat" title="AI Assistant">🤖 <span>AI</span></button>
     <button class="header-logout-btn" id="btn-logout" title="Sign Out">⏻</button>
   </header>
+
+  <!-- First-run hint for the AI button — auto-dismisses after a few seconds,
+       on AI button click, or via the × control. Stored per-user in localStorage. -->
+  <div id="ai-hint" class="ai-hint hidden" role="status">
+    <span class="ai-hint-tag">tip</span>
+    <span class="ai-hint-text">Stuck on a price or scope? Tap <strong>🤖&nbsp;AI</strong> — Q answers field questions in plain language.</span>
+    <button type="button" id="ai-hint-close" class="ai-hint-close" aria-label="Dismiss tip">×</button>
+  </div>
 
   <!-- QUOTE VIEW -->
   <div id="view-quote" class="view active">

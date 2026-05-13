@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="pquote — Billing & subscription">
+<title>pquote — Billing</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800;900&family=Nunito:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════
+   pquote Billing — Field Receipt
+═══════════════════════════════════════ */
+:root {
+  --bg:          #F2F0EB;
+  --bg2:         #E4E2DA;
+  --paper:       #FAF8F2;
+  --dark:        #2A2824;
+  --text:        #2A2824;
+  --muted:       #4E4C46;
+  --faint:       #8A877E;
+  --light:       #F2F0EB;
+  --accent:      #3A5E30;
+  --accent-hover:#2E4E24;
+  --accent-pale: #E0EDDA;
+  --stamp:       #B83A2E;
+  --border:      #C4C0B6;
+  --border-soft: #DCD8CE;
+  --white:       #FFFFFF;
+  --serif:       'Playfair Display', Georgia, serif;
+  --sans:        'Nunito', system-ui, sans-serif;
+  --mono:        'DM Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--sans); color: var(--text);
+  background: var(--bg);
+  background-image:
+    radial-gradient(circle at 22% 18%, rgba(58,94,48,.06), transparent 55%),
+    radial-gradient(circle at 88% 82%, rgba(184,58,46,.04), transparent 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.16 0 0 0 0 0.16 0 0 0 0 0.14 0 0 0 0.045 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ═══ NAV ═══ */
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+  background: rgba(42,40,36,.95); backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.nav-logo {
+  font-family: var(--serif); font-size: 22px; font-weight: 700;
+  color: var(--light); text-decoration: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.nav-logo span { color: var(--accent-pale); font-weight: 400; }
+.nav-links { display: flex; gap: 8px; align-items: center; }
+.nav-link {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .8px; padding: 8px 16px; border-radius: 6px;
+  text-decoration: none; transition: all .15s; font-weight: 500;
+  color: rgba(255,255,255,.55); border: 1px solid transparent;
+}
+.nav-link:hover { color: rgba(255,255,255,.9); }
+.nav-link.active { color: var(--accent-pale); border-color: rgba(224,237,218,.18); }
+
+/* ═══ PAGE FRAME ═══ */
+.wrap {
+  max-width: 720px; margin: 0 auto;
+  padding: 56px 24px 96px;
+}
+
+.eyebrow {
+  font-family: var(--mono); font-size: 10px; font-weight: 500;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--muted);
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 18px;
+}
+.eyebrow::before, .eyebrow::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+  max-width: 60px;
+}
+
+h1.page-title {
+  font-family: var(--serif); font-weight: 800;
+  font-size: clamp(40px, 6vw, 64px); line-height: .98;
+  letter-spacing: -1px; color: var(--dark);
+  text-align: center;
+}
+h1.page-title em {
+  font-style: italic; color: var(--accent); font-weight: 600;
+}
+.subtitle {
+  text-align: center;
+  font-size: 15px; color: var(--muted); margin: 14px auto 0;
+  max-width: 460px; line-height: 1.6;
+}
+
+/* ═══ RECEIPT (current-plan card) ═══ */
+.receipt {
+  margin-top: 44px;
+  background: var(--paper);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.6) inset,
+    0 24px 60px -32px rgba(42,40,36,.35),
+    0 4px 14px -6px rgba(42,40,36,.18);
+  position: relative;
+  overflow: hidden;
+}
+/* Perforated tear strips top & bottom — the "ticket" feel */
+.receipt::before, .receipt::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 14px;
+  background-image: radial-gradient(circle at 7px 7px, var(--bg) 4px, transparent 4.5px);
+  background-size: 14px 14px;
+  background-repeat: repeat-x;
+}
+.receipt::before { top: -7px; }
+.receipt::after  { bottom: -7px; }
+
+.receipt-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 28px 32px 18px;
+  border-bottom: 1px dashed var(--border);
+  gap: 16px;
+}
+.receipt-head-l { display: flex; flex-direction: column; gap: 4px; }
+.receipt-head-label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1.4px;
+  text-transform: uppercase; color: var(--faint);
+}
+.receipt-head-val {
+  font-family: var(--serif); font-size: 24px; font-weight: 700;
+  color: var(--dark); letter-spacing: -.3px;
+}
+.receipt-head-val small {
+  font-family: var(--mono); font-size: 11px; font-weight: 400;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+  margin-left: 8px;
+}
+
+/* Stamp on the right side of the receipt header */
+.stamp {
+  font-family: var(--mono); font-weight: 500;
+  font-size: 12px; letter-spacing: 2.5px;
+  padding: 10px 14px; border: 2px solid currentColor;
+  border-radius: 4px; text-transform: uppercase;
+  transform: rotate(-6deg);
+  opacity: .85;
+  white-space: nowrap;
+  user-select: none;
+}
+.stamp.is-pro      { color: var(--accent); border-color: var(--accent); }
+.stamp.is-free     { color: var(--faint);  border-color: var(--faint); }
+.stamp.is-past_due { color: var(--stamp);  border-color: var(--stamp); }
+.stamp.is-canceled { color: var(--stamp);  border-color: var(--stamp); }
+
+.receipt-body { padding: 24px 32px 32px; }
+.line {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 12px 0; border-bottom: 1px dotted var(--border);
+  gap: 16px;
+}
+.line:last-child { border-bottom: none; }
+.line-k {
+  font-family: var(--mono); font-size: 11px;
+  letter-spacing: 1.2px; text-transform: uppercase;
+  color: var(--muted); flex-shrink: 0;
+}
+.line-v {
+  font-family: var(--mono); font-size: 14px; color: var(--dark);
+  text-align: right; font-weight: 500;
+}
+.line-v.muted { color: var(--faint); font-weight: 400; }
+
+/* ═══ Action buttons ═══ */
+.actions {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 0 32px 32px;
+}
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 10px; padding: 18px 22px; border-radius: 8px;
+  font-family: var(--mono); font-size: 13px; font-weight: 500;
+  text-transform: uppercase; letter-spacing: 1.2px;
+  cursor: pointer; border: none; transition: all .18s;
+  text-decoration: none; width: 100%;
+}
+.btn.primary {
+  background: var(--accent); color: var(--white);
+  box-shadow: 0 8px 24px -6px rgba(58,94,48,.45);
+}
+.btn.primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn.primary:disabled {
+  background: var(--faint); cursor: not-allowed; transform: none;
+  box-shadow: none;
+}
+.btn.ghost {
+  background: transparent; color: var(--dark);
+  border: 1.5px solid var(--border);
+}
+.btn.ghost:hover { background: var(--bg2); border-color: var(--dark); }
+
+.btn .arrow { transition: transform .18s; }
+.btn:hover .arrow { transform: translateX(3px); }
+
+/* ═══ PRO FEATURE LIST (shown to free users) ═══ */
+.pro-pitch {
+  margin-top: 40px;
+  background: var(--dark); color: var(--light);
+  border-radius: 10px;
+  padding: 36px 32px;
+  position: relative; overflow: hidden;
+}
+.pro-pitch::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at 80% 10%, rgba(58,94,48,.35), transparent 55%);
+  pointer-events: none;
+}
+.pro-pitch-head {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  margin-bottom: 22px; gap: 12px; position: relative;
+}
+.pro-pitch-title {
+  font-family: var(--serif); font-weight: 700;
+  font-size: 28px; letter-spacing: -.3px;
+}
+.pro-pitch-title span { color: var(--accent-pale); font-style: italic; font-weight: 400; }
+.pro-pitch-price {
+  font-family: var(--mono); font-size: 12px;
+  color: rgba(255,255,255,.55); letter-spacing: 1px;
+  text-align: right; white-space: nowrap;
+}
+.pro-feat-list { list-style: none; position: relative; }
+.pro-feat {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 10px 0; font-size: 14px; line-height: 1.55;
+  color: rgba(255,255,255,.85);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.pro-feat:last-child { border-bottom: none; }
+.pro-feat .tick {
+  color: var(--accent-pale); flex-shrink: 0; margin-top: 3px;
+  font-family: var(--mono); font-weight: 700;
+}
+
+/* ═══ TOAST / BANNERS ═══ */
+.banner {
+  margin-bottom: 26px;
+  padding: 14px 20px; border-radius: 8px;
+  display: flex; align-items: center; gap: 14px;
+  font-size: 14px;
+  border-left: 4px solid;
+}
+.banner.success { background: #EEF6E9; color: #294D20; border-color: var(--accent); }
+.banner.canceled { background: #FBEEEC; color: #6B2820; border-color: var(--stamp); }
+.banner.info { background: var(--paper); color: var(--muted); border-color: var(--border); }
+.banner .b-icon {
+  font-family: var(--mono); font-weight: 500;
+  font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+  background: currentColor; color: var(--paper);
+  padding: 4px 8px; border-radius: 4px; flex-shrink: 0;
+}
+
+/* ═══ AUTH WALL ═══ */
+.gate {
+  margin-top: 40px;
+  background: var(--paper);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 48px 36px; text-align: center;
+}
+.gate h2 {
+  font-family: var(--serif); font-weight: 700;
+  font-size: 28px; color: var(--dark); margin-bottom: 10px;
+}
+.gate p { color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 380px; margin: 0 auto 24px; }
+
+/* ═══ LOADING STATE ═══ */
+.loading {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 80px 0; gap: 18px;
+}
+.dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); opacity: .4;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.loading-row { display: flex; gap: 10px; }
+.loading-row .dot:nth-child(2) { animation-delay: .2s; }
+.loading-row .dot:nth-child(3) { animation-delay: .4s; }
+.loading-label {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--faint);
+}
+@keyframes pulse {
+  0%, 80%, 100% { opacity: .25; transform: scale(.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+/* ═══ FOOTER ═══ */
+.foot {
+  text-align: center; padding: 32px 24px 48px;
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: 1.5px; text-transform: uppercase; color: var(--faint);
+}
+.foot a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--border); }
+.foot a:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 600px) {
+  .wrap { padding: 32px 16px 64px; }
+  .receipt-head, .receipt-body, .actions { padding-left: 22px; padding-right: 22px; }
+  .pro-pitch { padding: 28px 22px; }
+  .pro-pitch-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .pro-pitch-price { text-align: left; }
+  .stamp { font-size: 10px; padding: 8px 10px; }
+}
+
+/* ═══ ENTRY ANIMATION ═══ */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.eyebrow, h1.page-title, .subtitle, .receipt, .pro-pitch, .gate, .banner {
+  animation: rise .55s ease forwards;
+  opacity: 0;
+}
+.eyebrow      { animation-delay: .05s; }
+h1.page-title { animation-delay: .12s; }
+.subtitle     { animation-delay: .2s; }
+.banner       { animation-delay: .26s; }
+.receipt      { animation-delay: .32s; }
+.pro-pitch    { animation-delay: .44s; }
+.gate         { animation-delay: .2s; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-logo">p<span>quote</span></a>
+  <div class="nav-links">
+    <a href="/app" class="nav-link">App</a>
+    <a href="/billing" class="nav-link active">Billing</a>
+  </div>
+</nav>
+
+<main class="wrap" id="wrap">
+
+  <div class="eyebrow">Account · Subscription</div>
+  <h1 class="page-title">Your <em>plan</em>.</h1>
+  <p class="subtitle">Manage your pquote subscription. Upgrade, switch payment methods, or cancel any time — no contracts, no calls.</p>
+
+  <div id="banner-slot"></div>
+  <div id="content">
+    <div class="loading">
+      <div class="loading-row"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+      <div class="loading-label">Reading account…</div>
+    </div>
+  </div>
+</main>
+
+<footer class="foot">
+  pquote — Field quotes in 60 seconds &nbsp;·&nbsp; <a href="/">Back to home</a>
+</footer>
+
+<script>
+'use strict';
+
+const AUTH_KEY    = 'qmach_token';
+const authToken   = sessionStorage.getItem(AUTH_KEY) || '';
+const $content    = document.getElementById('content');
+const $banner     = document.getElementById('banner-slot');
+
+// Render the query-string banner first (success / canceled). We use sessionStorage
+// to remember we've shown it so a refresh doesn't repeat it forever, but a fresh
+// open of /billing?status=success will always show it once.
+function renderQueryBanner() {
+  const p = new URLSearchParams(location.search);
+  const status = p.get('status');
+  if (!status) return;
+  if (status === 'success') {
+    $banner.innerHTML = `
+      <div class="banner success">
+        <span class="b-icon">Posted</span>
+        <span>Payment received. Your Pro plan is active — webhook may take a few seconds to reflect below.</span>
+      </div>`;
+  } else if (status === 'canceled') {
+    $banner.innerHTML = `
+      <div class="banner canceled">
+        <span class="b-icon">Void</span>
+        <span>Checkout canceled. No charge made — you can pick up where you left off whenever you're ready.</span>
+      </div>`;
+  }
+}
+
+function fmtDate(ms) {
+  if (!ms) return '—';
+  try {
+    return new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch { return '—'; }
+}
+
+function statusLabel(plan, status) {
+  if (plan === 'pro' && status === 'active')   return { label: 'Active', cls: 'is-pro' };
+  if (plan === 'pro' && status === 'trialing') return { label: 'Trialing', cls: 'is-pro' };
+  if (status === 'past_due')   return { label: 'Past Due', cls: 'is-past_due' };
+  if (status === 'canceled')   return { label: 'Canceled', cls: 'is-canceled' };
+  if (status === 'unpaid')     return { label: 'Unpaid', cls: 'is-past_due' };
+  if (status === 'incomplete') return { label: 'Incomplete', cls: 'is-past_due' };
+  return { label: 'Free', cls: 'is-free' };
+}
+
+function planLabel(plan) {
+  if (plan === 'pro') return 'pquote Pro';
+  return 'Free';
+}
+
+async function loadStatus() {
+  if (!authToken) return renderGate();
+  let data;
+  try {
+    const r = await fetch('/api/billing/status', { headers: { 'x-auth-token': authToken }});
+    if (r.status === 401) return renderGate();
+    data = await r.json();
+  } catch (err) {
+    return renderError('Could not reach the server. Refresh in a moment.');
+  }
+  if (!data.registered) {
+    return renderError('Your account isn’t registered for billing yet. Use email signup to enable subscriptions.');
+  }
+  renderReceipt(data);
+}
+
+function renderGate() {
+  $content.innerHTML = `
+    <div class="gate">
+      <h2>Sign in to manage billing</h2>
+      <p>You need a pquote account to view your subscription. Sign in or sign up — takes a few seconds.</p>
+      <a href="/app" class="btn primary">Sign in <span class="arrow">→</span></a>
+    </div>`;
+}
+
+function renderError(msg) {
+  $content.innerHTML = `
+    <div class="banner canceled" style="margin-top:32px">
+      <span class="b-icon">Err</span>
+      <span>${msg}</span>
+    </div>`;
+}
+
+function renderReceipt(d) {
+  const sl = statusLabel(d.plan, d.status);
+  const isPro = d.plan === 'pro';
+  const renewLine = d.current_period_end
+    ? `<div class="line"><span class="line-k">${d.status === 'canceled' ? 'Access ends' : 'Renews'}</span><span class="line-v">${fmtDate(d.current_period_end)}</span></div>`
+    : '';
+  const canPortal = d.has_customer;
+
+  const actions = isPro
+    ? `<a href="#" class="btn primary" id="portal-btn">Manage subscription <span class="arrow">→</span></a>
+       <a href="/app" class="btn ghost">Back to app</a>`
+    : (d.configured
+        ? `<a href="#" class="btn primary" id="upgrade-btn">Upgrade to Pro <span class="arrow">→</span></a>
+           ${canPortal ? `<a href="#" class="btn ghost" id="portal-btn">View past invoices</a>` : ''}
+           <a href="/app" class="btn ghost">Keep using free</a>`
+        : `<button class="btn primary" disabled>Checkout not configured yet</button>
+           <a href="/app" class="btn ghost">Back to app</a>`);
+
+  const proPitch = isPro ? '' : `
+    <section class="pro-pitch">
+      <div class="pro-pitch-head">
+        <div class="pro-pitch-title">pquote <span>Pro</span></div>
+        <div class="pro-pitch-price">Configured in Stripe<br>· Cancel any time</div>
+      </div>
+      <ul class="pro-feat-list">
+        <li class="pro-feat"><span class="tick">+</span><span>Unlimited voice quotes — no daily cap</span></li>
+        <li class="pro-feat"><span class="tick">+</span><span>Calibrated AI pricing trained on your past jobs</span></li>
+        <li class="pro-feat"><span class="tick">+</span><span>Unlimited saved quotes &amp; client history</span></li>
+        <li class="pro-feat"><span class="tick">+</span><span>Branded PDF quotes — logo, colors, contact block</span></li>
+        <li class="pro-feat"><span class="tick">+</span><span>Send straight to pzip as a draft invoice</span></li>
+        <li class="pro-feat"><span class="tick">+</span><span>Priority support &mdash; replies within one business day</span></li>
+      </ul>
+    </section>`;
+
+  $content.innerHTML = `
+    <section class="receipt">
+      <div class="receipt-head">
+        <div class="receipt-head-l">
+          <div class="receipt-head-label">Current Plan</div>
+          <div class="receipt-head-val">${planLabel(d.plan)}</div>
+        </div>
+        <div class="stamp ${sl.cls}">${sl.label}</div>
+      </div>
+      <div class="receipt-body">
+        <div class="line"><span class="line-k">Plan ID</span><span class="line-v muted">${d.plan}</span></div>
+        <div class="line"><span class="line-k">Status</span><span class="line-v">${d.status || '—'}</span></div>
+        ${renewLine}
+        <div class="line"><span class="line-k">Customer</span><span class="line-v muted">${d.has_customer ? 'On file' : 'Not yet'}</span></div>
+      </div>
+      <div class="actions">${actions}</div>
+    </section>
+    ${proPitch}`;
+
+  const upBtn = document.getElementById('upgrade-btn');
+  if (upBtn) upBtn.addEventListener('click', startCheckout);
+  const portalBtn = document.getElementById('portal-btn');
+  if (portalBtn) portalBtn.addEventListener('click', openPortal);
+}
+
+async function postJSON(url) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-auth-token': authToken },
+    body: '{}'
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `${r.status} ${r.statusText}`);
+  return data;
+}
+
+async function startCheckout(e) {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  btn.style.opacity = '0.6';
+  btn.style.pointerEvents = 'none';
+  btn.innerHTML = 'Opening Stripe…';
+  try {
+    const { url } = await postJSON('/api/billing/checkout');
+    location.href = url;
+  } catch (err) {
+    renderError(err.message || 'Could not start checkout.');
+  }
+}
+
+async function openPortal(e) {
+  e.preventDefault();
+  const btn = e.currentTarget;
+  btn.style.opacity = '0.6';
+  btn.style.pointerEvents = 'none';
+  btn.innerHTML = 'Opening portal…';
+  try {
+    const { url } = await postJSON('/api/billing/portal');
+    location.href = url;
+  } catch (err) {
+    renderError(err.message || 'Could not open portal.');
+  }
+}
+
+renderQueryBanner();
+loadStatus();
+</script>
+</body>
+</html>

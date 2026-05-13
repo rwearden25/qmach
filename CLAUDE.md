@@ -5,107 +5,65 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm install
-cp .env.example .env             # then fill ANTHROPIC_API_KEY + MAPBOX_TOKEN
-npm run dev                      # nodemon server.js, http://localhost:3000
-npm start                        # node server.js (what Railway runs)
-npm run hash-password -- <pw>    # bcrypt hash for QMACH_USERS entries
+npm install            # install deps; better-sqlite3 builds a native binary
+npm run dev            # nodemon — auto-restart on server.js changes
+npm start              # plain `node server.js` (used in production)
+npm run hash-password -- <password>   # bcrypt-hash a value for QMACH_USERS
+node --check server.js                # syntax-check without booting (DB binary mismatch is common in dev)
+node scripts/reconcile-pzip-invoices.js   # one-off maintenance script (read its header before running)
 ```
 
-There is no test suite, lint config, or build step — `server.js` is the application and `public/` is served as static files. "Build" means redeploy on Railway via push to `main`.
+There is **no test suite, linter, or formatter** configured. Don't invent commands for tools that aren't installed. Don't add tooling unless asked.
 
-Verify a deploy actually swapped:
-
-```bash
-curl -s https://www.pquote.ai/version    # returns the short git SHA of the running build
-```
-
-`APP_VERSION` is derived from `RAILWAY_GIT_COMMIT_SHA` at boot (with a `git rev-parse` fallback for local dev). Compare the returned SHA against the commit you expect to be live; if it doesn't match within ~2 min of merge, the Railway container didn't swap and a manual Redeploy is needed.
+Required env vars for boot: `ANTHROPIC_API_KEY`, `MAPBOX_TOKEN`. See `.env.example` for the full optional list (auth, Stripe, pzip integration, Google OAuth allowlist, voice abuse caps).
 
 ## Architecture
 
-**Single-file Express monolith.** All routing, auth, AI integration, rate limiting, and business logic lives in `server.js` (~1.4k lines). There are no controllers, services, or routers — endpoints are defined inline. When extending, follow the existing pattern (define handlers near related ones, reuse the `db.prepare(...)` statements at module scope) rather than introducing layered abstractions.
+**Single-process Express app, SQLite for storage, no build step, no framework on the frontend.** Static HTML/CSS/JS in `public/` served directly. All routing, auth, AI calls, and webhook handling live in one file: `server.js` (~1500 lines, intentionally flat).
 
-**Three frontend entry points**, each its own HTML/JS pair under `public/`:
+### Data layer
+- **One SQLite DB** at `$RAILWAY_VOLUME_MOUNT_PATH/quotemachine.db` (falls back to `./data/` locally). WAL mode. The Railway volume is the single source of truth — there is no replica.
+- Schema in `db/database.js` — `quotes`, `sessions`, `users`. Schema changes are layered as `ALTER TABLE` auto-migrations at the top of `server.js` (search for `[DB] Added`) rather than versioned migration files. **Add new columns there**, not by editing the `CREATE TABLE` alone, or existing deployments won't pick them up.
+- `db/backup.js` runs daily `VACUUM INTO` snapshots into `<volume>/backups/`, kept 14 days. Same-volume only — pair with `/api/backup/download` for offsite copies.
+- `db/kb.js` is the calibration helper: returns a user's recent quotes by industry to seed AI prompts with their actual pricing.
 
-| Route | File | Purpose |
-|---|---|---|
-| `/` | `landing.html` | Public marketing page |
-| `/app` | `index.html` + `js/app.js` | Authenticated map-based quoter (Mapbox draw → AI pricing → save) |
-| `/voice` | `voice.html` + `js/voice.js` | Open-access voice→quote flow (guest-quotaed) |
-| `/admin` | `admin.html` | Admin UI; HTML is public, API gated by `ADMIN_USER_ID` |
+### Auth — three coexisting paths
+All three resolve to the same `req.userId` downstream. The middleware at `app.use('/api/', ...)` enforces auth on every `/api/*` route except an explicit open list (search for `const open = [`).
 
-`express.static` serves `public/` with `no-cache` on HTML/CSS/JS so iOS Safari picks up new builds without manual refresh; image/font caching is left default.
+1. **Email + bcrypt** (primary). Signup writes to `users` table; `users.id === users.email`. Sessions live in SQLite (`sessions` table), 24h TTL, capacity-capped at 1000, identified by `x-auth-token` header.
+2. **Google OAuth** via Supabase. The frontend gets a Supabase access token; `/api/auth/google` validates it against Supabase, applies the `GOOGLE_ALLOWED_EMAILS` allowlist (entries starting with `@` are domain suffixes), creates a session with `userId = 'g:' + email`. **Google users have no `users` row**, which matters for billing.
+3. **Legacy env users** — `QMACH_USERS` (JSON array) or single-user `QMACH_PASSWORD`. Plaintext passwords still work but log a boot-time warning; hash with `npm run hash-password`.
 
-### Auth (three coexisting sources)
+`isOpenAccess()` grants `userId='default'` only when both env users AND the `users` table are empty — fresh-install convenience that flips off the moment anyone signs up.
 
-`server.js` recognizes users from three places, all writing to the same SQLite `sessions` table:
+### Pages
+- `/` → `landing.html` — marketing; design system: Playfair Display + Nunito + DM Mono on a sand/dark/forest-green palette ("Rugged Precision"). **Any new public page must match this aesthetic** — see `memory/feedback_frontend_design.md`. Invoke `/frontend-design:frontend-design` before writing generic CSS.
+- `/app` → `index.html` — the authenticated SPA (map, drawing tools, quote editor, AI chat). All logic in `public/js/app.js`.
+- `/voice` → `voice.html` — open voice-quote flow for guests, defended by a 6-layer abuse stack (see `docs/voice-security.md`).
+- `/billing` → `billing.html` — Stripe subscription management.
+- `/admin` → `admin.html` — admin UI gated by `ADMIN_USER_ID`.
 
-1. **`QMACH_USERS` env** — JSON array `[{id, password, name}]`. Passwords may be plaintext (legacy, warned at boot) or bcrypt (`$2[aby]$...`). `QMACH_PASSWORD` is a single-user fallback.
-2. **DB users** (`users` table) — email + bcrypt signups via `POST /api/auth/signup`. Fresh schema added in `db/database.js`.
-3. **Supabase Google OAuth** — frontend gets a Supabase session, posts the JWT to `/api/auth/google`, server verifies with Supabase REST and mints a local session. User IDs are prefixed `g:<email>` to keep them disjoint from password users.
+### AI calls (all via Anthropic SDK, model `claude-opus-4-7`)
+- `/api/ai/suggest-price`, `/api/ai/generate-narrative`, `/api/ai/chat` — auth'd.
+- `/api/voice/analyze`, `/api/voice/price` — open to guests. Both burn tokens, so they're behind a stack of caps: 10/min IP rate limit → 2-per-24h guest cap (MAX of IP-keyed and HMAC-signed-cookie-keyed counters, so bypass needs rotating both) → server-wide daily kill switch (`VOICE_DAILY_CAP`, default 500) → Anthropic console cap. **Don't loosen any of these without reading `docs/voice-security.md`.** Counter bumps happen only on success so failures don't burn quota.
 
-`isOpenAccess()` returns true **only** when `QMACH_USERS` is empty AND the `users` table is empty. In that state every protected endpoint sees `req.userId = 'default'`. The first signup or env-config flips the whole app into auth-required mode automatically.
+### Stripe billing
+- Webhook at `/api/stripe/webhook` is mounted **before** `express.json()` because signature verification needs the raw body — keep it that way. Auth middleware also bypasses it because Stripe doesn't send our session token.
+- Webhook updates the `users` row directly; everything else (`/api/billing/status`, `/billing` page) reads from the DB, never from Stripe live. Source of truth for plan is `users.plan` (`'free' | 'pro'`), updated by `applySubscriptionToUser()` whenever a `customer.subscription.*` event fires.
+- Billing is gated to DB-registered users only. Google OAuth (`g:` prefix) and env-configured users get a 403 — they have nowhere to hang `stripe_customer_id`.
+- Env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO_MONTHLY` (a `price_xxx` ID). Optional `APP_BASE_URL` overrides the request-derived host for success/cancel URLs.
 
-The auth middleware is one `app.use('/api/', ...)` block (around line 573) with a hardcoded `open` array of paths that bypass auth — `/voice/analyze`, `/voice/price`, `/config`, and the `/auth/*` family. Add new public endpoints by extending that array, not by reordering middleware.
+### Integrations
+- **Mapbox** — token is server-held; `/api/config` ships it to the frontend.
+- **pzip.ai** — `POST /api/quotes/:id/send-to-pzip` ships a saved quote as a draft invoice. Idempotent via `external_id = qmach:<uuid>`. Tax is sent as a dollar amount under `tax` (not `tax_rate`) to avoid the percent-vs-fraction mismatch that previously inflated invoices 100×. Requires `PZIP_WEBHOOK_URL` + `PZIP_API_KEY`.
 
-### `/voice` token-spend defense
+### Deploy (Railway)
+- `Dockerfile` (Node 20-alpine) and `railway.toml` define the deploy. A Railway **Volume** mounted at `/data` is what makes `RAILWAY_VOLUME_MOUNT_PATH` populate — without it, the SQLite DB doesn't persist across deploys.
+- `APP_VERSION` constant near the bottom of `server.js` is bumped on intentional deploys; `/version` returns it. If `/version` doesn't reflect the merge within ~2min, the container didn't swap and a manual Redeploy is needed.
 
-`/voice` is intentionally open to guests, so it has a layered stack to bound Anthropic spend. All counters live in the SQLite `voice_quota` table — persisted so a Railway restart doesn't reset the daily cap or hand every guest fresh quota:
+## Conventions
 
-1. `voiceLimiter` — 10 req/min/IP across `/api/voice/*`.
-2. Per-IP guest quota — `GUEST_VOICE_LIMIT = 2` analyses per 24 h.
-3. Per-cookie guest quota — signed httpOnly `_qg` cookie, same 24 h counter.
-4. `Math.max(ip, cookie)` enforcement — bypass needs both rotated.
-5. **Per-user authenticated cap** — `USER_VOICE_LIMIT` env (default 25/24h) on `/voice/analyze` + `/voice/price`. Catches runaway scripts and one-account abuse.
-6. `VOICE_DAILY_CAP` (env, default 500) — server-wide kill switch on every voice call (auth + guest, analyze + price). 503 once tripped until UTC midnight.
-7. Anthropic console monthly spend cap — out of band, must be set manually.
-
-Counters bump only on **success** so failed calls don't burn quota. The `voice_quota` keys are `ip:<ip>`, `gid:<cookie>`, `user:<userId>`, `daily:YYYY-MM-DD`. `GUEST_COOKIE_SECRET` env signs the cookie. Full reference: `docs/voice-security.md`.
-
-### AI integration
-
-All Anthropic calls use `claude-opus-4-7` directly (no abstraction). Three patterns:
-
-- **`/api/ai/suggest-price`** + **`/api/ai/generate-narrative`** — auth-only, called from the map quoter UI.
-- **`/api/voice/analyze`** + **`/api/voice/price`** — guest-allowed, enforce the layered quota above.
-- **`/api/ai/chat`** — trades-assistant chat used by the quoter UI.
-
-The voice endpoints inject **calibration examples** via `db/kb.js` → `getRecentQuotesForIndustry(userId, industry, 5)`, which pulls the user's own recent quotes for the same `project_type` or `inferred_industry` so Q's pricing matches their patterns. Empty examples are sent on the very first analyze (no industry yet); `/voice/price` and continuation analyses pass `prior_context.inferred_industry` so calibration kicks in. New AI endpoints that should be calibrated to user history should follow the same pattern.
-
-### Persistence
-
-`db/database.js` opens `better-sqlite3` at `${RAILWAY_VOLUME_MOUNT_PATH}/quotemachine.db` (falls back to `./data/quotemachine.db` for dev). WAL mode + foreign keys on. Schema lives inline in `db/database.js` as `CREATE TABLE IF NOT EXISTS` — there is no migration system; add columns with idempotent `ALTER TABLE` guards in the same file or via `db.exec` on boot.
-
-Tables: `quotes` (per-user, scoped via `user_id`, soft-delete via `deleted_at`), `sessions` (24 h TTL, capped at 1000 with oldest-evicted-first), `users` (DB signups), `voice_quota` (rate-limit counters), `email_only_signups` (soft-signup marketing list), `materials_kb` (industry application rates / pricing reference, seeded from `db/materials_seed.json` on every boot).
-
-`quotes.user_id` references whichever ID source authenticated — `default` (open access), the QMACH_USERS id, the DB users PK, or `g:<email>` (Google), or `e:<email>` (email-only soft signup).
-
-**Soft-delete on quotes:** `DELETE /api/quotes/:id` sets `deleted_at = Date.now()` by default; pass `?purge=1` to hard-delete. List endpoints filter `deleted_at IS NULL` by default; pass `?include_trash=1` or `?trash_only=1` to see soft-deleted rows. `POST /api/quotes/:id/restore` clears `deleted_at`. Stats and KB calibration both filter on `deleted_at IS NULL` so trash doesn't pollute analytics or AI prompts.
-
-**Materials KB:** `db/kb.js` exports `getMaterialsForIndustry(industry, region='US')` returning seeded application/coverage rates (paint sqft/gal, sealcoat per-sqft, asphalt per-square, etc.). Both `/voice/price` and `/api/ai/suggest-price` inject these rows + the user's own pricing calibration (`getPricingCalibration`) into the Anthropic prompt as priority-ordered grounding: user's actual past pricing first, materials_kb numbers second, generic market range last. To add a row, edit `db/materials_seed.json` and redeploy — UPSERT on the deterministic id refreshes existing entries.
-
-`db/backup.js` runs `VACUUM INTO` snapshots into `<volume>/backups/pquote-YYYY-MM-DD.db` — 30 s after boot then hourly (short-circuits if today's already exists). Retains 14 days. These protect against app-level corruption, not volume loss; pair with `/api/backup/download` for offsite copies.
-
-### Deploy / infra
-
-Railway, single service, Dockerfile-based (`node:20-alpine`, builds `better-sqlite3` natively via apk python3/make/g++). `railway.toml` mounts a volume at `/data` — that's `RAILWAY_VOLUME_MOUNT_PATH` and is where the DB and backups live. Env vars (set in Railway → Variables): `ANTHROPIC_API_KEY`, `MAPBOX_TOKEN`, `QMACH_USERS` or `QMACH_PASSWORD`, `ADMIN_USER_ID`, `VOICE_DAILY_CAP`, `GUEST_COOKIE_SECRET`, `CORS_ORIGIN`, `PZIP_WEBHOOK_URL` + `PZIP_API_KEY` (for the optional `/api/quotes/:id/send-to-pzip` invoice handoff to the sister pzip app).
-
-`app.set('trust proxy', 1)` is required so `express-rate-limit` and the per-IP guest quota see the real client IP behind Railway's proxy — don't remove it.
-
-### Landing-page assets
-
-`public/promo.webm` (~1.5 MB, 30 fps VP9) is the rotating hero video showing both the voice-quote and map-quote flows end-to-end. It's tap-to-pause via a `<button>` wrapper around the `<video>` with a ▶ overlay synced to the video's pause/play events.
-
-`public/hero-bg/*.jpg` are six satellite views (Mapbox Static API, public commercial properties only — never residential) cycling every 10 s as the hero backdrop at 32 % opacity behind a vignette.
-
-Both assets are produced by tooling outside the repo at `C:\Users\Ross.Wearden\AppData\Local\Temp\pquote-browser-tests\`. See `docs/promo-video.md` for the re-record runbook. Memory file `reference_promo_assets_workflow.md` has the operational summary.
-
-## Memory and conventions
-
-`memory/MEMORY.md` is loaded into Claude's context every session. Read it first. Key flags currently:
-- Frontend work for Ross uses the `frontend-design` skill, not generic CSS.
-- Never use 11905 Metmora Ct or any personal address in demos / recordings / commits — public commercial addresses only (e.g., 1601 Bryan St, Dallas TX).
-- The Synology NAS is not always powered on — don't propose it as a live cron host without confirming.
-- Promo-video iteration has its own preferences captured (natural pace, end-to-end coverage, click rings, section labels).
-- Playwright /app driving has well-known gotchas (service-tile auto-advance, AI-price modal flow, 30s default timeouts).
+- **One file, flat structure.** `server.js` is intentionally not split into routers/services. Don't refactor it without being asked.
+- **No frontend framework.** No React, no bundler. Hand-written HTML/CSS/JS per page. Auth token lives in `sessionStorage['qmach_token']`; reads use `headers: { 'x-auth-token': token }`.
+- **Comments explain *why*, not *what*.** The existing comments in `server.js` are the bar — preserve them, don't strip them, and when adding non-obvious code (security guards, ordering requirements, integration quirks) add a short comment in the same voice.
+- **Don't introduce backwards-compat shims for code you control.** The legacy `QMACH_USERS` path stays because real deployments rely on it; new code should not add similar layers speculatively.

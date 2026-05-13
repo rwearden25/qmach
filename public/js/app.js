@@ -405,6 +405,8 @@ async function bootApp() {
 
   setupInstallBanner();
   setupTipsStrip();
+  setupAiHint();
+  setupBillingPill();
 
   try {
     const cfg = await authFetch('/api/config').then(r => r.json());
@@ -1786,6 +1788,64 @@ function setupTipsStrip() {
     try { if (currentUserId) localStorage.setItem(tipsKey(), '1'); } catch {}
     haptic(8);
   });
+}
+
+// First-run nudge pointing at the 🤖 AI button — surfaces the assistant
+// without forcing users to click around hoping to find help.
+function aiHintKey() { return 'pquote_ai_hint_dismissed_' + (currentUserId || 'anon'); }
+function setupAiHint() {
+  const hint = el('ai-hint');
+  if (!hint) return;
+  if (currentUserId && localStorage.getItem(aiHintKey())) return;
+
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    hint.classList.add('dismissing');
+    setTimeout(() => hint.classList.add('hidden'), 350);
+    try { if (currentUserId) localStorage.setItem(aiHintKey(), '1'); } catch {}
+  };
+
+  // Delay so the address-step tips strip lands first; the AI hint then
+  // rides in as a second, smaller beat.
+  setTimeout(() => {
+    if (dismissed) return;
+    hint.classList.remove('hidden');
+    setTimeout(dismiss, 9000);
+  }, 2500);
+
+  el('ai-hint-close')?.addEventListener('click', dismiss);
+  el('btn-ai-chat')?.addEventListener('click', dismiss);
+}
+
+// Plan pill in the header — single source of discovery for /billing. Reads
+// /api/billing/status (auth required, already gated by bootApp) and paints
+// either "★ Upgrade" (free) or "✓ Pro" (active). Hides itself entirely when
+// billing isn't configured server-side (e.g. dev without STRIPE_SECRET_KEY)
+// so it doesn't dangle a dead link.
+async function setupBillingPill() {
+  const pill = el('plan-pill');
+  if (!pill) return;
+  let data;
+  try {
+    const r = await authFetch('/api/billing/status');
+    if (!r.ok) return;
+    data = await r.json();
+  } catch { return; }
+
+  if (!data.configured) return;
+  if (!data.registered) return;
+
+  if (data.plan === 'pro') {
+    pill.className = 'plan-pill is-pro';
+    pill.innerHTML = '<span class="pill-glyph" aria-hidden="true">✓</span><span class="pill-label">Pro</span>';
+    pill.title = 'Manage your Pro subscription';
+  } else {
+    pill.className = 'plan-pill is-free';
+    pill.innerHTML = '<span class="pill-glyph" aria-hidden="true">★</span><span class="pill-label">Upgrade</span>';
+    pill.title = 'Upgrade to pquote Pro — $9.99/month';
+  }
 }
 
 // ═══════════════════════════════════════
