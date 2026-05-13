@@ -78,8 +78,12 @@ db.exec(`
     subscription_status    TEXT,
     current_period_end     INTEGER
   );
-  CREATE INDEX IF NOT EXISTS idx_users_email           ON users(email);
-  CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id);
+  CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+  -- idx_users_stripe_customer is created in server.js AFTER the ALTER TABLE
+  -- migration adds the column. Putting it here breaks boot on existing DBs
+  -- where the table predates the billing columns: CREATE TABLE IF NOT EXISTS
+  -- is a no-op for those, the column never gets added by this file, and the
+  -- index then fails with "no such column: stripe_customer_id".
 
   -- Voice-endpoint spend counters. Persisted (was in-memory) so a Railway
   -- restart doesn't reset the daily kill-switch or hand every guest fresh
