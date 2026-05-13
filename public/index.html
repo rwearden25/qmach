@@ -99,7 +99,48 @@
          resolves. Stays hidden until then so we don't flash 'Free' on Pro users. -->
     <a id="plan-pill" class="plan-pill hidden" href="/billing" title="Manage subscription"></a>
     <button class="header-ai-btn" id="btn-ai-chat" title="AI Assistant">🤖 <span>AI</span></button>
-    <button class="header-logout-btn" id="btn-logout" title="Sign Out">⏻</button>
+
+    <!-- Settings menu (hamburger). Container is positioned so the dropdown
+         anchors to the trigger button. Open state toggled by setupSettingsMenu(). -->
+    <div class="settings-wrap" id="settings-wrap">
+      <button class="header-settings-btn" id="btn-settings" title="Settings" aria-label="Settings menu" aria-haspopup="true" aria-expanded="false">
+        <span class="settings-icon" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </span>
+      </button>
+      <div class="settings-menu" id="settings-menu" role="menu" aria-hidden="true">
+        <div class="settings-head">
+          <div class="settings-user" id="settings-user-name">Account</div>
+          <div class="settings-meta" id="settings-user-email">—</div>
+          <div class="settings-plan-row">
+            <span class="settings-plan-label">Plan</span>
+            <span class="settings-plan-value" id="settings-plan-value">Free</span>
+          </div>
+        </div>
+        <div class="settings-divider"></div>
+        <a class="settings-item" id="settings-billing" href="/billing" role="menuitem">
+          <span class="settings-item-icon">💳</span>
+          <span class="settings-item-body">
+            <span class="settings-item-title" id="settings-billing-title">Billing &amp; subscription</span>
+            <span class="settings-item-sub" id="settings-billing-sub">Upgrade to Pro · manage payment · cancel</span>
+          </span>
+        </a>
+        <a class="settings-item" href="mailto:support@pquote.ai?subject=pquote%20support" role="menuitem">
+          <span class="settings-item-icon">✉</span>
+          <span class="settings-item-body">
+            <span class="settings-item-title">Contact support</span>
+            <span class="settings-item-sub">Get help by email</span>
+          </span>
+        </a>
+        <div class="settings-divider"></div>
+        <button type="button" class="settings-item settings-item-danger" id="settings-signout" role="menuitem">
+          <span class="settings-item-icon">⏻</span>
+          <span class="settings-item-body">
+            <span class="settings-item-title">Sign out</span>
+          </span>
+        </button>
+      </div>
+    </div>
   </header>
 
   <!-- First-run hint for the AI button — auto-dismisses after a few seconds,
