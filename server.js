@@ -74,6 +74,75 @@ function applySubscriptionToUser(customerId, subscription) {
   `).run(plan, status, subId, periodEnd, customerId);
 }
 
+// ── Free-tier limits. Pro users skip both checks entirely. Counters live in
+// SQLite (db/database.js → usage_counters), keyed by (user_id, period, kind)
+// where period = 'YYYY-MM' UTC. New month → fresh quota with zero code work.
+const FREE_QUOTES_PER_MONTH = 5;
+const FREE_AI_PER_MONTH     = 5;
+
+function currentPeriod() {
+  // UTC YYYY-MM. Using UTC (not local) so a midnight-local request doesn't
+  // get split into two periods depending on which container processes it.
+  return new Date().toISOString().slice(0, 7);
+}
+function effectivePlan(userId) {
+  if (!userId) return 'free';
+  try {
+    const row = db.prepare('SELECT plan FROM users WHERE id = ?').get(userId);
+    return row?.plan === 'pro' ? 'pro' : 'free';
+  } catch { return 'free'; }
+}
+function getUsage(userId, kind) {
+  try {
+    const row = db.prepare('SELECT count FROM usage_counters WHERE user_id = ? AND period = ? AND kind = ?')
+      .get(userId, currentPeriod(), kind);
+    return row?.count || 0;
+  } catch { return 0; }
+}
+// UPSERT — atomic increment that creates the row on first call.
+const bumpUsageStmt = db.prepare(`
+  INSERT INTO usage_counters (user_id, period, kind, count) VALUES (?, ?, ?, 1)
+  ON CONFLICT(user_id, period, kind) DO UPDATE SET count = count + 1
+`);
+function bumpUsage(userId, kind) {
+  if (!userId) return;
+  try { bumpUsageStmt.run(userId, currentPeriod(), kind); } catch (e) {
+    // Don't fail the user-facing request just because the counter wrote badly.
+    console.warn('[Usage] bump failed:', e.message);
+  }
+}
+
+// Middleware factories — return Express middleware that 429s when over quota.
+function checkQuota(kind, limit, label) {
+  return (req, res, next) => {
+    if (!req.userId) return next();                       // guests handled elsewhere
+    if (effectivePlan(req.userId) === 'pro') return next();
+    const used = getUsage(req.userId, kind);
+    if (used >= limit) {
+      return res.status(429).json({
+        error: `${kind}_limit_reached`,
+        message: `Free plan is limited to ${limit} ${label} per month. Upgrade to pquote Pro for unlimited.`,
+        limit,
+        used,
+        upgrade_url: '/billing',
+      });
+    }
+    next();
+  };
+}
+const checkQuoteQuota = checkQuota('quote', FREE_QUOTES_PER_MONTH, 'saved quotes');
+const checkAiQuota    = checkQuota('ai',    FREE_AI_PER_MONTH,     'AI actions');
+
+// Hard Pro gate — 402 (Payment Required) when the user isn't on Pro.
+function requirePro(req, res, next) {
+  if (effectivePlan(req.userId) === 'pro') return next();
+  res.status(402).json({
+    error: 'pro_required',
+    message: 'This feature requires pquote Pro.',
+    upgrade_url: '/billing',
+  });
+}
+
 // Webhook MUST be registered before express.json() — Stripe's signature
 // check verifies the raw request bytes, and json() consumes the body stream.
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
@@ -962,8 +1031,8 @@ app.get('/api/quotes/:id', (req, res) => {
   }
 });
 
-// POST create quote — assigned to current user
-app.post('/api/quotes', (req, res) => {
+// POST create quote — assigned to current user. Quota-gated for free users.
+app.post('/api/quotes', checkQuoteQuota, (req, res) => {
   try {
     const {
       client_name, project_type, area, unit, price_per_unit,
@@ -998,6 +1067,7 @@ app.post('/api/quotes', (req, res) => {
     );
 
     const created = db.prepare('SELECT * FROM quotes WHERE id = ?').get(id);
+    bumpUsage(req.userId, 'quote'); // count toward free-tier monthly cap
     res.status(201).json(created);
   } catch (err) {
     console.error('POST /api/quotes error:', err);
@@ -1272,6 +1342,13 @@ app.get('/api/billing/status', (req, res) => {
       registered: false,
     });
   }
+  // Monthly usage counters (only meaningful for free users; Pro users see
+  // them too but they aren't gated by them).
+  const usage = {
+    period: currentPeriod(),
+    quotes: { used: getUsage(u.id, 'quote'), limit: FREE_QUOTES_PER_MONTH },
+    ai:     { used: getUsage(u.id, 'ai'),    limit: FREE_AI_PER_MONTH },
+  };
   res.json({
     configured,
     plan: u.plan || 'free',
@@ -1279,6 +1356,7 @@ app.get('/api/billing/status', (req, res) => {
     current_period_end: u.current_period_end || null,
     has_customer: !!u.stripe_customer_id,
     registered: true,
+    usage,
   });
 });
 
@@ -1356,7 +1434,7 @@ app.post('/api/billing/portal', async (req, res) => {
 //   2. The user's own pricing calibration if they have prior quotes —
 //      avg/min/max per-unit they've actually charged. Strongly anchors
 //      "recommended" toward what THIS user typically charges.
-app.post('/api/ai/suggest-price', async (req, res) => {
+app.post('/api/ai/suggest-price', checkAiQuota, async (req, res) => {
   try {
     const { project_type, area, unit, location } = req.body;
     if (!project_type || !area || !unit) {
@@ -1409,6 +1487,7 @@ Respond ONLY with this JSON structure:
     } catch {
       return res.status(500).json({ error: 'AI returned invalid JSON', raw });
     }
+    bumpUsage(req.userId, 'ai');
     res.json(parsed);
   } catch (err) {
     console.error('AI suggest-price error:', err);
@@ -1417,7 +1496,7 @@ Respond ONLY with this JSON structure:
 });
 
 // AI: Generate professional quote narrative
-app.post('/api/ai/generate-narrative', async (req, res) => {
+app.post('/api/ai/generate-narrative', checkAiQuota, async (req, res) => {
   try {
     const { client_name, project_type, area, unit, price_per_unit, total, notes, address, qty } = req.body;
     if (!client_name || !project_type) {
@@ -1446,6 +1525,7 @@ Include what the work entails, why the price is fair, and a closing sentence abo
       }]
     });
 
+    bumpUsage(req.userId, 'ai');
     res.json({ narrative: message.content[0].text.trim() });
   } catch (err) {
     console.error('AI narrative error:', err);
@@ -1519,7 +1599,21 @@ app.post('/api/voice/analyze', async (req, res) => {
         });
       }
     } else {
-      // ── Per-user quota — bounds a single signed-in user from draining
+      // ── Free-tier monthly cap — checked BEFORE the 24h cap so the more
+      // restrictive limit hits first. Pro users skip this entirely.
+      if (effectivePlan(req.userId) === 'free') {
+        const monthUsed = getUsage(req.userId, 'ai');
+        if (monthUsed >= FREE_AI_PER_MONTH) {
+          return res.status(429).json({
+            error: 'ai_limit_reached',
+            message: `Free plan is limited to ${FREE_AI_PER_MONTH} AI actions per month. Upgrade to pquote Pro for unlimited.`,
+            limit: FREE_AI_PER_MONTH,
+            used: monthUsed,
+            upgrade_url: '/billing',
+          });
+        }
+      }
+      // ── Per-user 24h quota — bounds a single signed-in user from draining
       // the global VOICE_DAILY_CAP on their own (script bug, abuse, etc).
       const userUsed = readVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
       if (userUsed >= USER_VOICE_LIMIT) {
@@ -1600,6 +1694,7 @@ Return ONLY this JSON:
       };
     } else {
       bumpVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
+      bumpUsage(req.userId, 'ai'); // count toward free-tier monthly cap
     }
     // Tier marker so the frontend can render range-only pricing + watermark
     // PDFs for non-full tiers without an extra /api/auth/check round-trip.
@@ -1632,6 +1727,19 @@ app.post('/api/voice/price', async (req, res) => {
     // Per-user cap also applies to price calls — a runaway client refining
     // the same quote in a tight loop is exactly the abuse case this catches.
     if (req.userId) {
+      // Free-tier monthly cap — more restrictive than the 24h cap below.
+      if (effectivePlan(req.userId) === 'free') {
+        const monthUsed = getUsage(req.userId, 'ai');
+        if (monthUsed >= FREE_AI_PER_MONTH) {
+          return res.status(429).json({
+            error: 'ai_limit_reached',
+            message: `Free plan is limited to ${FREE_AI_PER_MONTH} AI actions per month. Upgrade to pquote Pro for unlimited.`,
+            limit: FREE_AI_PER_MONTH,
+            used: monthUsed,
+            upgrade_url: '/billing',
+          });
+        }
+      }
       const userUsed = readVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
       if (userUsed >= USER_VOICE_LIMIT) {
         return res.status(429).json({
@@ -1689,7 +1797,10 @@ Return ONLY this JSON:
       return res.status(500).json({ error: 'AI returned invalid JSON', raw });
     }
     bumpVoiceDaily(); // count toward server-wide daily cap
-    if (req.userId) bumpVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
+    if (req.userId) {
+      bumpVoiceQuota(`user:${req.userId}`, USER_VOICE_WINDOW);
+      bumpUsage(req.userId, 'ai'); // count toward free-tier monthly cap
+    }
     // Tier-based pricing precision. Anon + email-only see range only — the
     // precise number is the conversion lever. Full-tier users (DB password,
     // Google, env-configured) see the exact suggested_price.
@@ -1815,7 +1926,7 @@ app.get('/api/config', (req, res) => {
 //    items; otherwise a single line item is synthesized from project_type +
 //    total.  We pass the qmach quote UUID as external_id so retries on the
 //    pzip side are idempotent — a second click creates no duplicate.
-app.post('/api/quotes/:id/send-to-pzip', async (req, res) => {
+app.post('/api/quotes/:id/send-to-pzip', requirePro, async (req, res) => {
   try {
     const webhook = process.env.PZIP_WEBHOOK_URL;
     const apiKey  = process.env.PZIP_API_KEY;

@@ -101,6 +101,20 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_voice_quota_first_at ON voice_quota(first_at);
 
+  -- Monthly per-user quotas for the free tier. Keyed by (user_id, period, kind)
+  -- where period is 'YYYY-MM' UTC and kind is 'quote' (saved quote creates) or
+  -- 'ai' (suggest-price / narrative / voice-analyze / voice-price calls).
+  -- Counters reset naturally by virtue of period rolling over — no cron needed.
+  -- Pro users skip these checks entirely (effective plan via users.plan).
+  CREATE TABLE IF NOT EXISTS usage_counters (
+    user_id TEXT NOT NULL,
+    period  TEXT NOT NULL,   -- 'YYYY-MM'
+    kind    TEXT NOT NULL,   -- 'quote' | 'ai'
+    count   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, period, kind)
+  );
+  CREATE INDEX IF NOT EXISTS idx_usage_counters_user ON usage_counters(user_id, period);
+
   -- Reusable materials / application-rate knowledge base (seeded from
   -- a JSON file at boot — see seedMaterialsKB in server.js). Used by
   -- the AI prompts on /voice/analyze, /voice/price, and /api/ai/suggest-price
