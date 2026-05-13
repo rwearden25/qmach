@@ -306,6 +306,83 @@ h1.page-title em {
 .btn.ghost:hover { background: var(--bg2); border-color: var(--dark); }
 
 /* ═══ DANGER ZONE ═══ */
+/* ═══ LOGO UPLOAD ═══ */
+.pro-pill {
+  display: inline-block;
+  font-family: var(--mono); font-size: 9px; font-weight: 500;
+  letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--accent-pale);
+  background: var(--accent);
+  padding: 2px 7px; border-radius: 3px;
+  margin-left: 8px; vertical-align: 4px;
+}
+.logo-locked {
+  display: flex; align-items: center; gap: 18px;
+  padding: 22px 24px;
+  background: var(--bg2);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.logo-locked-icon {
+  font-size: 28px; flex-shrink: 0;
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--white); border: 1px solid var(--border-soft);
+  border-radius: 50%;
+}
+.logo-locked-title {
+  font-family: var(--serif); font-size: 17px; font-weight: 700;
+  color: var(--dark); margin-bottom: 4px;
+}
+.logo-locked-desc {
+  font-size: 13px; color: var(--muted); line-height: 1.5;
+}
+.logo-stage {
+  display: flex; gap: 22px; align-items: flex-start;
+}
+.logo-preview {
+  width: 180px; height: 180px;
+  flex-shrink: 0;
+  background: var(--white);
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  transition: border-color .15s, background .15s;
+}
+.logo-preview.drag { border-color: var(--accent); background: var(--accent-pale); }
+.logo-preview img {
+  max-width: 90%; max-height: 90%;
+  object-fit: contain;
+}
+.logo-empty {
+  font-family: var(--mono); font-size: 11px;
+  letter-spacing: .5px; color: var(--faint);
+  text-align: center; padding: 12px;
+}
+.logo-controls {
+  display: flex; flex-direction: column; gap: 10px;
+  padding-top: 6px;
+  flex: 1; min-width: 0;
+}
+.logo-controls .btn { width: 100%; justify-content: center; }
+.btn.danger-ghost {
+  background: transparent; color: var(--stamp);
+  border: 1.5px solid var(--border);
+}
+.btn.danger-ghost:hover { background: var(--stamp); color: var(--white); border-color: var(--stamp); }
+.btn.hidden { display: none; }
+.logo-help {
+  font-family: var(--mono); font-size: 10px; color: var(--faint);
+  letter-spacing: .3px;
+}
+@media (max-width: 600px) {
+  .logo-stage { flex-direction: column; align-items: stretch; }
+  .logo-preview { width: 100%; height: 200px; }
+  .logo-controls { padding-top: 0; }
+  .logo-locked { flex-direction: column; text-align: center; }
+}
+
 .danger-zone {
   margin-top: 24px;
   background: var(--paper);
@@ -611,6 +688,45 @@ function renderAccount(p, b) {
       </div>
     </section>`;
 
+  // ── Section 2.5: Logo (Pro feature). Free users see a locked card with
+  // an upgrade nudge; Pro users see the upload control + preview + remove.
+  const proLocked = !isPro;
+  const logoBlock = `
+    <section class="section logo-section">
+      <div class="section-head">
+        <h2 class="section-title">Business logo ${proLocked ? '<span class="pro-pill">Pro</span>' : ''}</h2>
+        <span class="section-hint">PNG, JPG, WebP, or SVG · max 500KB</span>
+      </div>
+      ${proLocked ? `
+        <div class="logo-locked">
+          <div class="logo-locked-icon">🔒</div>
+          <div class="logo-locked-body">
+            <div class="logo-locked-title">Upload your logo with Pro</div>
+            <div class="logo-locked-desc">Branded PDFs include your logo at the top of every quote you send. Upgrade above to unlock.</div>
+          </div>
+        </div>
+      ` : `
+        <div class="logo-stage">
+          <div class="logo-preview" id="logo-preview">
+            ${p.has_logo
+              ? `<img alt="Current logo" id="logo-img" src="/api/account/logo?t=${Date.now()}">`
+              : `<div class="logo-empty">No logo uploaded yet</div>`}
+          </div>
+          <div class="logo-controls">
+            <label class="btn ghost" for="logo-input" id="logo-upload-btn">
+              ${p.has_logo ? 'Replace logo' : 'Upload logo'}
+            </label>
+            <input id="logo-input" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+            <button type="button" class="btn danger-ghost ${p.has_logo ? '' : 'hidden'}" id="logo-remove-btn">Remove</button>
+          </div>
+        </div>
+        <div class="section-actions">
+          <span class="save-msg" id="logo-msg"></span>
+          <span class="logo-help">Drag &amp; drop a file onto the preview, or use the button.</span>
+        </div>
+      `}
+    </section>`;
+
   // ── Section 3: Password
   const passBlock = `
     <section class="section">
@@ -651,7 +767,7 @@ function renderAccount(p, b) {
       </div>
     </section>`;
 
-  $content.innerHTML = topBlock + profileBlock + bizBlock + passBlock + dangerBlock;
+  $content.innerHTML = topBlock + profileBlock + bizBlock + logoBlock + passBlock + dangerBlock;
   wireForms(p);
 }
 
@@ -664,9 +780,83 @@ function wireForms(profile) {
   document.getElementById('save-pass')?.addEventListener('click', changePassword);
   document.getElementById('signout-btn')?.addEventListener('click', signOut);
 
+  // Logo upload (Pro feature — controls only render for Pro users)
+  const logoInput   = document.getElementById('logo-input');
+  const logoPreview = document.getElementById('logo-preview');
+  const logoRemove  = document.getElementById('logo-remove-btn');
+  if (logoInput) logoInput.addEventListener('change', e => {
+    const f = e.target.files?.[0];
+    if (f) uploadLogo(f);
+    // Reset value so re-selecting the same file fires change again
+    e.target.value = '';
+  });
+  if (logoRemove) logoRemove.addEventListener('click', removeLogo);
+  if (logoPreview) {
+    // Drag-and-drop onto the preview area
+    ['dragenter', 'dragover'].forEach(ev =>
+      logoPreview.addEventListener(ev, e => { e.preventDefault(); logoPreview.classList.add('drag'); })
+    );
+    ['dragleave', 'drop'].forEach(ev =>
+      logoPreview.addEventListener(ev, e => { e.preventDefault(); logoPreview.classList.remove('drag'); })
+    );
+    logoPreview.addEventListener('drop', e => {
+      const f = e.dataTransfer?.files?.[0];
+      if (f) uploadLogo(f);
+    });
+  }
+
   // Keep biz fields in sync with profile object for save() (pre-fill from
   // server, user edits, save round-trips the latest state).
   window._profile = profile;
+}
+
+async function uploadLogo(file) {
+  const msg = document.getElementById('logo-msg');
+  const accepted = ['image/png','image/jpeg','image/webp','image/svg+xml'];
+  if (!accepted.includes(file.type)) {
+    showFieldMsg(msg, 'Use PNG, JPG, WebP, or SVG', true);
+    return;
+  }
+  if (file.size > 500 * 1024) {
+    showFieldMsg(msg, 'Logo must be 500KB or smaller', true);
+    return;
+  }
+  showFieldMsg(msg, 'Uploading…');
+  try {
+    const r = await fetch('/api/account/logo', {
+      method: 'POST',
+      headers: { 'Content-Type': file.type, 'x-auth-token': authToken },
+      body: file,
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { showFieldMsg(msg, d.error || 'Upload failed', true); return; }
+    // Refresh preview — bust browser cache with a fresh query param
+    const preview = document.getElementById('logo-preview');
+    preview.innerHTML = `<img alt="Current logo" id="logo-img" src="/api/account/logo?t=${Date.now()}">`;
+    document.getElementById('logo-upload-btn').textContent = 'Replace logo';
+    document.getElementById('logo-remove-btn').classList.remove('hidden');
+    if (window._profile) window._profile.has_logo = true;
+    showFieldMsg(msg, 'Logo saved ✓');
+  } catch {
+    showFieldMsg(msg, 'Connection error', true);
+  }
+}
+
+async function removeLogo() {
+  const msg = document.getElementById('logo-msg');
+  if (!confirm('Remove your logo? Future PDFs will use plain text instead.')) return;
+  try {
+    const r = await fetch('/api/account/logo', {
+      method: 'DELETE',
+      headers: { 'x-auth-token': authToken },
+    });
+    if (!r.ok) { showFieldMsg(msg, 'Remove failed', true); return; }
+    document.getElementById('logo-preview').innerHTML = '<div class="logo-empty">No logo uploaded yet</div>';
+    document.getElementById('logo-upload-btn').textContent = 'Upload logo';
+    document.getElementById('logo-remove-btn').classList.add('hidden');
+    if (window._profile) window._profile.has_logo = false;
+    showFieldMsg(msg, 'Logo removed');
+  } catch { showFieldMsg(msg, 'Connection error', true); }
 }
 
 async function startCheckout(e) {

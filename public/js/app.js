@@ -1543,7 +1543,53 @@ function removeMsg(id) { document.getElementById(id)?.remove(); }
 // ═══════════════════════════════════════
 //  PDF
 // ═══════════════════════════════════════
-function generatePDF() {
+// Pull the user's branding (business name + logo data-URI) once per page
+// session and cache it. Free users return null. Server-side has_logo is the
+// authoritative signal; we still fetch the binary because jsPDF/popup needs
+// it inline.
+let _brandingCache = undefined; // undefined = not fetched; null = no branding; object = data
+async function getBranding() {
+  if (_brandingCache !== undefined) return _brandingCache;
+  try {
+    const r = await authFetch('/api/account');
+    if (!r.ok) { _brandingCache = null; return null; }
+    const acct = await r.json();
+    if (acct.plan !== 'pro') { _brandingCache = null; return null; }
+    let logoDataUri = null;
+    if (acct.has_logo) {
+      try {
+        const lr = await authFetch('/api/account/logo');
+        if (lr.ok) {
+          const blob = await lr.blob();
+          logoDataUri = await new Promise(res => {
+            const reader = new FileReader();
+            reader.onload = () => res(reader.result);
+            reader.onerror = () => res(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      } catch {}
+    }
+    _brandingCache = {
+      business_name: acct.business_name || '',
+      logo_data_uri: logoDataUri,
+    };
+    return _brandingCache;
+  } catch { _brandingCache = null; return null; }
+}
+
+async function generatePDF() {
+  // Open the window SYNCHRONOUSLY in response to the user gesture — if we
+  // await first, Chrome/Safari popup-block the later window.open() call.
+  // Write a loading placeholder, then await branding, then overwrite with
+  // the real document.
+  const win = window.open('', '_blank');
+  if (!win) { toast('Allow popups to print'); return; }
+  try {
+    win.document.write('<!DOCTYPE html><html><head><title>Preparing quote…</title><style>body{font-family:system-ui,sans-serif;padding:60px;color:#4E4C46;text-align:center;background:#F2F0EB}</style></head><body><div>Building your quote…</div></body></html>');
+  } catch {}
+
+  const branding = await getBranding();
   const all = [...items];
   const subtotal = all.reduce((s, i) => s + (parseFloat(i.area) || 0) * (parseFloat(i.price) || 0), 0);
   const { rate, taxAmount, total: gt } = calcTax(subtotal);
@@ -1568,8 +1614,26 @@ function generatePDF() {
     <div style="display:flex;justify-content:space-between;padding:6px 20px;font-size:14px;color:#4E4C46;font-family:'DM Mono',monospace">
       <span>Tax (${rate}%)</span><span>$${fmtMoney(taxAmount)}</span></div>` : '';
 
-  const win = window.open('', '_blank');
-  if (!win) { toast('Allow popups to print'); return; }
+  // Branded header for Pro users with a logo or business name on file;
+  // falls back to the pquote wordmark for everyone else.
+  const hasBrand = !!(branding && (branding.logo_data_uri || branding.business_name));
+  const headerHtml = hasBrand
+    ? `<div style="display:flex;align-items:center;gap:18px;margin-bottom:6px">
+         ${branding.logo_data_uri
+           ? `<img src="${branding.logo_data_uri}" alt="" style="max-height:64px;max-width:160px;object-fit:contain">`
+           : ''}
+         ${branding.business_name
+           ? `<h1 style="font-family:'Playfair Display',serif;font-size:30px;font-weight:700;color:#2A2824;margin:0;letter-spacing:-.5px">${branding.business_name}</h1>`
+           : ''}
+       </div>
+       <div style="color:#4E4C46;font-size:12px;margin-bottom:24px;font-family:'DM Mono',monospace;letter-spacing:.5px">
+         Estimate · ${today} · <span style="color:#8A877E">prepared via pquote.ai</span>
+       </div>`
+    : `<h1 style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:#2A2824;margin:0">p<span style="color:#3A5E30">quote</span></h1>
+       <div style="color:#4E4C46;font-size:13px;margin-bottom:24px;font-family:'DM Mono',monospace">Estimate · ${today}</div>`;
+
+  // Reset the placeholder before writing the real document.
+  try { win.document.open(); } catch {}
   win.document.write(`<!DOCTYPE html><html><head><title>Quote — ${clientName}</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Nunito:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>*{box-sizing:border-box}body{font-family:'Nunito',sans-serif;padding:40px;color:#2A2824;max-width:700px;margin:0 auto;background:#F2F0EB}
@@ -1582,8 +1646,7 @@ th:nth-child(n+2){text-align:right}
 .lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#4E4C46;font-weight:500;margin-bottom:3px;font-family:'DM Mono',monospace}
 .disc{font-size:9px;color:#A8A49A;line-height:1.5;margin-top:20px;padding:10px 12px;background:#E4E2DA;border-radius:6px;font-family:'DM Mono',monospace}
 @media print{.noprint{display:none!important}body{background:white}}</style></head><body>
-<h1 style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:#2A2824;margin:0">p<span style="color:#3A5E30">quote</span></h1>
-<div style="color:#4E4C46;font-size:13px;margin-bottom:24px;font-family:'DM Mono',monospace">Estimate · ${today}</div>
+${headerHtml}
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
   <div><div class="lbl">Client</div><div style="font-size:15px;font-weight:600">${clientName}</div></div>
   ${address ? `<div><div class="lbl">Location</div><div style="font-size:13px">${address}</div></div>` : ''}

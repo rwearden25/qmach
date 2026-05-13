@@ -81,7 +81,11 @@ db.exec(`
     -- region, and default tax rate so the user doesn't reconfigure per quote.
     business_name          TEXT,
     default_tax_rate       REAL,
-    default_region         TEXT
+    default_region         TEXT,
+    -- Logo file on the Railway volume at $RAILWAY_VOLUME_MOUNT_PATH/logos/<filename>.
+    -- NULL = no logo uploaded. Pro feature only; server gates upload/delete on
+    -- effectivePlan === 'pro'.
+    logo_filename          TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
   -- idx_users_stripe_customer is created in server.js AFTER the ALTER TABLE
