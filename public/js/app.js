@@ -92,6 +92,7 @@ async function handleOAuthCallback() {
       authToken = data.token;
       currentUserId = data.userId || '';
       sessionStorage.setItem('qmach_token', authToken);
+      if (data.userName) sessionStorage.setItem('qmach_user_name', data.userName);
       if (window.location.hash) history.replaceState(null, '', window.location.pathname);
       return true;
     }
@@ -142,7 +143,12 @@ async function checkAuth() {
   try {
     const r = await fetch('/api/auth/check', { headers: authToken ? { 'x-auth-token': authToken } : {} });
     const d = await r.json();
-    if (d.valid) { currentUserId = d.userId || ''; hideLogin(); return true; }
+    if (d.valid) {
+      currentUserId = d.userId || '';
+      if (d.userName) sessionStorage.setItem('qmach_user_name', d.userName);
+      hideLogin();
+      return true;
+    }
   } catch {}
   showLogin(); return false;
 }
@@ -164,6 +170,7 @@ async function doLogin() {
       authToken = d.token;
       currentUserId = d.userId || '';
       sessionStorage.setItem('qmach_token', authToken);
+      if (d.userName) sessionStorage.setItem('qmach_user_name', d.userName);
       hideLogin(); bootApp();
     } else {
       err.textContent = d.error || 'Wrong email or password';
@@ -215,6 +222,7 @@ async function doSignup() {
     authToken = d.token;
     currentUserId = d.userId || '';
     sessionStorage.setItem('qmach_token', authToken);
+    if (d.userName) sessionStorage.setItem('qmach_user_name', d.userName);
 
     if (wantsPro) {
       // Chain straight to Stripe Checkout. return_to='app' lands the user
@@ -299,6 +307,7 @@ async function doLogout() {
   if (sb) { try { await sb.auth.signOut(); } catch {} }
   try { clearDraft(); } catch {}
   sessionStorage.removeItem('qmach_token');
+  sessionStorage.removeItem('qmach_user_name');
   authToken = '';
   currentUserId = '';
   chatHistory = [];
@@ -353,7 +362,7 @@ async function bootApp() {
   document.querySelectorAll('.htab').forEach(btn =>
     btn.addEventListener('click', () => switchView(btn.dataset.view))
   );
-  on('btn-logout', doLogout);
+  setupSettingsMenu();
 
   // Wizard nav
   on('btn-continue', onContinue);
@@ -1918,6 +1927,82 @@ async function setupBillingPill() {
     pill.className = 'plan-pill is-free';
     pill.innerHTML = '<span class="pill-glyph" aria-hidden="true">★</span><span class="pill-label">Upgrade</span>';
     pill.title = 'Upgrade to pquote Pro — $9.99/month';
+  }
+  // Also refresh the settings dropdown so its plan badge stays in sync.
+  syncSettingsMenuPlan(data);
+}
+
+// ═══════════════════════════════════════
+//  SETTINGS DROPDOWN
+// ═══════════════════════════════════════
+// Header hamburger that opens an account menu — user info, plan status,
+// billing link, support, sign out. Replaces the standalone logout button.
+function setupSettingsMenu() {
+  const btn  = el('btn-settings');
+  const menu = el('settings-menu');
+  const wrap = el('settings-wrap');
+  if (!btn || !menu || !wrap) return;
+
+  const close = () => {
+    menu.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    menu.setAttribute('aria-hidden', 'true');
+  };
+  const open = () => {
+    menu.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    menu.setAttribute('aria-hidden', 'false');
+  };
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu.classList.contains('open')) close(); else open();
+  });
+  // Outside-click dismisses. stopPropagation above keeps clicks inside the
+  // wrapper from triggering this.
+  document.addEventListener('click', (e) => {
+    if (!menu.classList.contains('open')) return;
+    if (!wrap.contains(e.target)) close();
+  });
+  // Escape key dismisses.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && menu.classList.contains('open')) close();
+  });
+
+  el('settings-signout')?.addEventListener('click', () => {
+    close();
+    doLogout();
+  });
+
+  // Populate user fields from current session state. currentUserId is the
+  // user's email for DB-registered accounts ('g:email' for Google OAuth,
+  // arbitrary id for env users).
+  const nameEl  = el('settings-user-name');
+  const emailEl = el('settings-user-email');
+  const displayName = sessionStorage.getItem('qmach_user_name') || 'Account';
+  const displayId   = currentUserId.startsWith('g:') ? currentUserId.slice(2) : currentUserId;
+  if (nameEl)  nameEl.textContent  = displayName;
+  if (emailEl) emailEl.textContent = displayId || '—';
+}
+
+// Called by setupBillingPill() each time billing status loads. Keeps the
+// plan badge + billing-item copy in the dropdown synchronized with the
+// header pill so users see consistent state in both surfaces.
+function syncSettingsMenuPlan(data) {
+  const pv = el('settings-plan-value');
+  const bt = el('settings-billing-title');
+  const bs = el('settings-billing-sub');
+  if (!pv) return;
+  if (data?.plan === 'pro') {
+    pv.textContent = 'Pro';
+    pv.classList.add('is-pro');
+    if (bt) bt.textContent = 'Manage subscription';
+    if (bs) bs.textContent = 'Update card · view invoices · cancel';
+  } else {
+    pv.textContent = 'Free';
+    pv.classList.remove('is-pro');
+    if (bt) bt.textContent = data?.configured ? 'Upgrade to Pro' : 'Billing';
+    if (bs) bs.textContent = data?.configured ? '$9.99/mo · unlimited quotes &amp; AI · cancel anytime' : 'Subscription management';
   }
 }
 
