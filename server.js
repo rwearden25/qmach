@@ -23,6 +23,116 @@ app.set('trust proxy', 1);
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ══════════════════════════════════════════
+//  STRIPE BILLING
+// ══════════════════════════════════════════
+// stripe is optional — the app boots fine without it (billing endpoints
+// return 503 until STRIPE_SECRET_KEY is set). Webhook is mounted directly
+// below this block, BEFORE express.json(), because Stripe needs the raw
+// request body to verify the signature.
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? require('stripe')(process.env.STRIPE_SECRET_KEY)
+  : null;
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const STRIPE_PRICE_PRO      = process.env.STRIPE_PRICE_PRO_MONTHLY || '';
+const APP_BASE_URL          = process.env.APP_BASE_URL || ''; // optional override
+const BILLING_SUCCESS_PATH  = process.env.STRIPE_BILLING_SUCCESS_URL || '/billing?status=success';
+const BILLING_CANCEL_PATH   = process.env.STRIPE_BILLING_CANCEL_URL  || '/billing?status=canceled';
+
+if (stripe) {
+  console.log(`[Stripe] ✓ Configured${STRIPE_PRICE_PRO ? ` (price: ${STRIPE_PRICE_PRO})` : ' — set STRIPE_PRICE_PRO_MONTHLY to enable checkout'}`);
+} else {
+  console.log('[Stripe] ✗ Not configured (set STRIPE_SECRET_KEY to enable billing)');
+}
+
+// Resolve the public base URL for Stripe redirects. Prefer APP_BASE_URL env,
+// otherwise reconstruct from the request — Railway sets X-Forwarded-Proto so
+// req.protocol respects HTTPS once `trust proxy` is on (set above).
+function resolveBaseUrl(req) {
+  if (APP_BASE_URL) return APP_BASE_URL.replace(/\/+$/, '');
+  return `${req.protocol}://${req.get('host')}`;
+}
+
+// Mirror Stripe subscription state into the users row. Called by the webhook
+// after every subscription.created / .updated / .deleted event so the DB is
+// the source of truth for plan + status (no live Stripe lookups on hot paths).
+function applySubscriptionToUser(customerId, subscription) {
+  if (!customerId) return;
+  const status = subscription?.status || null;
+  // 'active' and 'trialing' are paying states; everything else (past_due,
+  // canceled, unpaid, incomplete) drops the user back to free. Keeps gating
+  // logic dumb: `plan === 'pro'` is the only thing callers check.
+  const isPaying = status === 'active' || status === 'trialing';
+  const plan = isPaying ? 'pro' : 'free';
+  const periodEnd = subscription?.current_period_end
+    ? subscription.current_period_end * 1000
+    : null;
+  const subId = subscription?.id || null;
+  db.prepare(`
+    UPDATE users
+       SET plan = ?, subscription_status = ?, stripe_subscription_id = ?, current_period_end = ?
+     WHERE stripe_customer_id = ?
+  `).run(plan, status, subId, periodEnd, customerId);
+}
+
+// Webhook MUST be registered before express.json() — Stripe's signature
+// check verifies the raw request bytes, and json() consumes the body stream.
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+  if (!stripe || !STRIPE_WEBHOOK_SECRET) {
+    return res.status(503).send('Stripe webhook not configured');
+  }
+  let event;
+  try {
+    const sig = req.headers['stripe-signature'];
+    event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    console.error('[Stripe] Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        // First time a user pays — link the new Stripe customer to their pquote
+        // account via client_reference_id (we set it = users.id on checkout).
+        const s = event.data.object;
+        const userId     = s.client_reference_id;
+        const customerId = s.customer;
+        if (userId && customerId) {
+          db.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ? AND (stripe_customer_id IS NULL OR stripe_customer_id = ?)')
+            .run(customerId, userId, customerId);
+        }
+        // The subscription.created event fires alongside this and carries the
+        // full subscription object — let that handler set the plan/status so
+        // we don't double-write here.
+        break;
+      }
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object;
+        applySubscriptionToUser(sub.customer, sub);
+        break;
+      }
+      case 'invoice.payment_failed': {
+        // Subscription will transition to past_due/unpaid via a separate
+        // subscription.updated event; we just log here for visibility.
+        const inv = event.data.object;
+        console.warn(`[Stripe] payment_failed for customer ${inv.customer} (invoice ${inv.id})`);
+        break;
+      }
+      default:
+        // Unhandled event types are normal — Stripe sends many we don't care about.
+        break;
+    }
+    res.json({ received: true });
+  } catch (err) {
+    console.error('[Stripe] Webhook handler error:', err);
+    // Return 500 so Stripe retries — better than silently swallowing.
+    res.status(500).send('Webhook handler error');
+  }
+});
+
+// ══════════════════════════════════════════
 //  MULTI-USER AUTH
 // ══════════════════════════════════════════
 //
@@ -440,6 +550,26 @@ try {
   }
 } catch (err) {
   console.error('[DB] Migration error:', err.message);
+}
+
+// ── Billing columns on users — added incrementally so existing DBs migrate
+// in place without dropping anything. Populated by the Stripe webhook.
+try {
+  const ucols = db.pragma('table_info(users)').map(c => c.name);
+  const addCol = (name, ddl) => {
+    if (!ucols.includes(name)) {
+      db.exec(`ALTER TABLE users ADD COLUMN ${ddl}`);
+      console.log(`[DB] Added users.${name}`);
+    }
+  };
+  addCol('stripe_customer_id',     "stripe_customer_id TEXT");
+  addCol('stripe_subscription_id', "stripe_subscription_id TEXT");
+  addCol('plan',                   "plan TEXT NOT NULL DEFAULT 'free'");
+  addCol('subscription_status',    "subscription_status TEXT");
+  addCol('current_period_end',     "current_period_end INTEGER");
+  db.exec('CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id)');
+} catch (err) {
+  console.error('[DB] Users billing migration error:', err.message);
 }
 
 // ── Helper: find user by password — supports bcrypt hashes AND legacy plaintext.
@@ -1109,6 +1239,112 @@ app.delete('/api/admin/sessions/:token', adminGate, (req, res) => {
 });
 
 // ══════════════════════════════════════════
+//  BILLING ROUTES (Stripe)
+// ══════════════════════════════════════════
+// All three endpoints require an authenticated user whose req.userId exists
+// in the `users` table (DB-registered accounts). Env-based QMACH_USERS and
+// Google OAuth users don't have a users row — they get a 403 explaining they
+// need an email-registered account before they can subscribe.
+
+function getBillingUser(req) {
+  if (!req.userId) return null;
+  return db.prepare(`
+    SELECT id, email, first_name, last_name,
+           stripe_customer_id, stripe_subscription_id, plan, subscription_status, current_period_end
+      FROM users WHERE id = ?
+  `).get(req.userId);
+}
+
+// GET /api/billing/status — what's the current user's plan + renewal date?
+// Returns { configured, plan, status, current_period_end, has_customer }.
+// `configured` lets the client hide the upgrade button entirely when the
+// server hasn't been wired up yet (no STRIPE_SECRET_KEY).
+app.get('/api/billing/status', (req, res) => {
+  const configured = !!(stripe && STRIPE_PRICE_PRO);
+  const u = getBillingUser(req);
+  if (!u) {
+    return res.json({
+      configured,
+      plan: 'free',
+      status: null,
+      current_period_end: null,
+      has_customer: false,
+      registered: false,
+    });
+  }
+  res.json({
+    configured,
+    plan: u.plan || 'free',
+    status: u.subscription_status || null,
+    current_period_end: u.current_period_end || null,
+    has_customer: !!u.stripe_customer_id,
+    registered: true,
+  });
+});
+
+// POST /api/billing/checkout — create a Stripe Checkout session and return
+// its URL. Client redirects to it. Creates the Stripe customer on first call
+// and stores customer.id on the user row immediately (so a webhook race
+// can't drop the linkage).
+app.post('/api/billing/checkout', async (req, res) => {
+  if (!stripe)            return res.status(503).json({ error: 'Stripe not configured on server' });
+  if (!STRIPE_PRICE_PRO)  return res.status(503).json({ error: 'STRIPE_PRICE_PRO_MONTHLY not set' });
+  const u = getBillingUser(req);
+  if (!u) return res.status(403).json({ error: 'Billing requires an email-registered account. Please sign up first.' });
+
+  try {
+    let customerId = u.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: u.email,
+        name:  `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email,
+        metadata: { pquote_user_id: u.id },
+      });
+      customerId = customer.id;
+      db.prepare('UPDATE users SET stripe_customer_id = ? WHERE id = ?').run(customerId, u.id);
+    }
+
+    const base = resolveBaseUrl(req);
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId,
+      client_reference_id: u.id,
+      line_items: [{ price: STRIPE_PRICE_PRO, quantity: 1 }],
+      success_url: base + BILLING_SUCCESS_PATH + (BILLING_SUCCESS_PATH.includes('?') ? '&' : '?') + 'session_id={CHECKOUT_SESSION_ID}',
+      cancel_url:  base + BILLING_CANCEL_PATH,
+      allow_promotion_codes: true,
+    });
+
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[Stripe] checkout error:', err.message);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// POST /api/billing/portal — open the Stripe-hosted Customer Portal so the
+// user can manage payment methods, cancel, or view invoices. Requires a
+// pre-existing customer (created on first checkout).
+app.post('/api/billing/portal', async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured on server' });
+  const u = getBillingUser(req);
+  if (!u) return res.status(403).json({ error: 'Billing requires an email-registered account.' });
+  if (!u.stripe_customer_id) return res.status(400).json({ error: 'No subscription yet — start with Checkout first.' });
+
+  try {
+    const base = resolveBaseUrl(req);
+    const session = await stripe.billingPortal.sessions.create({
+      customer: u.stripe_customer_id,
+      return_url: base + '/billing',
+    });
+    res.json({ url: session.url });
+  } catch (err) {
+    console.error('[Stripe] portal error:', err.message);
+    res.status(500).json({ error: 'Failed to open billing portal' });
+  }
+});
+
+// ══════════════════════════════════════════
 //  AI ROUTES (Claude)
 // ══════════════════════════════════════════
 
@@ -1732,6 +1968,14 @@ app.get('/voice', (req, res) => {
 // message rendered by the page's client-side auth check.)
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// ── Billing (subscription management). Public HTML — client-side calls
+// /api/billing/status which is auth-gated and renders a sign-in nudge for
+// unauthenticated visitors.
+app.get('/billing', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.sendFile(path.join(__dirname, 'public', 'billing.html'));
 });
 
 // ── Catch-all: serve the SPA for page navigations, 404 for missed asset paths.
