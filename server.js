@@ -106,6 +106,10 @@ const bumpUsageStmt = db.prepare(`
 `);
 function bumpUsage(userId, kind) {
   if (!userId) return;
+  // Skip bumping for Pro users. They're never gated by counters, but if we
+  // wrote rows for them, a mid-month downgrade would surface their old
+  // Pro-era usage as a now-applicable cap and gate them retroactively.
+  if (effectivePlan(userId) === 'pro') return;
   try { bumpUsageStmt.run(userId, currentPeriod(), kind); } catch (e) {
     // Don't fail the user-facing request just because the counter wrote badly.
     console.warn('[Usage] bump failed:', e.message);
