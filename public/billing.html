@@ -214,6 +214,59 @@ h1.page-title em {
 .btn .arrow { transition: transform .18s; }
 .btn:hover .arrow { transform: translateX(3px); }
 
+/* ═══ USAGE METER (free users only) ═══ */
+.usage {
+  margin-top: 22px;
+  background: var(--paper);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 22px 26px 24px;
+  box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 4px 14px -6px rgba(42,40,36,.12);
+}
+.usage-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin-bottom: 18px;
+}
+.usage-title {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1.6px;
+  text-transform: uppercase; color: var(--muted);
+}
+.usage-period {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
+  color: var(--faint); text-transform: uppercase;
+}
+.usage-row { margin-top: 14px; }
+.usage-row:first-of-type { margin-top: 0; }
+.usage-row-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 6px;
+}
+.usage-label {
+  font-family: var(--serif); font-size: 16px; color: var(--dark);
+  font-weight: 600; letter-spacing: -.2px;
+}
+.usage-count {
+  font-family: var(--mono); font-size: 13px; color: var(--muted); font-weight: 500;
+}
+.usage-count strong { color: var(--dark); font-weight: 700; }
+.usage-count.warn strong { color: var(--stamp); }
+.usage-bar {
+  height: 6px; background: var(--bg2); border-radius: 99px; overflow: hidden;
+  position: relative;
+}
+.usage-fill {
+  height: 100%; background: var(--accent); border-radius: 99px;
+  transition: width .6s cubic-bezier(.2,.9,.25,1);
+}
+.usage-fill.warn  { background: linear-gradient(90deg, var(--accent), #C49640); }
+.usage-fill.full  { background: var(--stamp); }
+.usage-foot {
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px dashed var(--border);
+  font-size: 13px; color: var(--muted); line-height: 1.55;
+}
+.usage-foot strong { color: var(--dark); }
+
 /* ═══ PRO FEATURE LIST (shown to free users) ═══ */
 .pro-pitch {
   margin-top: 40px;
@@ -467,6 +520,11 @@ function renderReceipt(d) {
     : '';
   const canPortal = d.has_customer;
 
+  // Usage block — only shown for free users; Pro users have unlimited so the
+  // meter would be either irrelevant (when low) or actively discouraging (if
+  // we showed huge numbers).
+  const usageBlock = (!isPro && d.usage) ? renderUsage(d.usage) : '';
+
   const actions = isPro
     ? `<a href="#" class="btn primary" id="portal-btn">Manage subscription <span class="arrow">→</span></a>
        <a href="/app" class="btn ghost">Back to app</a>`
@@ -510,12 +568,49 @@ function renderReceipt(d) {
       </div>
       <div class="actions">${actions}</div>
     </section>
+    ${usageBlock}
     ${proPitch}`;
 
   const upBtn = document.getElementById('upgrade-btn');
   if (upBtn) upBtn.addEventListener('click', startCheckout);
   const portalBtn = document.getElementById('portal-btn');
   if (portalBtn) portalBtn.addEventListener('click', openPortal);
+}
+
+// Free-tier usage meter. Two rows: saved quotes + AI actions. Bars turn
+// amber at ≥80% used, red when at limit. Period label shows the YYYY-MM
+// the server is counting against so users understand the reset cadence.
+function renderUsage(u) {
+  const row = (label, used, limit, hintWhenFull) => {
+    const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+    const cls = pct >= 100 ? 'full' : (pct >= 80 ? 'warn' : '');
+    const countCls = pct >= 80 ? 'warn' : '';
+    return `
+      <div class="usage-row">
+        <div class="usage-row-head">
+          <span class="usage-label">${label}</span>
+          <span class="usage-count ${countCls}"><strong>${used}</strong> of ${limit}</span>
+        </div>
+        <div class="usage-bar"><div class="usage-fill ${cls}" style="width:${pct}%"></div></div>
+        ${pct >= 100 ? `<div class="usage-foot" style="margin-top:8px;padding-top:0;border:none"><strong>Limit reached.</strong> ${hintWhenFull}</div>` : ''}
+      </div>`;
+  };
+  // Friendly period label: '2026-05' → 'May 2026'.
+  let periodLabel = u.period;
+  try {
+    const [y, m] = u.period.split('-').map(Number);
+    periodLabel = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  } catch {}
+  return `
+    <section class="usage">
+      <div class="usage-head">
+        <span class="usage-title">This month's usage</span>
+        <span class="usage-period">${periodLabel}</span>
+      </div>
+      ${row('Saved quotes', u.quotes.used, u.quotes.limit, 'Upgrade to Pro for unlimited quotes, or wait until the 1st.')}
+      ${row('AI actions',   u.ai.used,     u.ai.limit,     'Upgrade to Pro for unlimited AI, or wait until the 1st.')}
+      <div class="usage-foot">Counts reset on the 1st of each month. <strong>Pro removes both caps</strong> — and adds branded PDFs and the pzip integration.</div>
+    </section>`;
 }
 
 async function postJSON(url) {
