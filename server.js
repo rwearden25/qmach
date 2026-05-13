@@ -640,6 +640,10 @@ try {
   addCol('plan',                   "plan TEXT NOT NULL DEFAULT 'free'");
   addCol('subscription_status',    "subscription_status TEXT");
   addCol('current_period_end',     "current_period_end INTEGER");
+  // Business preferences (drive PDF branding + AI pricing region).
+  addCol('business_name',          "business_name TEXT");
+  addCol('default_tax_rate',       "default_tax_rate REAL");
+  addCol('default_region',         "default_region TEXT");
   db.exec('CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id)');
 } catch (err) {
   console.error('[DB] Users billing migration error:', err.message);
@@ -1434,6 +1438,99 @@ app.post('/api/billing/portal', async (req, res) => {
 });
 
 // ══════════════════════════════════════════
+//  ACCOUNT ROUTES — profile + password + preferences
+// ══════════════════════════════════════════
+// All three endpoints require a DB-registered account (Google OAuth and
+// env users have no users row to update). Returning 403 for those gives
+// the client a clean signal to render an explainer.
+
+// GET /api/account — what's on file for the current user?
+app.get('/api/account', (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const u = db.prepare(`
+    SELECT id, email, first_name, last_name, plan,
+           business_name, default_tax_rate, default_region
+      FROM users WHERE id = ?
+  `).get(req.userId);
+  if (!u) return res.status(403).json({ error: 'account_not_registered', message: 'Account settings require an email-registered account.' });
+  res.json({
+    id:               u.id,
+    email:            u.email,
+    first_name:       u.first_name,
+    last_name:        u.last_name,
+    plan:             u.plan || 'free',
+    business_name:    u.business_name || '',
+    default_tax_rate: u.default_tax_rate ?? null,
+    default_region:   u.default_region   || '',
+  });
+});
+
+// PUT /api/account — update profile + business preferences. Email is
+// intentionally NOT editable (changing it invalidates Stripe customer
+// linkage + auth cookies); password has its own endpoint with re-auth.
+app.put('/api/account', (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const u = db.prepare('SELECT id FROM users WHERE id = ?').get(req.userId);
+  if (!u) return res.status(403).json({ error: 'account_not_registered' });
+
+  const firstName    = String(req.body?.first_name    || '').trim().slice(0, 80);
+  const lastName     = String(req.body?.last_name     || '').trim().slice(0, 80);
+  const businessName = String(req.body?.business_name || '').trim().slice(0, 120);
+  const region       = String(req.body?.default_region|| '').trim().slice(0, 80);
+  const taxRateRaw   = req.body?.default_tax_rate;
+
+  if (!firstName) return res.status(400).json({ error: 'First name required' });
+  if (!lastName)  return res.status(400).json({ error: 'Last name required' });
+
+  let taxRate = null;
+  if (taxRateRaw !== null && taxRateRaw !== undefined && taxRateRaw !== '') {
+    taxRate = parseFloat(taxRateRaw);
+    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 30) {
+      return res.status(400).json({ error: 'Tax rate must be a number between 0 and 30 (percent)' });
+    }
+  }
+
+  db.prepare(`
+    UPDATE users
+       SET first_name = ?, last_name = ?,
+           business_name = ?, default_tax_rate = ?, default_region = ?
+     WHERE id = ?
+  `).run(firstName, lastName, businessName || null, taxRate, region || null, req.userId);
+
+  res.json({ success: true });
+});
+
+// POST /api/account/password — re-auth with current pw, then rotate hash.
+// Out of scope: invalidating other live sessions for this user. The session
+// table is keyed by token, not user_id, so we'd need a separate sweep —
+// follow-up if password rotation needs to mean "kick all other devices".
+app.post('/api/account/password', authLimiter, (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const u = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(req.userId);
+  if (!u) return res.status(403).json({ error: 'account_not_registered' });
+
+  const current = String(req.body?.current_password || '');
+  const next    = String(req.body?.new_password || '');
+  if (!current || !next) return res.status(400).json({ error: 'Both current and new password required' });
+  if (next.length < 8 || next.length > 72
+      || !/[A-Z]/.test(next) || !/[0-9]/.test(next) || !/[^A-Za-z0-9]/.test(next)) {
+    return res.status(400).json({ error: 'New password must be 8–72 chars with an uppercase letter, a number, and a special character' });
+  }
+  if (current === next) {
+    return res.status(400).json({ error: 'New password must differ from current password' });
+  }
+
+  let ok = false;
+  try { ok = bcrypt.compareSync(current, u.password_hash); } catch {}
+  if (!ok) return res.status(401).json({ error: 'Current password is wrong' });
+
+  const newHash = bcrypt.hashSync(next, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, req.userId);
+  console.log(`[Auth] Password changed for ${req.userId}`);
+  res.json({ success: true });
+});
+
+// ══════════════════════════════════════════
 //  AI ROUTES (Claude)
 // ══════════════════════════════════════════
 
@@ -2102,6 +2199,12 @@ app.get('/admin', (req, res) => {
 app.get('/billing', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.sendFile(path.join(__dirname, 'public', 'billing.html'));
+});
+
+// ── Account settings (profile, password, business preferences).
+app.get('/account', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  res.sendFile(path.join(__dirname, 'public', 'account.html'));
 });
 
 // ── Catch-all: serve the SPA for page navigations, 404 for missed asset paths.
