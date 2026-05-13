@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -644,6 +645,7 @@ try {
   addCol('business_name',          "business_name TEXT");
   addCol('default_tax_rate',       "default_tax_rate REAL");
   addCol('default_region',         "default_region TEXT");
+  addCol('logo_filename',          "logo_filename TEXT");
   db.exec('CREATE INDEX IF NOT EXISTS idx_users_stripe_customer ON users(stripe_customer_id)');
 } catch (err) {
   console.error('[DB] Users billing migration error:', err.message);
@@ -1449,7 +1451,7 @@ app.get('/api/account', (req, res) => {
   if (!req.userId) return res.status(401).json({ error: 'Unauthorized' });
   const u = db.prepare(`
     SELECT id, email, first_name, last_name, plan,
-           business_name, default_tax_rate, default_region
+           business_name, default_tax_rate, default_region, logo_filename
       FROM users WHERE id = ?
   `).get(req.userId);
   if (!u) return res.status(403).json({ error: 'account_not_registered', message: 'Account settings require an email-registered account.' });
@@ -1462,6 +1464,7 @@ app.get('/api/account', (req, res) => {
     business_name:    u.business_name || '',
     default_tax_rate: u.default_tax_rate ?? null,
     default_region:   u.default_region   || '',
+    has_logo:         !!u.logo_filename,
   });
 });
 
@@ -1527,6 +1530,111 @@ app.post('/api/account/password', authLimiter, (req, res) => {
   const newHash = bcrypt.hashSync(next, 10);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, req.userId);
   console.log(`[Auth] Password changed for ${req.userId}`);
+  res.json({ success: true });
+});
+
+// ── Logo upload (Pro feature). Files live on the Railway volume at
+// $RAILWAY_VOLUME_MOUNT_PATH/logos/<hash>.<ext>. Filename is a sha256 of
+// the user id so a) we don't leak emails into file paths, and b) we
+// always know exactly which file is current per user.
+const LOGOS_DIR  = path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data'), 'logos');
+const MAX_LOGO_BYTES = 500 * 1024; // 500KB
+const MIME_TO_EXT = {
+  'image/png':     'png',
+  'image/jpeg':    'jpg',
+  'image/jpg':     'jpg',
+  'image/webp':    'webp',
+  'image/svg+xml': 'svg',
+};
+try { fs.mkdirSync(LOGOS_DIR, { recursive: true }); } catch {}
+
+function logoBasenameForUser(userId) {
+  return crypto.createHash('sha256').update(userId).digest('hex').slice(0, 32);
+}
+
+// POST /api/account/logo — body is the raw image bytes (Content-Type set
+// to image/png|jpeg|webp|svg+xml). Pro-gated. Replaces any prior logo.
+//
+// Using express.raw() inline so we don't pipe ALL traffic through a
+// binary parser — only this specific route. The auth middleware runs
+// first (it's app.use'd higher up), so req.userId is populated by the
+// time we reach this handler.
+app.post('/api/account/logo',
+  express.raw({ type: 'image/*', limit: MAX_LOGO_BYTES + 1024 }),
+  requirePro,
+  (req, res) => {
+    const buf = req.body;
+    if (!Buffer.isBuffer(buf) || buf.length === 0) {
+      return res.status(400).json({ error: 'No image data received' });
+    }
+    if (buf.length > MAX_LOGO_BYTES) {
+      return res.status(413).json({ error: `Logo too large — max ${Math.round(MAX_LOGO_BYTES / 1024)}KB` });
+    }
+    const ct = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+    const ext = MIME_TO_EXT[ct];
+    if (!ext) {
+      return res.status(415).json({ error: 'Unsupported image type. Use PNG, JPG, WebP, or SVG.' });
+    }
+    // Atomic-ish replace: write to a temp filename then rename. Reduces the
+    // window where a half-written file could be served.
+    const base = logoBasenameForUser(req.userId);
+    const final = path.join(LOGOS_DIR, `${base}.${ext}`);
+    const tmp   = path.join(LOGOS_DIR, `${base}.${ext}.tmp`);
+    try {
+      fs.writeFileSync(tmp, buf);
+      fs.renameSync(tmp, final);
+    } catch (err) {
+      console.error('[Logo] write failed:', err.message);
+      try { fs.unlinkSync(tmp); } catch {}
+      return res.status(500).json({ error: 'Could not save logo' });
+    }
+    // Clean up any old logo with a DIFFERENT extension (user re-uploaded
+    // as PNG having previously uploaded SVG, etc).
+    const newFilename = `${base}.${ext}`;
+    const prior = db.prepare('SELECT logo_filename FROM users WHERE id = ?').get(req.userId);
+    if (prior?.logo_filename && prior.logo_filename !== newFilename) {
+      try { fs.unlinkSync(path.join(LOGOS_DIR, prior.logo_filename)); } catch {}
+    }
+    db.prepare('UPDATE users SET logo_filename = ? WHERE id = ?').run(newFilename, req.userId);
+    res.json({ success: true, filename: newFilename, size: buf.length });
+  }
+);
+
+// GET /api/account/logo — serve the current user's logo. Auth required;
+// we return the binary with the right content-type so the browser can
+// load it as <img src="..."> and the client can convert to a data: URI
+// for PDF embedding.
+app.get('/api/account/logo', (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const u = db.prepare('SELECT logo_filename FROM users WHERE id = ?').get(req.userId);
+  if (!u?.logo_filename) return res.status(404).json({ error: 'No logo on file' });
+  const fp = path.join(LOGOS_DIR, u.logo_filename);
+  if (!fs.existsSync(fp)) {
+    // DB and disk drifted (rare — manual deletion, volume restore). Clear
+    // the column so the client stops asking, return 404.
+    db.prepare('UPDATE users SET logo_filename = NULL WHERE id = ?').run(req.userId);
+    return res.status(404).json({ error: 'Logo file missing' });
+  }
+  // Cache per-user for an hour. private so CDNs/proxies don't cache.
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  const ext = u.logo_filename.split('.').pop().toLowerCase();
+  const ctype = ext === 'svg' ? 'image/svg+xml'
+              : ext === 'jpg' ? 'image/jpeg'
+              : `image/${ext}`;
+  res.setHeader('Content-Type', ctype);
+  fs.createReadStream(fp).pipe(res);
+});
+
+// DELETE /api/account/logo — remove the user's logo file + clear the column.
+// Not Pro-gated — a Pro user who downgrades should still be able to clean up,
+// and a free user who somehow has a stale row should be able to clear it.
+app.delete('/api/account/logo', (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: 'Unauthorized' });
+  const u = db.prepare('SELECT logo_filename FROM users WHERE id = ?').get(req.userId);
+  if (u?.logo_filename) {
+    try { fs.unlinkSync(path.join(LOGOS_DIR, u.logo_filename)); } catch {}
+    db.prepare('UPDATE users SET logo_filename = NULL WHERE id = ?').run(req.userId);
+  }
   res.json({ success: true });
 });
 
